@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    background-color: #F6F7F2;
+    color: #173829;
+    line-height: 1.6;
+  }
+
+  ::selection {
+    background-color: #DCF0E2;
+    color: #173829;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-[28px] border border-stone-200/70 shadow-card transition-all duration-300;
+  }
+
+  .card-hero {
+    @apply bg-white rounded-[32px] border border-stone-200/70 shadow-card transition-all duration-300;
+  }
+
+  .card-hover {
+    @apply hover:shadow-card-hover hover:-translate-y-1;
+  }
+
+  .btn-primary {
+    @apply bg-[#173829] text-white px-6 py-3.5 rounded-2xl font-semibold text-sm
+           transition-all duration-200 hover:bg-[#204d3d] active:scale-[0.98]
+           shadow-sm hover:shadow-md;
+  }
+
+  .btn-leaf {
+    @apply bg-leaf text-white px-6 py-3.5 rounded-2xl font-semibold text-sm
+           transition-all duration-200 hover:bg-emerald-600 active:scale-[0.98]
+           shadow-sm hover:shadow-md;
+  }
+
+  .btn-outline {
+    @apply border border-stone-200/80 bg-white text-[#173829] px-6 py-3.5 rounded-2xl font-semibold text-sm
+           transition-all duration-200 hover:bg-stone-50 active:scale-[0.98] shadow-sm;
+  }
+
+  .badge-leaf {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold
+           bg-[#DCF0E2] text-[#173829];
+  }
+
+  .badge-pine {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold
+           bg-[#173829] text-white;
+  }
+
+  .stat-number {
+    @apply font-mono text-3xl md:text-4xl font-bold tracking-tight tabular-nums text-[#173829];
+  }
+
+  .section-title {
+    @apply text-2xl md:text-3xl font-bold text-[#173829] tracking-tight;
+  }
+
+  .modal-overlay {
+    @apply fixed inset-0 bg-[#173829]/40 backdrop-blur-md z-50 flex items-center justify-center p-4
+           animate-fade-in;
+  }
+
+  .modal-content {
+    @apply bg-white rounded-[32px] shadow-float max-w-lg w-full max-h-[90vh] overflow-y-auto
+           animate-slide-up border border-stone-200/60;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border border-stone-200 bg-white
+           text-[#173829] placeholder:text-stone-400
+           focus:outline-none focus:ring-2 focus:ring-leaf/30 focus:border-leaf
+           transition-all duration-200;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .gradient-pine {
+    background: linear-gradient(135deg, #173829 0%, #204d3d 100%);
+  }
+
+  .gradient-leaf {
+    background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  }
+
+  .glass {
+    background: rgba(246, 247, 242, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .ndvi-gradient {
+    background: linear-gradient(180deg,
+      #1a0a00 0%,
+      #4a2800 15%,
+      #7a5500 25%,
+      #8B7D00 35%,
+      #6B8E23 45%,
+      #228B22 55%,
+      #10B981 65%,
+      #00FF7F 75%,
+      #7FFF00 85%,
+      #ADFF2F 100%
+    );
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c4c9be;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ea396;
+}
+
+/* Print styles for BAP Certificate */
+@media print {
+  body {
+    background: white !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
