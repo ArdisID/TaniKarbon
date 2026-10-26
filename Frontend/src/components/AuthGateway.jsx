@@ -7,7 +7,7 @@ import {
 export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, onNavigateRole }) {
   // Mode: 'login' | 'register'
   const [mode, setMode] = useState('login');
-  
+
   // Public Role: 'farmer' | 'corporate'
   const [role, setRole] = useState(defaultTab === 'corporate' ? 'corporate' : 'farmer');
 
@@ -98,7 +98,7 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
       {/* Center Floating Card (Exact Morva Labs Dribbble proportions & glow) */}
       <div className="relative z-20 my-auto py-4 flex items-center justify-center">
         <div className="w-full max-w-[390px] bg-white/95 backdrop-blur-2xl rounded-[32px] p-7 sm:p-8 border border-white shadow-[0_24px_70px_-15px_rgba(0,0,0,0.35)] text-center transition-all animate-fade-in space-y-4">
-          
+
           {/* Top Squircle Icon: Arrow entering bracket (->]) from Dribbble shot */}
           <div className="w-12 h-12 rounded-2xl bg-white border border-stone-100 shadow-[0_4px_16px_rgba(0,0,0,0.06)] flex items-center justify-center mx-auto text-stone-900">
             <svg
@@ -131,11 +131,10 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
             <button
               type="button"
               onClick={() => handleSwitchTab('farmer')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                role === 'farmer'
-                  ? 'bg-white text-stone-900 font-bold shadow-xs'
-                  : 'hover:text-stone-900'
-              }`}
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${role === 'farmer'
+                ? 'bg-white text-stone-900 font-bold shadow-xs'
+                : 'hover:text-stone-900'
+                }`}
             >
               <Smartphone className={`w-3.5 h-3.5 ${role === 'farmer' ? 'text-emerald-600' : 'text-stone-400'}`} />
               <span>Mitra Tani</span>
@@ -143,11 +142,10 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
             <button
               type="button"
               onClick={() => handleSwitchTab('corporate')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                role === 'corporate'
-                  ? 'bg-white text-stone-900 font-bold shadow-xs'
-                  : 'hover:text-stone-900'
-              }`}
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${role === 'corporate'
+                ? 'bg-white text-stone-900 font-bold shadow-xs'
+                : 'hover:text-stone-900'
+                }`}
             >
               <Building2 className={`w-3.5 h-3.5 ${role === 'corporate' ? 'text-sky-600' : 'text-stone-400'}`} />
               <span>Perusahaan ESG</span>
@@ -156,7 +154,7 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
 
           {/* Form with Dribbble-style filled pill inputs */}
           <form onSubmit={handleSubmit} className="space-y-3 text-left">
-            
+
             {/* If Register mode: Full Name field */}
             {mode === 'register' && (
               <div>
