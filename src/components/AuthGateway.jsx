@@ -285,22 +285,36 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack }) 
           </div>
 
           {/* Quick Demo Instant Access Pills */}
-          <div className="mt-4 pt-3.5 border-t border-stone-200/70 flex items-center justify-between text-[11px] font-mono">
-            <span className="text-stone-400">Akses Cepat Demo:</span>
-            <div className="flex gap-1.5">
+          <div className="mt-4 pt-3.5 border-t border-stone-200/70 text-[11px] font-mono">
+            <span className="text-stone-400 block mb-1.5 text-center">Akses Cepat Demo Penjurian:</span>
+            <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 onClick={() => handleQuickDemo('farmer')}
-                className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold transition-colors"
+                className="px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold transition-colors text-center"
               >
                 Pak Joko (Tani)
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickDemo('corporate')}
-                className="px-2 py-0.5 rounded bg-sky-50 hover:bg-sky-100 text-sky-800 font-bold transition-colors"
+                className="px-2 py-1 rounded bg-sky-50 hover:bg-sky-100 text-sky-800 font-bold transition-colors text-center"
               >
-                ESG Telkom
+                Korporat ESG B2B
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickDemo('surveyor')}
+                className="px-2 py-1 rounded bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold transition-colors text-center"
+              >
+                Surveyor Lapangan
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickDemo('admin')}
+                className="px-2 py-1 rounded bg-purple-50 hover:bg-purple-100 text-purple-900 font-bold transition-colors text-center"
+              >
+                Admin Platform
               </button>
             </div>
           </div>

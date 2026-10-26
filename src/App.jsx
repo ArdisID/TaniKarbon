@@ -3,6 +3,8 @@ import LandingPage from './components/LandingPage';
 import AuthGateway from './components/AuthGateway';
 import FarmerWorkspace from './components/FarmerWorkspace';
 import CorporateMarketplace from './components/CorporateMarketplace';
+import SurveyorWorkspace from './components/SurveyorWorkspace';
+import AdminWorkspace from './components/AdminWorkspace';
 import { TREES_DATA } from './data';
 
 export default function App() {
@@ -11,6 +13,8 @@ export default function App() {
     const path = window.location.pathname.toLowerCase();
     if (path === '/mitra-tani' || path === '/farmer' || path === '/petani') return 'farmer';
     if (path === '/korporat' || path === '/corporate' || path === '/b2b') return 'corporate';
+    if (path === '/surveyor' || path === '/petugas' || path === '/verifier') return 'surveyor';
+    if (path === '/admin' || path === '/authority' || path === '/manager') return 'admin';
     if (path === '/login' || path === '/auth' || path === '/daftar') return 'auth';
     return 'landing';
   };
@@ -29,6 +33,8 @@ export default function App() {
     let targetPath = '/';
     if (targetView === 'farmer') targetPath = '/mitra-tani';
     else if (targetView === 'corporate') targetPath = '/korporat';
+    else if (targetView === 'surveyor') targetPath = '/surveyor';
+    else if (targetView === 'admin') targetPath = '/admin';
     else if (targetView === 'auth') targetPath = '/login';
 
     if (window.location.pathname !== targetPath) {
@@ -45,6 +51,10 @@ export default function App() {
         setView('farmer');
       } else if (currentPath === '/korporat' || currentPath === '/corporate' || currentPath === '/b2b') {
         setView('corporate');
+      } else if (currentPath === '/surveyor' || currentPath === '/petugas' || currentPath === '/verifier') {
+        setView('surveyor');
+      } else if (currentPath === '/admin' || currentPath === '/authority' || currentPath === '/manager') {
+        setView('admin');
       } else if (currentPath === '/login' || currentPath === '/auth' || currentPath === '/daftar') {
         setView('auth');
       } else {
@@ -65,11 +75,6 @@ export default function App() {
 
   const handleRetire = useCallback((tons) => {
     setTotalRetired(prev => prev + tons);
-  }, []);
-
-  const handleDemoNavigate = useCallback((targetView) => {
-    setView(targetView);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   return (
@@ -93,6 +98,7 @@ export default function App() {
             trees={trees}
             onAddTree={handleAddTree}
             onBack={() => handleNavigate('landing')}
+            onNavigateRole={(target) => handleNavigate(target)}
           />
         )}
         {view === 'corporate' && (
@@ -100,6 +106,18 @@ export default function App() {
             totalRetired={totalRetired}
             onRetire={handleRetire}
             onBack={() => handleNavigate('landing')}
+            onNavigateRole={(target) => handleNavigate(target)}
+          />
+        )}
+        {view === 'surveyor' && (
+          <SurveyorWorkspace
+            onNavigateRole={(target) => handleNavigate(target)}
+            onBack={() => handleNavigate('landing')}
+          />
+        )}
+        {view === 'admin' && (
+          <AdminWorkspace
+            onNavigateRole={(target) => handleNavigate(target)}
           />
         )}
       </div>

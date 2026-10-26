@@ -249,6 +249,15 @@ export default function LandingPage({ onNavigate }) {
               <span>Portal B2B ESG</span>
             </button>
 
+            {/* Surveyor Field Portal Button */}
+            <button
+              onClick={() => onNavigate('surveyor')}
+              className="px-5 py-3 rounded-full bg-emerald-950/70 hover:bg-emerald-900/90 text-emerald-300 font-extrabold text-xs sm:text-sm border border-emerald-500/40 backdrop-blur-md transition-all active:scale-95 flex items-center gap-2"
+            >
+              <Compass className="w-4 h-4 text-emerald-400" />
+              <span>Portal Surveyor Lapangan</span>
+            </button>
+
             {/* Avatar Stack Social Proof */}
             <div className="flex items-center gap-3 bg-black/50 backdrop-blur-md border border-white/15 px-4 py-2 rounded-full shadow-lg">
               <div className="flex -space-x-2">
