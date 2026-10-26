@@ -6,6 +6,9 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    },
     watch: {
       usePolling: true,
       interval: 1000,

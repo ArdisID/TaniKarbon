@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  Leaf, Lock, Mail, Eye, EyeOff, User, Smartphone, Building2,
-  ArrowLeft, ArrowRight, ShieldCheck, Check, Compass, Zap
+  Lock, Mail, Eye, EyeOff, Smartphone, Building2,
+  ArrowLeft, ArrowRight, ShieldCheck, Compass, Zap
 } from 'lucide-react';
 
 export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, onNavigateRole }) {
@@ -12,7 +12,7 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
   const [role, setRole] = useState(defaultTab === 'corporate' ? 'corporate' : 'farmer');
 
   // Input states
-  const [fullName, setFullName] = useState(role === 'farmer' ? 'Pak Joko Widodo' : 'Budi Santoso');
+  const [fullName, setFullName] = useState(role === 'farmer' ? 'Pak Joko Widodo' : 'PT Industri Hijau Nusantara');
   const [identifier, setIdentifier] = useState(
     role === 'farmer' ? '0812-9847-1920' : 'esg-team@industrihijau.co.id'
   );
@@ -43,156 +43,153 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
     }, 600);
   };
 
-  // 1-Click Demo Login for Lomba/Judging Sessions
-  const handleQuickDemo = () => {
+  // 1-Click Demo Login for Competition Demo
+  const handleQuickDemo = (targetRole) => {
+    const roleToLogin = targetRole || role;
     setLoading(true);
     setTimeout(() => {
       setLoading(false);
-      onLogin(role);
+      onLogin(roleToLogin);
     }, 400);
   };
 
   return (
     <div
-      className="min-h-screen w-full relative flex flex-col justify-between p-4 sm:p-6 bg-cover bg-center font-sans antialiased"
+      className="min-h-screen w-full relative flex flex-col justify-between p-4 sm:p-6 bg-cover bg-center font-sans antialiased overflow-x-hidden"
       style={{
-        backgroundImage: "url('/auth-bg.jpg')",
+        backgroundImage: "url('/auth-bg-plantation.jpg')",
+        backgroundColor: '#14382C'
       }}
     >
-      {/* Soft atmospheric radial gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-sky-950/20 to-black/50 pointer-events-none" />
+      {/* Soft atmospheric radial gradient overlay preserving plantation view while highlighting card */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-emerald-950/25 to-black/60 pointer-events-none" />
 
-      {/* Top Floating Bar: Back Button & Brand Badge */}
-      <div className="relative z-20 max-w-6xl w-full mx-auto flex items-center justify-between">
-        <button
-          onClick={onBack}
-          className="group inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 hover:bg-white text-stone-700 hover:text-stone-900 text-xs font-semibold backdrop-blur-md border border-white/60 shadow-xs transition-all active:scale-95 cursor-pointer font-sans"
-        >
-          <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
-          <span>Kembali ke Beranda</span>
-        </button>
-
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/80 backdrop-blur-md border border-white/60 shadow-xs">
-          <div className="w-5 h-5 rounded-full bg-[#14382C] text-emerald-300 flex items-center justify-center">
-            <Leaf className="w-3 h-3" />
-          </div>
-          <span className="font-extrabold text-xs text-[#14382C] tracking-tight font-sans">TaniKarbon</span>
-        </div>
+      {/* Subtle Concentric Rings radiating from behind the card (Dribbble Signature detail) */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+        <div className="w-[500px] h-[500px] rounded-full border border-white/15 -translate-y-6" />
+        <div className="absolute w-[750px] h-[750px] rounded-full border border-white/10 -translate-y-6" />
+        <div className="absolute w-[1000px] h-[1000px] rounded-full border border-white/5 -translate-y-6" />
       </div>
 
-      {/* Center Modal Card */}
-      <div className="relative z-20 my-auto py-6 flex items-center justify-center">
-        <div className="w-full max-w-[420px] bg-white/92 backdrop-blur-2xl rounded-[32px] p-6 sm:p-8 border border-white/80 shadow-[0_24px_60px_-15px_rgba(0,0,0,0.25)] text-center transition-all animate-fade-in space-y-4">
+      {/* Top Bar: Brand Logo & Back Button */}
+      <div className="relative z-20 max-w-6xl w-full mx-auto flex items-center justify-between">
+        {/* Brand Logo: Dark squircle + bold title with crisp contrast */}
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/20 shadow-xs">
+          <div className="w-7 h-7 rounded-lg bg-[#14382C] border border-emerald-400/40 text-emerald-300 flex items-center justify-center shadow-xs">
+            <svg className="w-4 h-4 fill-current text-emerald-300" viewBox="0 0 24 24">
+              <path d="M12 2L4 7v10l8 5 8-5V7l-8-5zm0 2.8L18 8.5v7l-6 3.7-6-3.7v-7l6-3.7z" />
+            </svg>
+          </div>
+          <span className="font-extrabold text-sm text-white tracking-tight font-sans drop-shadow-xs">
+            TaniKarbon
+          </span>
+        </div>
+
+        {/* Back to Home Button */}
+        <button
+          onClick={onBack}
+          className="group inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/80 hover:bg-white text-stone-800 text-xs font-semibold backdrop-blur-md border border-white/80 shadow-xs transition-all active:scale-95 cursor-pointer font-sans"
+        >
+          <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+          <span>Kembali</span>
+        </button>
+      </div>
+
+      {/* Center Floating Card (Exact Morva Labs Dribbble proportions & glow) */}
+      <div className="relative z-20 my-auto py-4 flex items-center justify-center">
+        <div className="w-full max-w-[390px] bg-white/95 backdrop-blur-2xl rounded-[32px] p-7 sm:p-8 border border-white shadow-[0_24px_70px_-15px_rgba(0,0,0,0.35)] text-center transition-all animate-fade-in space-y-4">
           
-          {/* Top Squircle Icon */}
-          <div className="w-12 h-12 rounded-2xl bg-white border border-stone-200 shadow-2xs flex items-center justify-center mx-auto text-[#14382C]">
-            {role === 'farmer' ? (
-              <Smartphone className="w-6 h-6 text-emerald-700" />
-            ) : (
-              <Building2 className="w-6 h-6 text-sky-700" />
-            )}
+          {/* Top Squircle Icon: Arrow entering bracket (->]) from Dribbble shot */}
+          <div className="w-12 h-12 rounded-2xl bg-white border border-stone-100 shadow-[0_4px_16px_rgba(0,0,0,0.06)] flex items-center justify-center mx-auto text-stone-900">
+            <svg
+              className="w-5 h-5 text-stone-800"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="4" y1="12" x2="15" y2="12" />
+              <polyline points="11 8 15 12 11 16" />
+              <path d="M16 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3" />
+            </svg>
           </div>
 
-          {/* Heading */}
+          {/* Heading & Subtitle */}
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-stone-900 tracking-tight font-sans">
-              {mode === 'login' ? 'Masuk ke TaniKarbon' : 'Daftar Akun Baru'}
+            <h1 className="text-xl font-bold text-stone-900 tracking-tight font-sans">
+              Sign in with email
             </h1>
-            <p className="text-xs text-stone-500 mt-1 leading-relaxed max-w-xs mx-auto font-sans">
-              {role === 'farmer'
-                ? 'Kelola pohon pekarangan, pantau dividen karbon, dan tarik saldo dividen.'
-                : 'Akses bursa kredit karbon terverifikasi, neraca emisi, dan integrasi ERP.'}
+            <p className="text-[11px] text-stone-500 mt-1.5 leading-relaxed max-w-[270px] mx-auto font-sans">
+              Make a new doc to bring your words, data, and teams together. For free
             </p>
           </div>
 
-          {/* 2 Clean Toggle Tabs: Mitra Tani vs Perusahaan ESG */}
-          <div className="p-1 bg-stone-100 rounded-2xl flex items-center text-xs font-semibold text-stone-600 font-sans">
+          {/* Role Segmented Selector: Mitra Tani vs Perusahaan ESG (Clean Pill) */}
+          <div className="p-1 bg-[#F3F4F6] rounded-xl flex items-center text-xs font-semibold text-stone-600 font-sans">
             <button
               type="button"
               onClick={() => handleSwitchTab('farmer')}
-              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 role === 'farmer'
-                  ? 'bg-white text-emerald-950 font-bold shadow-xs border border-emerald-100'
+                  ? 'bg-white text-stone-900 font-bold shadow-xs'
                   : 'hover:text-stone-900'
               }`}
             >
-              <Smartphone className={`w-4 h-4 ${role === 'farmer' ? 'text-emerald-600' : 'text-stone-400'}`} />
+              <Smartphone className={`w-3.5 h-3.5 ${role === 'farmer' ? 'text-emerald-600' : 'text-stone-400'}`} />
               <span>Mitra Tani</span>
             </button>
             <button
               type="button"
               onClick={() => handleSwitchTab('corporate')}
-              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 role === 'corporate'
-                  ? 'bg-white text-sky-950 font-bold shadow-xs border border-sky-100'
+                  ? 'bg-white text-stone-900 font-bold shadow-xs'
                   : 'hover:text-stone-900'
               }`}
             >
-              <Building2 className={`w-4 h-4 ${role === 'corporate' ? 'text-sky-600' : 'text-stone-400'}`} />
+              <Building2 className={`w-3.5 h-3.5 ${role === 'corporate' ? 'text-sky-600' : 'text-stone-400'}`} />
               <span>Perusahaan ESG</span>
             </button>
           </div>
 
-          {/* Input Form */}
+          {/* Form with Dribbble-style filled pill inputs */}
           <form onSubmit={handleSubmit} className="space-y-3 text-left">
+            
             {/* If Register mode: Full Name field */}
             {mode === 'register' && (
               <div>
-                <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1 font-sans">
-                  {role === 'farmer' ? 'Nama Lengkap Petani' : 'Nama Perusahaan / PT'}
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder={role === 'farmer' ? 'Contoh: Joko Widodo' : 'Contoh: PT Industri Hijau Nusantara'}
-                    className="w-full pl-10 pr-4 py-2.5 bg-stone-50 hover:bg-white focus:bg-white border border-stone-200 focus:border-[#14382C] focus:ring-2 focus:ring-[#14382C]/10 rounded-xl text-xs sm:text-sm text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
-                  />
-                </div>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder={role === 'farmer' ? 'Nama Lengkap Petani' : 'Nama Perusahaan / PT'}
+                  className="w-full px-4 py-2.5 bg-[#F3F4F6] focus:bg-white border border-transparent focus:border-stone-300 rounded-xl text-xs text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
+                />
               </div>
             )}
 
-            {/* Email / WhatsApp field */}
-            <div>
-              <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1 font-sans">
-                {role === 'farmer' ? 'Nomor HP / WhatsApp' : 'Work Email Korporat'}
-              </label>
-              <div className="relative">
-                {role === 'farmer' ? (
-                  <Smartphone className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                ) : (
-                  <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                )}
-                <input
-                  type={role === 'farmer' ? 'text' : 'email'}
-                  required
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder={role === 'farmer' ? '0812-xxxx-xxxx' : 'esg@perusahaan.co.id'}
-                  className="w-full pl-10 pr-4 py-2.5 bg-stone-50 hover:bg-white focus:bg-white border border-stone-200 focus:border-[#14382C] focus:ring-2 focus:ring-[#14382C]/10 rounded-xl text-xs sm:text-sm text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
-                />
-              </div>
+            {/* Email / WhatsApp Input */}
+            <div className="relative">
+              {role === 'farmer' ? (
+                <Smartphone className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              ) : (
+                <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              )}
+              <input
+                type={role === 'farmer' ? 'text' : 'email'}
+                required
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                placeholder="Email"
+                className="w-full pl-10 pr-4 py-2.5 bg-[#F3F4F6] focus:bg-white border border-transparent focus:border-stone-300 rounded-xl text-xs text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
+              />
             </div>
 
-            {/* Password field */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] font-bold text-stone-600 uppercase tracking-wider font-sans">
-                  Kata Sandi
-                </label>
-                {mode === 'login' && (
-                  <button
-                    type="button"
-                    onClick={() => alert('Petunjuk pemulihan telah dikirim ke nomor HP/Email Anda.')}
-                    className="text-[11px] font-semibold text-stone-500 hover:text-stone-900 transition font-sans cursor-pointer"
-                  >
-                    Lupa sandi?
-                  </button>
-                )}
-              </div>
+            {/* Password Input */}
+            <div className="space-y-1.5">
               <div className="relative">
                 <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
@@ -200,8 +197,8 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimal 8 karakter"
-                  className="w-full pl-10 pr-10 py-2.5 bg-stone-50 hover:bg-white focus:bg-white border border-stone-200 focus:border-[#14382C] focus:ring-2 focus:ring-[#14382C]/10 rounded-xl text-xs sm:text-sm text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
+                  placeholder="Password"
+                  className="w-full pl-10 pr-10 py-2.5 bg-[#F3F4F6] focus:bg-white border border-transparent focus:border-stone-300 rounded-xl text-xs text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
                 />
                 <button
                   type="button"
@@ -211,94 +208,136 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+
+              {/* Forgot password link - right aligned like Dribbble ref */}
+              <div className="text-right">
+                <button
+                  type="button"
+                  onClick={() => alert('Petunjuk pemulihan telah dikirim.')}
+                  className="text-[11px] text-stone-400 hover:text-stone-700 transition cursor-pointer font-sans"
+                >
+                  Forgot password?
+                </button>
+              </div>
             </div>
 
-            {/* Primary Submit Button */}
+            {/* Primary Dark Button: Get Started */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 py-3 px-4 bg-[#14382C] hover:bg-[#1a4436] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 cursor-pointer font-sans disabled:opacity-50"
+              className="w-full py-2.5 px-4 bg-[#18181B] hover:bg-black text-white font-semibold text-xs rounded-xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer font-sans disabled:opacity-50"
             >
               {loading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
-                <>
-                  <span>{mode === 'login' ? (role === 'farmer' ? 'Masuk ke Portal Petani' : 'Masuk ke Portal Korporat') : 'Daftar Sekarang'}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
+                <span>Get Started</span>
               )}
             </button>
           </form>
 
-          {/* 1-Click Demo Login Button (Fitur Presentasi Lomba) */}
-          <div className="pt-2 border-t border-stone-100">
+          {/* Dotted Divider: ········· Or sign in with ········· */}
+          <div className="pt-1 flex items-center justify-center">
+            <span className="text-[10px] font-mono text-stone-400 tracking-wider select-none">
+              ········· Or sign in with ·········
+            </span>
+          </div>
+
+          {/* 3 Social Buttons in a Row (Google, WhatsApp/Social, Apple) */}
+          <div className="grid grid-cols-3 gap-2 pt-0.5">
+            {/* Google */}
             <button
               type="button"
-              onClick={handleQuickDemo}
-              className="w-full py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/80 text-emerald-900 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer font-sans shadow-2xs"
+              onClick={() => handleQuickDemo()}
+              title="Masuk dengan Google"
+              className="py-2.5 bg-white border border-stone-200/80 rounded-xl flex items-center justify-center hover:bg-stone-50 hover:border-stone-300 transition shadow-2xs active:scale-95 cursor-pointer"
             >
-              <Zap className="w-3.5 h-3.5 text-emerald-600 fill-emerald-600" />
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+            </button>
+
+            {/* WhatsApp */}
+            <button
+              type="button"
+              onClick={() => handleQuickDemo()}
+              title="Masuk dengan WhatsApp OTP"
+              className="py-2.5 bg-white border border-stone-200/80 rounded-xl flex items-center justify-center hover:bg-stone-50 hover:border-stone-300 transition shadow-2xs active:scale-95 cursor-pointer"
+            >
+              <svg className="w-4 h-4 fill-[#25D366]" viewBox="0 0 24 24">
+                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z" />
+              </svg>
+            </button>
+
+            {/* Apple */}
+            <button
+              type="button"
+              onClick={() => handleQuickDemo()}
+              title="Masuk dengan Apple ID"
+              className="py-2.5 bg-white border border-stone-200/80 rounded-xl flex items-center justify-center hover:bg-slate-50 hover:border-stone-300 transition shadow-2xs active:scale-95 cursor-pointer text-stone-900"
+            >
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.63-.77 1.06-1.85.94-2.93-.91.04-2.02.61-2.67 1.38-.57.66-.99 1.76-.86 2.81 1.02.08 2.06-.52 2.59-1.26z" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Discrete 1-Click Demo Pill for Presentation */}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => handleQuickDemo()}
+              className="w-full py-1.5 px-3 rounded-lg bg-stone-50 hover:bg-stone-100 border border-stone-200/70 text-stone-600 text-[11px] font-medium transition flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+            >
+              <Zap className="w-3 h-3 text-emerald-600 fill-emerald-600" />
               <span>
-                ⚡ 1-Click Demo Login: {role === 'farmer' ? 'Pak Joko Widodo (Mitra Tani)' : 'PT Industri Hijau Nusantara (Korporat)'}
+                1-Click Demo: {role === 'farmer' ? 'Pak Joko (Mitra Tani)' : 'PT Industri Hijau (Korporat)'}
               </span>
             </button>
           </div>
 
-          {/* Switch Register/Login */}
-          <div className="text-xs text-stone-500 font-sans pt-1">
-            {mode === 'login' ? (
-              <p>
-                Belum terdaftar?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('register')}
-                  className="font-bold text-[#14382C] hover:underline cursor-pointer"
-                >
-                  Daftar di sini
-                </button>
-              </p>
-            ) : (
-              <p>
-                Sudah punya akun?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('login')}
-                  className="font-bold text-[#14382C] hover:underline cursor-pointer"
-                >
-                  Masuk di sini
-                </button>
-              </p>
-            )}
-          </div>
-
-          {/* Tautan Khusus Internal Staff & Admin (Dipisah Rapi) */}
-          <div className="pt-3 border-t border-stone-200/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] font-sans text-stone-500">
+          {/* Separate internal links for Staff and Admin */}
+          <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] font-sans text-stone-400">
             <button
               type="button"
               onClick={() => onNavigateRole && onNavigateRole('surveyor_login')}
-              className="hover:text-teal-900 font-semibold flex items-center gap-1 cursor-pointer transition"
+              className="hover:text-teal-800 transition cursor-pointer flex items-center gap-1 font-medium"
             >
-              <Compass className="w-3 h-3 text-teal-700" />
-              <span>Portal Staff Surveyor &rarr;</span>
+              <Compass className="w-3 h-3 text-teal-600" />
+              <span>Portal Surveyor &rarr;</span>
             </button>
 
             <button
               type="button"
               onClick={() => onNavigateRole && onNavigateRole('admin_login')}
-              className="hover:text-purple-900 font-semibold flex items-center gap-1 cursor-pointer transition"
+              className="hover:text-purple-800 transition cursor-pointer flex items-center gap-1 font-medium"
             >
-              <ShieldCheck className="w-3 h-3 text-purple-700" />
-              <span>Portal Admin Otoritas &rarr;</span>
+              <ShieldCheck className="w-3 h-3 text-purple-600" />
+              <span>Portal Admin &rarr;</span>
             </button>
           </div>
 
         </div>
       </div>
 
-      {/* Footer */}
+      {/* Subtle Bottom Strip */}
       <div className="relative z-20 text-center">
-        <p className="text-[11px] text-white/80 font-sans">
-          Platform MRV Agroforestri Berbasis AI &amp; Satelit · Terdaftar di SRN-PPI KLHK · POJK No. 51/2017 ESG
+        <p className="text-[11px] text-white/85 font-sans font-medium drop-shadow-xs">
+          TaniKarbon MRV &amp; Registry Authority &copy; 2026 · Standar SRN-PPI KLHK &amp; POJK 51
         </p>
       </div>
     </div>
