@@ -1,6 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import LandingPage from './components/LandingPage';
 import AuthGateway from './components/AuthGateway';
+import SurveyorLoginView from './components/surveyor/SurveyorLoginView';
+import AdminLoginView from './components/admin/AdminLoginView';
 import FarmerWorkspace from './components/FarmerWorkspace';
 import CorporateMarketplace from './components/CorporateMarketplace';
 import SurveyorWorkspace from './components/SurveyorWorkspace';
@@ -11,6 +13,8 @@ export default function App() {
   // Path-based route resolver
   const getInitialView = () => {
     const path = window.location.pathname.toLowerCase();
+    if (path === '/surveyor/login') return 'surveyor_login';
+    if (path === '/admin/login') return 'admin_login';
     if (path === '/mitra-tani' || path === '/farmer' || path === '/petani') return 'farmer';
     if (path === '/korporat' || path === '/corporate' || path === '/b2b') return 'corporate';
     if (path === '/surveyor' || path === '/petugas' || path === '/verifier') return 'surveyor';
@@ -34,7 +38,9 @@ export default function App() {
     if (targetView === 'farmer') targetPath = '/mitra-tani';
     else if (targetView === 'corporate') targetPath = '/korporat';
     else if (targetView === 'surveyor') targetPath = '/surveyor';
+    else if (targetView === 'surveyor_login') targetPath = '/surveyor/login';
     else if (targetView === 'admin') targetPath = '/admin';
+    else if (targetView === 'admin_login') targetPath = '/admin/login';
     else if (targetView === 'auth') targetPath = '/login';
 
     if (window.location.pathname !== targetPath) {
@@ -47,7 +53,11 @@ export default function App() {
   React.useEffect(() => {
     const handlePopState = () => {
       const currentPath = window.location.pathname.toLowerCase();
-      if (currentPath === '/mitra-tani' || currentPath === '/farmer' || currentPath === '/petani') {
+      if (currentPath === '/surveyor/login') {
+        setView('surveyor_login');
+      } else if (currentPath === '/admin/login') {
+        setView('admin_login');
+      } else if (currentPath === '/mitra-tani' || currentPath === '/farmer' || currentPath === '/petani') {
         setView('farmer');
       } else if (currentPath === '/korporat' || currentPath === '/corporate' || currentPath === '/b2b') {
         setView('corporate');
@@ -89,6 +99,21 @@ export default function App() {
             defaultTab={authTab}
             onLogin={handleLogin}
             onBack={() => handleNavigate('landing')}
+            onNavigateRole={(target) => handleNavigate(target)}
+          />
+        )}
+        {view === 'surveyor_login' && (
+          <SurveyorLoginView
+            onLogin={handleLogin}
+            onBack={() => handleNavigate('landing')}
+            onNavigate={handleNavigate}
+          />
+        )}
+        {view === 'admin_login' && (
+          <AdminLoginView
+            onLogin={handleLogin}
+            onBack={() => handleNavigate('landing')}
+            onNavigate={handleNavigate}
           />
         )}
         {view === 'farmer' && (

@@ -27,11 +27,13 @@ flowchart LR
 | Role / Entitas | Akses Route | Fokus & Tanggung Jawab Utama |
 |---|---|---|
 | **1. Beranda Publik & Edukasi** | `/` | Narasi edukasi transparansi karbon, kalkulator alometrik Chave Tier-3, dan peta satelit 3D. |
-| **2. Gateway Autentikasi** | `/login` | Gerbang masuk glassmorphism dengan role switch instan untuk demo penjurian 4 peran. |
-| **3. Mitra Tani (AgroPulse)** | `/mitra-tani` | Paspor pohon digital, pendaftaran petak GPS, pemantauan dividen, dan penarikan dana tunai (BRI / DANA). |
-| **4. Surveyor Lapangan (Field Verifier)** | `/surveyor` | Inspeksi geofencing $\le 50\text{m}$, rekonsiliasi DBH & alometrik, mode offline PWA, dan resertifikasi tahunan. |
-| **5. Pembeli Korporat (B2B ESG Portal)** | `/korporat` | Neraca emisi Scope 1-3, bursa karbon per klaster, pre-funded deposit, integrasi ERP Auto-Buy, dan sertifikat pensiun. |
-| **6. Admin Platform (System Manager & Registry Authority)** | `/admin` | Executive Command Center, klasterisasi PostGIS 10 km, pengesahan audit eksternal, brankas escrow & split-payout, master alometrik, dan monitor API. |
+| **2. Gateway Autentikasi Publik** | `/login` | Gerbang masuk publik 2 tab bersih: Mitra Tani (No. HP/WA) & Perusahaan ESG (Work Email). |
+| **3. Login Khusus Staff Surveyor** | `/surveyor/login` | Tampilan mobile-first field petugas dengan ID Surveyor & PIN Keamanan. |
+| **4. Login Khusus Admin Otoritas** | `/admin/login` | Command center gelap/deep pine dengan Admin Identifier & Master Key. |
+| **5. Mitra Tani (AgroPulse)** | `/mitra-tani` | Paspor pohon digital, pendaftaran petak GPS, pemantauan dividen, dan penarikan dana tunai (BRI / DANA). |
+| **6. Surveyor Lapangan (Field Verifier)** | `/surveyor` | Inspeksi geofencing $\le 50\text{m}$, rekonsiliasi DBH & alometrik, mode offline PWA, dan resertifikasi tahunan. |
+| **7. Pembeli Korporat (B2B ESG Portal)** | `/korporat` | Neraca emisi Scope 1-3, bursa karbon per klaster, pre-funded deposit, integrasi ERP Auto-Buy, dan sertifikat pensiun. |
+| **8. Admin Platform (System Manager & Registry Authority)** | `/admin` | Executive Command Center, klasterisasi PostGIS 10 km, pengesahan audit eksternal, brankas escrow & split-payout, master alometrik, dan monitor API. |
 
 ---
 
