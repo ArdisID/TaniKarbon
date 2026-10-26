@@ -78,77 +78,82 @@ flowchart LR
 
 ```text
 TaniKarbon/
-├── public/                                # Aset fotografi kanopi, tanah, & sampel DBH
-│   ├── favicon.svg                        # Logo resmi TaniKarbon
-│   ├── auth-bg.jpg                        # Latar belakang Gunung Sindoro
-│   ├── canopy-tree.jpg                    # Tajuk pohon ortofoto
-│   ├── tree-dbh-sample.jpg                # Pita ukur lingkar batang surveyor
-│   └── pak-joko.jpg                       # Foto profil mitra tani binaan
-├── src/
-│   ├── components/
-│   │   ├── admin/                         # Modul Role Admin Platform (Registry Authority)
-│   │   │   ├── AdminDashboardView.jsx     # Halaman 1: Executive Command Center & Peta Nasional
-│   │   │   ├── AdminSidebar.jsx           # Fixed Left Sidebar (Desktop-First, No URL text)
-│   │   │   ├── AdminTopBar.jsx            # TopBar Indikator PostGIS, SRN-PPI & Role Switcher
-│   │   │   ├── AuditApprovalAndMintingModal.jsx # Modal Pengesahan Audit & Terbit Bursa
-│   │   │   ├── ClusterGeoManagementView.jsx # Halaman 2: PostGIS Cluster & Polygon Canvas
-│   │   │   ├── ClusterNameEditorModal.jsx # Editor Nama Geocoding & Narasi Dampak Desa
-│   │   │   ├── ExternalAuditAndMintingView.jsx # Halaman 3: Validasi Audit & Renewal Vintage
-│   │   │   ├── FinancialEscrowAndPayoutView.jsx # Halaman 4: Split-Payout & Rekonsiliasi Kas
-│   │   │   ├── RegistryAndApiMonitorView.jsx # Halaman 6: Buku Besar Sertifikat & Log API
-│   │   │   ├── SystemParametersMasterView.jsx # Halaman 5: Master Alometrik CRUD & Harga
-│   │   │   ├── UploadTransferProofModal.jsx # Modal Unggah Struk Bukti Transfer Payout
-│   │   │   └── UserAndSurveyorManagementView.jsx # Halaman 7: Penugasan Surveyor & KYB
-│   │   ├── corporate/                     # Modul Role Korporat / B2B ESG Buyer
-│   │   │   ├── CarbonCheckoutModal.jsx    # Modal Pembelian Karbon Klaster
-│   │   │   ├── CarbonMarketplaceView.jsx  # Katalog Bursa Karbon Terverifikasi
-│   │   │   ├── CertificatePreviewModal.jsx # Modal Pratinjau Sertifikat QR Code
-│   │   │   ├── CertificateRegistryView.jsx # Portofolio Sertifikat Pensiun (RETIRED)
-│   │   │   ├── ClusterDetailDrawer.jsx    # Drawer Detail Spasial & Bukti Lapangan
-│   │   │   ├── CompanyDashboardView.jsx   # Dasbor Neraca Emisi Scope 1-3 & ESG
-│   │   │   ├── CorporateSidebar.jsx       # Sidebar Desktop Linear/Stripe Style
-│   │   │   ├── CorporateTopBar.jsx        # TopBar Profil PT & Role Switcher
-│   │   │   ├── CorporateWalletView.jsx    # Brankas Deposit & Riwayat Transaksi
-│   │   │   ├── ErpIntegrationView.jsx     # Dokumentasi REST API, API Key & Webhook
-│   │   │   └── TopUpDepositModal.jsx      # Modal Isi Deposit Korporat VA
-│   │   ├── farmer/                        # Modul Role Mitra Petani (AgroPulse)
-│   │   │   ├── FarmerDashboardView.jsx    # Dasbor Dividen & Ringkasan Pohon
-│   │   │   ├── FarmerMobileNav.jsx        # Floating Bottom Bar untuk Layar HP
-│   │   │   ├── FarmerSidebar.jsx          # Sidebar Desktop Profil Petani
-│   │   │   ├── FarmerTopBar.jsx           # TopBar Sinkronisasi & Switcher
-│   │   │   ├── FarmerWalletView.jsx       # Dompet Bagi Hasil & Accordion Transparansi
-│   │   │   ├── LandManagementView.jsx     # Manajemen Petak Lahan & Peta Ortofoto
-│   │   │   ├── LandRegistrationWizard.jsx # Form 3 Langkah Pendaftaran Petak Baru
-│   │   │   ├── SamplePhotoModal.jsx       # Pratinjau Foto Pohon & Metadata Satelit
-│   │   │   ├── TransferReceiptModal.jsx   # Modal Struk Bukti Transfer Bank
-│   │   │   ├── VerificationTimelineView.jsx # Stepper 4 Tahap Menuju Verifikasi Bursa
-│   │   │   ├── ViewfinderModal.jsx        # Kamera Unggah Sampel Ber-Watermark GPS
-│   │   │   └── WithdrawalModal.jsx        # Modal Penarikan Saldo Petani (BRI/DANA)
-│   │   ├── surveyor/                      # Modul Role Petugas / Surveyor Lapangan
-│   │   │   ├── AnnualReverificationView.jsx # Inspeksi Ulang Pertumbuhan Tahunan
-│   │   │   ├── FieldInspectionWorksheetView.jsx # Lembar Kerja Ukur DBH & Geofencing
-│   │   │   ├── FieldMapNavigationView.jsx # Navigasi Rute GPS ke Kebun Petani
-│   │   │   ├── OfflineSyncAndHistoryView.jsx # Antrean Sinkronisasi Offline & Log
-│   │   │   ├── ScheduleVisitModal.jsx     # Modal Penjadwalan Survei Lapangan
-│   │   │   ├── SurveyorDashboardView.jsx  # Dasbor Kinerja, Kuota & Antrean Tugas
-│   │   │   ├── SurveyorMobileNav.jsx      # Bottom Bar Navigasi Mobile Petugas
-│   │   │   ├── SurveyorSidebar.jsx        # Sidebar Desktop Surveyor
-│   │   │   └── SurveyorTopBar.jsx         # Indikator Online/Offline & Switcher
-│   │   ├── AdminWorkspace.jsx             # Orkestrator Seluruh Modul Admin
-│   │   ├── AuthGateway.jsx                # Pintu Masuk Autentikasi Glassmorphism
-│   │   ├── CorporateMarketplace.jsx       # Orkestrator Portal Korporat
-│   │   ├── FarmerWorkspace.jsx            # Orkestrator Portal Mitra Tani
-│   │   ├── LandingPage.jsx                # Halaman Beranda Naratif Publik
-│   │   ├── Satellite3DMap.jsx             # Peta Satelit Interaktif Leaflet
-│   │   └── SurveyorWorkspace.jsx          # Orkestrator Portal Surveyor
-│   ├── App.jsx                            # Router URL & Manajemen State Global
-│   ├── data.js                            # Dataset Master Alometrik, Pohon & Klaster
-│   ├── index.css                          # Desain Sistem Tailwind & Font
-│   └── main.jsx                           # Entry Point React DOM
-├── index.html                             # Template HTML dengan Google Fonts
-├── package.json                           # Dependensi & Skrip Proyek
-├── tailwind.config.js                     # Token Palet Warna Deep Pine & Emerald
-└── vite.config.js                         # Bundler Konfigurasi Vite
+├── Frontend/                              # Aplikasi Web Frontend (React + Vite + TailwindCSS)
+│   ├── public/                            # Aset fotografi kanopi, tanah, & sampel DBH
+│   │   ├── favicon.svg                    # Logo resmi TaniKarbon
+│   │   ├── auth-bg-plantation.jpg         # Latar belakang lanskap perkebunan autentik
+│   │   ├── canopy-tree.jpg                # Tajuk pohon ortofoto
+│   │   ├── tree-dbh-sample.jpg            # Pita ukur lingkar batang surveyor
+│   │   └── pak-joko.jpg                   # Foto profil mitra tani binaan
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── admin/                     # Modul Role Admin Platform (Registry Authority)
+│   │   │   │   ├── AdminDashboardView.jsx # Executive Command Center & Peta Nasional
+│   │   │   │   ├── AdminLoginView.jsx     # Dedicated Root Authority Login
+│   │   │   │   ├── AdminSidebar.jsx       # Fixed Left Sidebar (Desktop-First)
+│   │   │   │   ├── AdminTopBar.jsx        # TopBar Indikator PostGIS & SRN-PPI
+│   │   │   │   ├── AuditApprovalAndMintingModal.jsx # Modal Pengesahan Audit & Terbit Bursa
+│   │   │   │   ├── ClusterGeoManagementView.jsx # PostGIS Cluster & Polygon Canvas
+│   │   │   │   ├── ClusterNameEditorModal.jsx # Editor Nama Geocoding & Narasi Dampak Desa
+│   │   │   │   ├── ExternalAuditAndMintingView.jsx # Validasi Audit & Renewal Vintage
+│   │   │   │   ├── FinancialEscrowAndPayoutView.jsx # Split-Payout & Rekonsiliasi Kas
+│   │   │   │   ├── RegistryAndApiMonitorView.jsx # Buku Besar Sertifikat & Log API
+│   │   │   │   ├── SystemParametersMasterView.jsx # Master Alometrik CRUD & Harga
+│   │   │   │   ├── UploadTransferProofModal.jsx # Modal Unggah Struk Bukti Transfer Payout
+│   │   │   │   └── UserAndSurveyorManagementView.jsx # Penugasan Surveyor & KYB
+│   │   │   ├── corporate/                 # Modul Role Korporat / B2B ESG Buyer
+│   │   │   │   ├── CarbonCheckoutModal.jsx # Modal Pembelian Karbon Klaster
+│   │   │   │   ├── CarbonMarketplaceView.jsx # Katalog Bursa Karbon Terverifikasi
+│   │   │   │   ├── CertificatePreviewModal.jsx # Modal Pratinjau Sertifikat QR Code
+│   │   │   │   ├── CertificateRegistryView.jsx # Portofolio Sertifikat Pensiun (RETIRED)
+│   │   │   │   ├── ClusterDetailDrawer.jsx # Drawer Detail Spasial & Bukti Lapangan
+│   │   │   │   ├── CompanyDashboardView.jsx # Dasbor Neraca Emisi Scope 1-3 & ESG
+│   │   │   │   ├── CorporateSidebar.jsx   # Sidebar Desktop Linear/Stripe Style
+│   │   │   │   ├── CorporateTopBar.jsx    # TopBar Profil PT & Role Switcher
+│   │   │   │   ├── CorporateWalletView.jsx # Brankas Deposit & Riwayat Transaksi
+│   │   │   │   ├── ErpIntegrationView.jsx # Dokumentasi REST API, API Key & Webhook
+│   │   │   │   └── TopUpDepositModal.jsx  # Modal Isi Deposit Korporat VA
+│   │   │   ├── farmer/                    # Modul Role Mitra Petani (AgroPulse - Bento Soft-Pill UI)
+│   │   │   │   ├── FarmerDashboardView.jsx # Dasbor Bento Soft-Pill, Kuota Klaster & Biometrik
+│   │   │   │   ├── FarmerMobileNav.jsx    # Floating Bottom Bar untuk Layar HP
+│   │   │   │   ├── FarmerSidebar.jsx      # Sidebar Desktop Profil Petani
+│   │   │   │   ├── FarmerTopBar.jsx       # TopBar Sinkronisasi & Switcher
+│   │   │   │   ├── FarmerWalletView.jsx   # Dompet Bagi Hasil & Transparansi
+│   │   │   │   ├── LandManagementView.jsx # Manajemen Petak Lahan & Peta Ortofoto
+│   │   │   │   ├── LandRegistrationWizard.jsx # Form 3 Langkah Pendaftaran Petak Baru
+│   │   │   │   ├── SamplePhotoModal.jsx   # Pratinjau Foto Pohon & Metadata Satelit
+│   │   │   │   ├── TransferReceiptModal.jsx # Modal Struk Bukti Transfer Bank
+│   │   │   │   ├── VerificationTimelineView.jsx # Stepper 4 Tahap Verifikasi Bursa
+│   │   │   │   ├── ViewfinderModal.jsx    # Kamera Unggah Sampel Ber-Watermark GPS
+│   │   │   │   └── WithdrawalModal.jsx    # Modal Penarikan Saldo Petani (BRI/DANA)
+│   │   │   ├── surveyor/                  # Modul Role Petugas / Surveyor Lapangan
+│   │   │   │   ├── AnnualReverificationView.jsx # Inspeksi Ulang Pertumbuhan Tahunan
+│   │   │   │   ├── FieldInspectionWorksheetView.jsx # Lembar Kerja Ukur DBH & Geofencing
+│   │   │   │   ├── FieldMapNavigationView.jsx # Navigasi Rute GPS ke Kebun Petani
+│   │   │   │   ├── OfflineSyncAndHistoryView.jsx # Antrean Sinkronisasi Offline & Log
+│   │   │   │   ├── ScheduleVisitModal.jsx # Modal Penjadwalan Survei Lapangan
+│   │   │   │   ├── SurveyorDashboardView.jsx # Dasbor Kinerja, Kuota & Antrean Tugas
+│   │   │   │   ├── SurveyorLoginView.jsx  # Dedicated Field Staff Login (ID & PIN)
+│   │   │   │   ├── SurveyorMobileNav.jsx  # Bottom Bar Navigasi Mobile Petugas
+│   │   │   │   ├── SurveyorSidebar.jsx    # Sidebar Desktop Surveyor
+│   │   │   │   └── SurveyorTopBar.jsx     # Indikator Online/Offline & Switcher
+│   │   │   ├── AdminWorkspace.jsx         # Orkestrator Seluruh Modul Admin
+│   │   │   ├── AuthGateway.jsx            # Pintu Masuk Autentikasi Glassmorphism Dribbble
+│   │   │   ├── CorporateMarketplace.jsx   # Orkestrator Portal Korporat
+│   │   │   ├── FarmerWorkspace.jsx        # Orkestrator Portal Mitra Tani
+│   │   │   ├── LandingPage.jsx            # Halaman Beranda Naratif Publik
+│   │   │   ├── Satellite3DMap.jsx         # Peta Satelit Interaktif Leaflet
+│   │   │   └── SurveyorWorkspace.jsx      # Orkestrator Portal Surveyor
+│   │   ├── App.jsx                        # Router URL & Manajemen State Global
+│   │   ├── data.js                        # Dataset Master Alometrik, Pohon & Klaster
+│   │   ├── index.css                      # Desain Sistem Tailwind & Font
+│   │   └── main.jsx                       # Entry Point React DOM
+│   ├── index.html                         # Template HTML dengan Google Fonts
+│   ├── package.json                       # Dependensi & Skrip Frontend
+│   ├── tailwind.config.js                 # Token Palet Warna Deep Pine & Emerald
+│   └── vite.config.js                     # Bundler Konfigurasi Vite
+├── package.json                           # Root Monorepo Scripts
+└── README.md
 ```
 
 ---
@@ -173,28 +178,36 @@ TaniKarbon/
    cd TaniKarbon
    ```
 
-2. **Install dependensi:**
-   ```bash
-   npm install
-   ```
-
-3. **Jalankan development server:**
+2. **Jalankan Frontend (opsi 1 - langsung dari folder root):**
    ```bash
    npm run dev
    ```
-   Aplikasi akan berjalan di `http://localhost:5173` atau `http://localhost:5174`.
 
-4. **Navigasi Cepat Antar Portal (URL):**
+   **Atau (opsi 2 - masuk ke folder Frontend):**
+   ```bash
+   cd Frontend
+   npm install
+   npm run dev
+   ```
+   Aplikasi akan berjalan di `http://localhost:5173`.
+
+3. **Navigasi Cepat Antar Portal (URL):**
    * Beranda Publik: `http://localhost:5173/`
-   * Autentikasi & Quick Demo: `http://localhost:5173/login`
+   * Autentikasi Publik & Quick Demo: `http://localhost:5173/login`
+   * Login Khusus Surveyor Lapangan: `http://localhost:5173/surveyor/login`
+   * Login Khusus Admin Otoritas: `http://localhost:5173/admin/login`
    * Portal Mitra Tani: `http://localhost:5173/mitra-tani`
    * Portal Surveyor Lapangan: `http://localhost:5173/surveyor`
    * Portal Korporat B2B: `http://localhost:5173/korporat`
    * Portal Admin & Otoritas Registri: `http://localhost:5173/admin`
 
-5. **Build untuk Produksi:**
+4. **Build untuk Produksi:**
    ```bash
+   # Dari root:
    npm run build
+
+   # Atau dari folder Frontend:
+   cd Frontend && npm run build
    ```
 
 ---
