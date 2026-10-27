@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
 from uuid import UUID
+from datetime import datetime
 
 # Skema JSON yang masuk dari ERP Pabrik
 class AutoBuyRequest(BaseModel):
@@ -39,3 +40,45 @@ class WithdrawRequest(BaseModel):
 
 class DistributeRevenueRequest(BaseModel):
     transaction_id: UUID = Field(..., description="ID Transaksi dari pembelian korporat")
+
+class SpeciesSummary(BaseModel):
+    species_name: str
+    total_trees: int
+    total_carbon_tco2e: float
+
+class FarmerDashboardSummary(BaseModel):
+    total_land_area_sqm: float
+    total_all_trees: int
+    total_all_carbon_tco2e: float
+    species_breakdown: List[SpeciesSummary]
+
+# Skema Autentikasi & JWT
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: UUID
+    email: str
+    full_name: str
+    role: str
+
+class UserLoginRequest(BaseModel):
+    email: str = Field(..., example="petani@tanikarbon.com", description="Email atau nomor WhatsApp")
+    password: str = Field(..., example="Password123!", description="Kata sandi")
+    role: Optional[str] = Field(None, example="farmer", description="Role opsional untuk validasi preferensi UI")
+
+class UserRegisterRequest(BaseModel):
+    email: EmailStr = Field(..., example="petani.baru@tanikarbon.com")
+    full_name: str = Field(..., example="Pak Joko Widodo")
+    password: str = Field(..., min_length=6, example="Password123!")
+    role: str = Field("farmer", example="farmer", description="Pilihan: farmer, corporate/company, surveyor, admin")
+
+class UserResponse(BaseModel):
+    id: UUID
+    full_name: str
+    email: str
+    role: str
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

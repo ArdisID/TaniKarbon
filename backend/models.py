@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import Column, String, Numeric, Integer, ForeignKey, Enum
+from datetime import datetime
+from sqlalchemy import Column, String, Numeric, Integer, ForeignKey, Enum, Boolean, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -9,7 +10,11 @@ class User(Base):
     __tablename__ = "users"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name = Column(String(150), nullable=False)
+    email = Column(String(150), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
     
     wallet = relationship("Wallet", back_populates="user", uselist=False)
     company_profile = relationship("CompanyProfile", back_populates="user", uselist=False)

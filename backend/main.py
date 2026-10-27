@@ -1,5 +1,6 @@
 import math
 from fastapi import FastAPI, Depends, HTTPException, Security
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,9 +8,17 @@ from sqlalchemy.future import select
 
 from database import get_db
 from models import CompanyProfile, Wallet, Cluster, Transaction, Certificate, TreeBlock
-from schemas import AutoBuyRequest, AutoBuyResponse, LandPlotRequest, TreeBlockRequest, WithdrawRequest, DistributeRevenueRequest
+from schemas import AutoBuyRequest, AutoBuyResponse, LandPlotRequest, TreeBlockRequest, WithdrawRequest, DistributeRevenueRequest, FarmerDashboardSummary
 
 app = FastAPI(title="TaniKarbon API - Interoperabilitas UINIC 8.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"], # Port standar Vite & React
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 1. Konfigurasi Keamanan Header API Key
 API_KEY_NAME = "X-API-Key"
@@ -243,4 +252,45 @@ async def distribute_revenue(request: DistributeRevenueRequest, db: AsyncSession
         "platform_fee": platform_fee,
         "net_distributed_per_farmer": split_amount,
         "total_farmers_received": len(farmer_rows)
+    }
+
+
+@app.get("/api/v1/farmer/dashboard/summary", response_model=FarmerDashboardSummary)
+async def get_farmer_dashboard_summary(db: AsyncSession = Depends(get_db)):
+    # Query Agregasi Total
+    total_query = text("""
+        SELECT 
+            COALESCE(SUM(lp.total_area_sqm), 0) as total_area,
+            COALESCE(SUM(tb.total_population), 0) as total_trees,
+            COALESCE(SUM(tb.estimated_tco2e_per_year), 0) as total_carbon
+        FROM land_plots lp
+        LEFT JOIN tree_blocks tb ON lp.id = tb.land_plot_id
+        WHERE lp.farmer_id = :farmer_id
+    """)
+    total_result = await db.execute(total_query, {"farmer_id": FARMER_ID})
+    totals = total_result.fetchone()
+    
+    # Query Agregasi per Spesies (Group By)
+    species_query = text("""
+        SELECT 
+            tb.species_name,
+            SUM(tb.total_population) as total_trees,
+            SUM(tb.estimated_tco2e_per_year) as total_carbon
+        FROM land_plots lp
+        JOIN tree_blocks tb ON lp.id = tb.land_plot_id
+        WHERE lp.farmer_id = :farmer_id
+        GROUP BY tb.species_name
+    """)
+    species_result = await db.execute(species_query, {"farmer_id": FARMER_ID})
+    
+    breakdown = [
+        {"species_name": row.species_name, "total_trees": row.total_trees, "total_carbon_tco2e": row.total_carbon}
+        for row in species_result.fetchall()
+    ]
+    
+    return {
+        "total_land_area_sqm": totals.total_area,
+        "total_all_trees": totals.total_trees,
+        "total_all_carbon_tco2e": totals.total_carbon,
+        "species_breakdown": breakdown
     }
