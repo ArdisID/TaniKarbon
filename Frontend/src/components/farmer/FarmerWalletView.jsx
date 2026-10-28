@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Wallet, 
   ArrowUpRight, 
@@ -21,69 +21,129 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { formatRupiah } from '../../data';
+import { getFarmerWallet } from '../../api/farmer';
 
 export default function FarmerWalletView({ 
-  availableBalance = 3250000, 
-  escrowBalance = 1450000,
+  availableBalance = 0, 
+  escrowBalance = 0,
   transactions = [],
   onOpenWithdrawal,
   onOpenReceipt,
   onToast 
 }) {
+  // ==========================================
+  // 1. Inisialisasi State Hooks
+  // ==========================================
+  const [walletData, setWalletData] = useState({
+    available_balance: 0,
+    escrow_balance: 0,
+    recent_transactions: []
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(null);
   const [breakdownOpen, setBreakdownOpen] = useState(true);
 
-  // Default transactions list with 3 status badges: Dana Terkirim, Diproses Admin, Gagal
-  const initialTransactions = [
-    {
-      id: 'WD-084219',
-      title: 'Pencairan Dana Dividen Karbon (Batch Q3)',
-      recipient: 'Bank BRI Rekening ****4821',
-      recipientFull: 'Bank BRI - 0142-01-084821-50-8 (a.n. JOKO WIDODO)',
-      amount: 892500,
-      date: '24 Okt 2026, 14:20 WIB',
-      status: 'Dana Terkirim',
-      statusColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-      refNumber: 'TRX-BRI-99281726'
-    },
-    {
-      id: 'WD-083102',
-      title: 'Pencairan Saldo via DANA e-Wallet',
-      recipient: 'DANA 0812-****-7890',
-      recipientFull: 'DANA e-Wallet - 0812-4921-7890 (a.n. JOKO WIDODO)',
-      amount: 500000,
-      date: '20 Okt 2026, 09:15 WIB',
-      status: 'Diproses Admin',
-      statusColor: 'bg-amber-100 text-amber-800 border-amber-300',
-      refNumber: 'TRX-DNA-88192031'
-    },
-    {
-      id: 'WD-071192',
-      title: 'Pencairan Dana Dividen Karbon (Batch Q2)',
-      recipient: 'Bank BRI Rekening ****4821',
-      recipientFull: 'Bank BRI - 0142-01-084821-50-8 (a.n. JOKO WIDODO)',
-      amount: 1250000,
-      date: '15 Jul 2026, 14:05 WIB',
-      status: 'Dana Terkirim',
-      statusColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-      refNumber: 'TRX-BRI-88192031'
-    },
-    {
-      id: 'WD-062831',
-      title: 'Penarikan Bank Mandiri (Nomor Salah)',
-      recipient: 'Bank Mandiri ****1928',
-      recipientFull: 'Bank Mandiri - 137-00-1928374-1 (a.n. JOKO WIDODO)',
-      amount: 600000,
-      date: '10 Mei 2026, 11:30 WIB',
-      status: 'Gagal',
-      statusColor: 'bg-red-100 text-red-800 border-red-300',
-      refNumber: 'TRX-MDR-FAILED'
+  // ==========================================
+  // 2. Variabel Turunan (Derived State)
+  // ==========================================
+  const displayAvailableBalance = walletData.available_balance || availableBalance || 0;
+  const displayEscrowBalance = walletData.escrow_balance || escrowBalance || 0;
+
+  const rawTransactions = (walletData?.recent_transactions && walletData.recent_transactions.length > 0)
+    ? walletData.recent_transactions
+    : (transactions || []);
+
+  const allTransactions = rawTransactions.map((tx) => {
+    const isCompleted = tx.status === 'completed' || tx.status === 'Dana Terkirim';
+    const isPending = tx.status === 'pending' || tx.status === 'Diproses Admin';
+    const isFailed = tx.status === 'failed' || tx.status === 'Gagal';
+
+    return {
+      ...tx,
+      title: tx.title || tx.description || 'Transaksi Dompet',
+      recipient: tx.recipient || (tx.transaction_type === 'credit_payout' ? 'Dompet TaniKarbon (Bagi Hasil)' : 'Rekening Bank Terdaftar'),
+      amount: tx.amount || 0,
+      date: tx.date || (tx.created_at ? new Date(tx.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' WIB' : '—'),
+      statusText: isCompleted ? 'Dana Terkirim' : isFailed ? 'Gagal' : 'Diproses Admin',
+      statusColor: tx.statusColor || (isCompleted ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : isFailed ? 'bg-red-100 text-red-800 border-red-300' : 'bg-amber-100 text-amber-800 border-amber-300'),
+      refNumber: tx.refNumber || `TRX-${String(tx.id).slice(0, 8).toUpperCase()}`
+    };
+  });
+
+  const showEmptyTransactions = allTransactions.length === 0;
+
+  // ==========================================
+  // 3. useEffect untuk Fetch Data dari API
+  // ==========================================
+  useEffect(() => {
+    let isMounted = true;
+    const fetchWalletData = async () => {
+      setIsLoading(true);
+      try {
+        const data = await getFarmerWallet();
+        if (isMounted && data) {
+          setWalletData({
+            available_balance: data.available_balance ?? 0,
+            escrow_balance: data.escrow_balance ?? 0,
+            recent_transactions: data.recent_transactions ?? []
+          });
+          setFetchError(null);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setFetchError(err.message || 'Gagal memuat saldo dompet');
+          console.error('Gagal fetch wallet:', err);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchWalletData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Sinkronisasi jika parent component memperbarui props (misal setelah penarikan dana)
+  useEffect(() => {
+    if (availableBalance || escrowBalance || (transactions && transactions.length > 0)) {
+      setWalletData(prev => ({
+        available_balance: availableBalance || prev.available_balance,
+        escrow_balance: escrowBalance || prev.escrow_balance,
+        recent_transactions: (transactions && transactions.length > 0) ? transactions : prev.recent_transactions
+      }));
     }
-  ];
+  }, [availableBalance, escrowBalance, transactions]);
 
-  const allTransactions = (transactions && transactions.length > 0) ? transactions : initialTransactions;
+  // ==========================================
+  // 4. Fungsi Handler
+  // ==========================================
+  const handleWithdraw = () => {
+    if (onOpenWithdrawal) {
+      onOpenWithdrawal();
+    }
+  };
 
+  const handleToggleBreakdown = () => {
+    setBreakdownOpen(prev => !prev);
+  };
+
+  // ==========================================
+  // 5. Return JSX
+  // ==========================================
   return (
     <div className="space-y-6 animate-fade-in pb-20 md:pb-8">
+      {/* Fetch Error Banner */}
+      {fetchError && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-800 text-xs">
+          <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+          <span>Gagal memuat data dompet terkini: {fetchError}</span>
+        </div>
+      )}
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -99,9 +159,9 @@ export default function FarmerWalletView({
         </div>
 
         <button
-          onClick={onOpenWithdrawal}
-          disabled={availableBalance <= 0}
-          className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-extrabold text-xs flex items-center gap-2 transition shadow-md self-start sm:self-auto"
+          onClick={handleWithdraw}
+          disabled={displayAvailableBalance <= 0}
+          className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-extrabold text-xs flex items-center gap-2 transition shadow-md self-start sm:self-auto cursor-pointer disabled:cursor-not-allowed"
         >
           <ArrowUpRight className="w-4 h-4" />
           <span>Tarik Dana ke Rekening</span>
@@ -125,7 +185,7 @@ export default function FarmerWalletView({
 
             <div className="mt-2">
               <span className="text-2xl sm:text-3xl font-black text-stone-800 font-mono tracking-tight">
-                {formatRupiah(escrowBalance)}
+                {formatRupiah(displayEscrowBalance)}
               </span>
             </div>
 
@@ -155,7 +215,7 @@ export default function FarmerWalletView({
 
             <div className="mt-2">
               <span className="text-3xl sm:text-4xl font-black text-white font-mono tracking-tight">
-                {formatRupiah(availableBalance)}
+                {formatRupiah(displayAvailableBalance)}
               </span>
             </div>
 
@@ -167,8 +227,9 @@ export default function FarmerWalletView({
           <div className="mt-5 pt-4 border-t border-emerald-600/40 flex items-center justify-between">
             <span className="text-xs text-emerald-300">Bebas biaya transfer mitra</span>
             <button
-              onClick={onOpenWithdrawal}
-              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-bold text-xs transition shadow-sm"
+              onClick={handleWithdraw}
+              disabled={displayAvailableBalance <= 0}
+              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-stone-950 font-bold text-xs transition shadow-sm cursor-pointer disabled:cursor-not-allowed"
             >
               Tarik Dana Sekarang
             </button>
@@ -180,7 +241,7 @@ export default function FarmerWalletView({
       <div className="bg-white rounded-3xl border border-stone-200/80 shadow-sm overflow-hidden">
         <button
           type="button"
-          onClick={() => setBreakdownOpen(!breakdownOpen)}
+          onClick={handleToggleBreakdown}
           className="w-full p-5 sm:p-6 text-left flex items-center justify-between gap-3 hover:bg-stone-50/70 transition"
         >
           <div className="flex items-center gap-3">
@@ -326,58 +387,72 @@ export default function FarmerWalletView({
         </div>
 
         <div className="divide-y divide-stone-100">
-          {allTransactions.map((tx) => (
-            <div 
-              key={tx.id}
-              className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-stone-50/70 -mx-3 px-3 rounded-2xl transition"
-            >
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
-                  <Landmark className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-xs sm:text-sm font-extrabold text-[#14382C] truncate">
-                    {tx.title}
-                  </h4>
-                  
-                  {/* Badge Status: Diproses Admin, Dana Terkirim, atau Gagal */}
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${tx.statusColor}`}>
-                      {tx.status === 'Dana Terkirim' && <CheckCircle2 className="w-3 h-3 text-emerald-700" />}
-                      {tx.status === 'Diproses Admin' && <Clock className="w-3 h-3 text-amber-700" />}
-                      {tx.status === 'Gagal' && <AlertCircle className="w-3 h-3 text-red-700" />}
-                      <span>{tx.status}</span>
-                    </span>
-                    <span className="text-[10px] text-stone-600 font-medium">
-                      {tx.recipient}
-                    </span>
-                    <span className="text-[10px] text-stone-400 font-mono">
-                      Ref: {tx.refNumber || tx.id}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-stone-400 mt-1">{tx.date}</p>
-                </div>
+          {showEmptyTransactions ? (
+            <div className="py-16 text-center">
+              <div className="mx-auto w-20 h-20 bg-stone-100 rounded-2xl flex items-center justify-center mb-4">
+                <Receipt className="w-10 h-10 text-stone-300" />
               </div>
-
-              <div className="text-left sm:text-right shrink-0 pl-13 sm:pl-0 flex flex-col sm:items-end">
-                <span className="font-mono font-bold text-sm sm:text-base text-emerald-800 block">
-                  +{formatRupiah(tx.amount)}
-                </span>
-                
-                {/* Tombol Lihat Bukti Transfer (Menampilkan gambar struk bukti transfer) */}
-                {tx.status === 'Dana Terkirim' && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenReceipt(tx)}
-                    className="text-[11px] text-emerald-800 hover:text-emerald-900 font-bold underline mt-1 flex items-center gap-1"
-                  >
-                    <Receipt className="w-3.5 h-3.5" />
-                    <span>Lihat Bukti Transfer</span>
-                  </button>
-                )}
-              </div>
+              <p className="text-sm text-stone-400 font-medium">
+                Belum ada transaksi bagi hasil klaster korporasi yang masuk ke dompet Anda.
+              </p>
+              <p className="text-xs text-stone-400 mt-1">
+                Saldo tersedia akan muncul setelah ada offset korporasi.
+              </p>
             </div>
-          ))}
+          ) : (
+            allTransactions.map((tx) => (
+              <div 
+                key={tx.id}
+                className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-stone-50/70 -mx-3 px-3 rounded-2xl transition"
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
+                    <Landmark className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-xs sm:text-sm font-extrabold text-[#14382C] truncate">
+                      {tx.title}
+                    </h4>
+                    
+                    {/* Badge Status: Diproses Admin, Dana Terkirim, atau Gagal */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${tx.statusColor}`}>
+                        {tx.statusText === 'Dana Terkirim' && <CheckCircle2 className="w-3 h-3 text-emerald-700" />}
+                        {tx.statusText === 'Diproses Admin' && <Clock className="w-3 h-3 text-amber-700" />}
+                        {tx.statusText === 'Gagal' && <AlertCircle className="w-3 h-3 text-red-700" />}
+                        <span>{tx.statusText}</span>
+                      </span>
+                      <span className="text-[10px] text-stone-600 font-medium">
+                        {tx.recipient}
+                      </span>
+                      <span className="text-[10px] text-stone-400 font-mono">
+                        Ref: {tx.refNumber}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-stone-400 mt-1">{tx.date}</p>
+                  </div>
+                </div>
+
+                <div className="text-left sm:text-right shrink-0 pl-13 sm:pl-0 flex flex-col sm:items-end">
+                  <span className={`font-mono font-bold text-sm sm:text-base ${tx.transaction_type === 'credit_payout' ? 'text-emerald-800' : 'text-stone-800'}`}>
+                    {tx.transaction_type === 'credit_payout' ? '+' : '-'}{formatRupiah(tx.amount)}
+                  </span>
+                  
+                  {/* Tombol Lihat Bukti Transfer */}
+                  {tx.statusText === 'Dana Terkirim' && onOpenReceipt && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenReceipt(tx)}
+                      className="text-[11px] text-emerald-800 hover:text-emerald-900 font-bold underline mt-1 flex items-center gap-1"
+                    >
+                      <Receipt className="w-3.5 h-3.5" />
+                      <span>Lihat Bukti Transfer</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

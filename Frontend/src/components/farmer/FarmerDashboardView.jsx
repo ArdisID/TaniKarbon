@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Leaf, 
   Menu, 
@@ -18,7 +18,9 @@ import {
   ClipboardList,
   Calendar,
   ArrowDownLeft,
-  ArrowUpRight
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { formatRupiah } from '../../data';
 
@@ -68,13 +70,72 @@ export default function FarmerDashboardView({
 
   // Land plots list - Strictly realLands, no fallbackPlots!
   const plotList = Array.isArray(realLands) ? realLands : [];
+  const hasTreeBlocks = (plot) => Array.isArray(plot?.tree_blocks) && plot.tree_blocks.length > 0;
   const verifiedCount = plotList.filter(p => p.status === 'verified' || p.status === 'active').length;
-  const pendingCount = plotList.filter(p => p.status === 'draft' || p.status === 'pending' || p.status === 'pending_survey').length;
+  const pendingPlots = plotList.filter(p => p.status === 'draft' || p.status === 'pending' || p.status === 'pending_survey');
+  const pendingCount = pendingPlots.length;
+  const pendingWithBlocksCount = pendingPlots.filter(hasTreeBlocks).length;
+  const noTreeDraftCount = pendingCount - pendingWithBlocksCount;
 
-  // 1. Upcoming Inspections - Strictly dynamic from backend, no fallbackInspections!
-  const inspections = Array.isArray(farmerSummary?.upcoming_inspections)
+  // 1. Upcoming Inspections - only plots that already have at least 1 tree block
+  const rawInspections = Array.isArray(farmerSummary?.upcoming_inspections)
     ? farmerSummary.upcoming_inspections
     : [];
+  let inspections = rawInspections.filter((item) => {
+    if (!item?.land_plot_id) return true;
+    const plot = plotList.find(p => String(p.id) === String(item.land_plot_id));
+    return !plot || hasTreeBlocks(plot);
+  });
+
+  // Fallback jika upcoming_inspections backend belum termuat tetapi ada petak draft/pending dengan blok pohon
+  if (inspections.length === 0) {
+    const eligiblePlots = plotList.filter(
+      p => (p.status === 'draft' || p.status === 'pending' || p.status === 'pending_survey') && hasTreeBlocks(p)
+    );
+    if (eligiblePlots.length > 0) {
+      inspections = eligiblePlots.map(p => ({
+        land_plot_id: p.id,
+        land_plot_name: p.name,
+        surveyor_id: p.surveyor_id || null,
+        surveyor_name: p.surveyor_name || null,
+        surveyor_code: p.surveyor_code || null,
+        scheduled_date: p.scheduled_date || 'Dalam Penjadwalan',
+        status_note: 'Inspeksi Poligon GPS & Sampel DBH (Geofencing \u2264 50m)'
+      }));
+    }
+  }
+
+  // State index carousel jika terdapat lebih dari 1 lahan yang menunggu audit
+  const [currentInspectionIdx, setCurrentInspectionIdx] = useState(0);
+
+  // Data dinamis inspeksi aktif & relasi surveyor
+  const totalInspections = inspections.length;
+  const safeInspectionIdx = (currentInspectionIdx >= 0 && currentInspectionIdx < totalInspections)
+    ? currentInspectionIdx
+    : 0;
+  const activeInspection = totalInspections > 0 ? inspections[safeInspectionIdx] : null;
+  const activeInspectionPlot = activeInspection?.land_plot_id
+    ? plotList.find(p => String(p.id) === String(activeInspection.land_plot_id))
+    : null;
+
+  // Baca relasi dinamis yang sama seperti di VerificationTrackingView.jsx
+  const inspectionSurveyorId = activeInspectionPlot?.surveyor_id || activeInspection?.surveyor_id || null;
+  const inspectionRawName = activeInspectionPlot?.surveyor_name || activeInspection?.surveyor_name || null;
+  const inspectionRawCode = activeInspectionPlot?.surveyor_code || activeInspection?.surveyor_code || null;
+
+  // Jika surveyor_id kosong/null, tampilkan "Menunggu Alokasi Petugas" dan sembunyikan kode/avatar tiruan
+  const hasAssignedSurveyor = Boolean(inspectionSurveyorId && inspectionRawName);
+  const displaySurveyorName = hasAssignedSurveyor ? inspectionRawName : 'Menunggu Alokasi Petugas';
+  const displaySurveyorCode = hasAssignedSurveyor ? inspectionRawCode : null;
+
+  // Jadwal inspeksi: hanya terisi jika sudah ditentukan oleh Admin (bukan otomatis backend)
+  const hasAdminSchedule = Boolean(
+    activeInspection?.scheduled_survey_date || activeInspectionPlot?.scheduled_survey_date
+  );
+  const displayScheduledDate = hasAdminSchedule
+    ? (activeInspection?.scheduled_date || activeInspectionPlot?.scheduled_date)
+    : null;
+  const displayPlotName = activeInspection?.land_plot_name || activeInspectionPlot?.name || 'Petak Aktif';
 
   // 2. Recent Wallet Activities - Strictly dynamic from backend, no fallbackActivities!
   const activities = Array.isArray(farmerSummary?.recent_wallet_activities)
@@ -146,7 +207,7 @@ export default function FarmerDashboardView({
       </header>
 
       {/* ================= KOMPONEN 1 · ACTIONABLE WIDGET: JADWAL KUNJUNGAN SURVEYOR ================= */}
-      {inspections.length > 0 && (
+      {activeInspection && (
         <section 
           className="overflow-hidden rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50/90 via-emerald-50/30 to-white p-4 sm:p-5 shadow-card transition duration-200 hover:-translate-y-0.5 hover:shadow-lift"
           aria-label="Jadwal Kunjungan Surveyor"
@@ -171,22 +232,80 @@ export default function FarmerDashboardView({
                     </span>
                     Tahap Pra-Verifikasi
                   </span>
+
+                  {/* OPSI PENINGKATAN 2: Mini Carousel / Stepper jika ada >1 lahan menunggu audit */}
+                  {totalInspections > 1 && (
+                    <div className="inline-flex items-center gap-1.5 bg-amber-100/90 border border-amber-300/80 rounded-full px-2 py-0.5 text-[10px] font-mono text-amber-950 font-bold ml-auto sm:ml-0 shadow-xs">
+                      <span>Petak {safeInspectionIdx + 1}/{totalInspections}</span>
+                      <div className="flex items-center gap-0.5 border-l border-amber-300 pl-1">
+                        <button
+                          type="button"
+                          onClick={() => setCurrentInspectionIdx((prev) => (prev > 0 ? prev - 1 : totalInspections - 1))}
+                          className="p-0.5 hover:bg-amber-200/90 rounded transition cursor-pointer"
+                          title="Petak antrean sebelumnya"
+                          aria-label="Petak antrean sebelumnya"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5 text-amber-900" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentInspectionIdx((prev) => (prev < totalInspections - 1 ? prev + 1 : 0))}
+                          className="p-0.5 hover:bg-amber-200/90 rounded transition cursor-pointer"
+                          title="Petak antrean berikutnya"
+                          aria-label="Petak antrean berikutnya"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5 text-amber-900" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <h3 className="mt-1 text-base font-bold text-pine truncate">
-                  {inspections[0].land_plot_name}
-                </h3>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  <h3 className="text-base font-bold text-pine truncate">
+                    {displayPlotName}
+                  </h3>
+                  {totalInspections > 1 && (
+                    <div className="flex items-center gap-1">
+                      {inspections.map((insp, idx) => (
+                        <button
+                          key={insp.land_plot_id || idx}
+                          type="button"
+                          onClick={() => setCurrentInspectionIdx(idx)}
+                          className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                            idx === safeInspectionIdx ? 'w-4 bg-amber-600' : 'w-1.5 bg-amber-200 hover:bg-amber-300'
+                          }`}
+                          aria-label={`Pilih petak ke-${idx + 1}`}
+                          title={insp.land_plot_name || `Petak ${idx + 1}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600">
                   <span className="inline-flex items-center gap-1.5">
                     <ClipboardList className="h-3.5 w-3.5 text-amber-700 shrink-0" />
-                    <span>Petugas: <strong className="text-stone-800">{inspections[0].surveyor_name}</strong></span>
-                    <span className="font-mono text-[10px] font-bold text-emerald-800 bg-emerald-100/80 px-1.5 py-0.5 rounded">
-                      {inspections[0].surveyor_code}
+                    <span>
+                      Petugas:{' '}
+                      {hasAssignedSurveyor ? (
+                        <strong className="text-stone-800">{displaySurveyorName}</strong>
+                      ) : (
+                        <span className="italic font-medium text-stone-500">Menunggu Alokasi Petugas</span>
+                      )}
                     </span>
+                    {hasAssignedSurveyor && displaySurveyorCode && (
+                      <span className="font-mono text-[10px] font-bold text-emerald-800 bg-emerald-100/80 px-1.5 py-0.5 rounded">
+                        {displaySurveyorCode}
+                      </span>
+                    )}
                   </span>
                   <span className="text-stone-300 hidden sm:inline">•</span>
-                  <span className="text-[11px] text-stone-500 truncate">{inspections[0].status_note}</span>
+                  <span className="text-[11px] text-stone-500 truncate">
+                    {hasAssignedSurveyor 
+                      ? (activeInspection.status_note || 'Inspeksi Poligon GPS & Sampel DBH')
+                      : 'Dalam antrean penugasan petugas auditor'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -195,12 +314,23 @@ export default function FarmerDashboardView({
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-amber-200/50 pt-3 md:border-0 md:pt-0">
               <div className="text-left md:text-right">
                 <span className="block font-mono text-[10px] uppercase font-semibold text-stone-400">Rencana Kunjungan</span>
-                <span className="font-mono text-sm font-bold text-pine">{inspections[0].scheduled_date}</span>
+                {hasAdminSchedule && displayScheduledDate ? (
+                  <span className="font-mono text-sm font-bold text-pine">{displayScheduledDate}</span>
+                ) : (
+                  <span className="font-mono text-sm font-medium text-stone-500 italic">
+                    Menunggu Penjadwalan
+                  </span>
+                )}
               </div>
 
               <button
                 type="button"
-                onClick={() => onNavigateTab && onNavigateTab('timeline')}
+                onClick={() => {
+                  const plotId = activeInspection?.land_plot_id || activeInspectionPlot?.id;
+                  if (onNavigateTab) {
+                    onNavigateTab('timeline', plotId ? { plotId } : {});
+                  }
+                }}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 text-xs font-semibold shadow-xs transition active:scale-[0.98] cursor-pointer"
               >
                 <span>Lacak Verifikasi</span>
@@ -366,6 +496,8 @@ export default function FarmerDashboardView({
                 {plotList.map((plot, idx) => {
                   const areaFormatted = Number(plot.area_sqm || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                   const isVerified = plot.status === 'verified' || plot.status === 'active';
+                  const plotHasBlocks = hasTreeBlocks(plot);
+                  const isAwaitingTreeBlocks = !isVerified && !plotHasBlocks;
 
                   return (
                     <li key={plot.id || idx} className="flex items-center justify-between gap-3 py-2.5">
@@ -375,12 +507,23 @@ export default function FarmerDashboardView({
                         </span>
                         <div className="min-w-0">
                           <p className="truncate text-[13px] font-semibold text-stone-800">{plot.name}</p>
-                          <p className="tnum font-mono text-[11px] text-stone-500">{areaFormatted} m²</p>
+                          <p className="tnum font-mono text-[11px] text-stone-500">
+                            {areaFormatted} m²
+                            {isAwaitingTreeBlocks && (
+                              <span className="ml-1.5 font-sans font-semibold text-rose-600">
+                                • Belum masuk antrean survei
+                              </span>
+                            )}
+                          </p>
                         </div>
                       </div>
                       {isVerified ? (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-100">
                           <Check className="h-3 w-3" /> Terverifikasi
+                        </span>
+                      ) : isAwaitingTreeBlocks ? (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 ring-1 ring-inset ring-rose-100">
+                          <Clock className="h-3 w-3" /> Wajib Input Blok Pohon
                         </span>
                       ) : (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-100">
@@ -520,7 +663,13 @@ export default function FarmerDashboardView({
                 </div>
                 <span className="tnum shrink-0 text-right font-mono text-[11px] font-semibold leading-tight text-stone-600">
                   <span className="text-emerald-700">{verifiedCount} Terverifikasi</span>,<br />
-                  {pendingCount} Menunggu Kunjungan
+                  {pendingWithBlocksCount} Menunggu Kunjungan
+                  {noTreeDraftCount > 0 && (
+                    <>
+                      <br />
+                      <span className="text-rose-600">{noTreeDraftCount} Menunggu Input Pohon</span>
+                    </>
+                  )}
                 </span>
               </li>
             </ul>

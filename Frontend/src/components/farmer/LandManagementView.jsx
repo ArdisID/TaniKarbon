@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, GeoJSON, ZoomControl, useMap } from 'react-leaflet';
 import {
   MapPin,
@@ -318,9 +318,22 @@ export default function LandManagementView({
   // Floating toast state
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState({
+    type: 'success',
     title: 'Blok pohon tersimpan',
     desc: 'Serapan karbon dihitung ulang oleh server FastAPI.'
   });
+  const toastTimerRef = useRef(null);
+  const scheduleToastHide = (delay) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToastVisible(false);
+      toastTimerRef.current = null;
+    }, delay);
+  };
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   // Fetch real data from GET /api/v1/farmer/lands
   const fetchLands = useCallback(async () => {
@@ -404,22 +417,24 @@ export default function LandManagementView({
         return prev;
       });
       setToastMessage({
+        type: 'success',
         title: 'Petak Lahan Dihapus',
         desc: `Petak "${deleteConfirmModal.plotName || 'Draft'}" berhasil dihapus secara permanen dari database.`
       });
       setToastVisible(true);
-      setTimeout(() => setToastVisible(false), 3500);
+      scheduleToastHide(3500);
       if (onToast) onToast(`Lahan "${deleteConfirmModal.plotName || 'Draft'}" berhasil dihapus.`);
       if (onRefresh) onRefresh();
       setDeleteConfirmModal({ isOpen: false, plotId: null, plotName: '', isDeleting: false });
     } catch (err) {
       console.error('Gagal menghapus lahan:', err);
       setToastMessage({
+        type: 'error',
         title: 'Gagal Menghapus Petak',
         desc: err.message || 'Terjadi kesalahan saat menghapus petak draft dari server.'
       });
       setToastVisible(true);
-      setTimeout(() => setToastVisible(false), 4000);
+      scheduleToastHide(4000);
       setDeleteConfirmModal(prev => ({ ...prev, isDeleting: false }));
     }
   };
@@ -522,12 +537,10 @@ export default function LandManagementView({
   };
 
   // Trigger floating toast
-  const triggerToast = (title, desc) => {
-    setToastMessage({ title, desc });
+  const triggerToast = (title, desc, type = 'success') => {
+    setToastMessage({ type, title, desc });
     setToastVisible(true);
-    setTimeout(() => {
-      setToastVisible(false);
-    }, 4000);
+    scheduleToastHide(type === 'error' ? 5000 : 4000);
   };
 
   // Submit Modal Tree Block (POST /api/v1/farmer/tree-blocks)
@@ -865,6 +878,7 @@ export default function LandManagementView({
               );
               const shortUUID = plot.id ? `${String(plot.id).slice(0, 8)}...${String(plot.id).slice(-4)}` : 'ID-POSTGIS';
               const plotBlockCount = plot.tree_blocks?.length || 0;
+              const isAwaitingTreeBlocks = !isVerified && plotBlockCount === 0;
 
               return (
                 <article
@@ -899,9 +913,18 @@ export default function LandManagementView({
                         </span>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                            ⏳ Draft / Menunggu Audit
-                          </span>
+                          {isAwaitingTreeBlocks ? (
+                            <span
+                              className="shrink-0 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700"
+                              title="Tambahkan minimal 1 blok pohon agar petak masuk antrean survei"
+                            >
+                              Wajib Input Blok Pohon
+                            </span>
+                          ) : (
+                            <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                              ⏳ Draft / Menunggu Audit
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1057,14 +1080,40 @@ export default function LandManagementView({
                         Fokus di Peta →
                       </button>
                     </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-100 bg-amber-50/50 px-4 py-2.5 text-xs text-amber-900">
-                      <span>Dijadwalkan inspeksi lapangan oleh Budi Surveyor (SRV-BUDI-09) • 28 Okt 2026</span>
+                  ) : isAwaitingTreeBlocks ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rose-100 bg-rose-50/60 px-4 py-2.5 text-xs text-rose-900">
+                      <span className="font-medium">
+                        Belum masuk antrean survei — Tambahkan minimal 1 blok pohon terlebih dahulu
+                      </span>
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onNavigateTab?.('timeline');
+                          handleOpenModal(plot.id);
+                        }}
+                        className="shrink-0 rounded-lg bg-rose-600 px-2.5 py-1 font-semibold text-white transition hover:bg-rose-700 cursor-pointer"
+                      >
+                        Input Blok Pohon →
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-100 bg-amber-50/50 px-4 py-2.5 text-xs text-amber-900">
+                      <span>
+                        {plot.surveyor_name
+                          ? `Dijadwalkan inspeksi lapangan oleh ${plot.surveyor_name} (${plot.surveyor_code || 'SRV'}) • ${plot.scheduled_date || 'Menunggu Penjadwalan Admin'}`
+                          : `Menunggu alokasi petugas surveyor • ${plot.scheduled_date || 'Menunggu Penjadwalan Admin'}`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const targetUrl = `/mitra-tani/lacak-verifikasi?plotId=${plot.id}`;
+                          if (onNavigateTab) {
+                            onNavigateTab('timeline', { plotId: plot.id });
+                          } else {
+                            window.history.pushState({ tab: 'timeline' }, '', targetUrl);
+                            window.dispatchEvent(new PopStateEvent('popstate'));
+                          }
                         }}
                         className="shrink-0 font-semibold underline transition hover:text-amber-950 cursor-pointer"
                       >
@@ -1284,7 +1333,16 @@ export default function LandManagementView({
                 Petak terverifikasi terkunci untuk perubahan geometri. Ajukan revisi poligon melalui menu{' '}
                 <button
                   type="button"
-                  onClick={() => onNavigateTab?.('timeline')}
+                  onClick={() => {
+                    const plotParam = activePlot?.id ? { plotId: activePlot.id } : {};
+                    if (onNavigateTab) {
+                      onNavigateTab('timeline', plotParam);
+                    } else {
+                      const url = activePlot?.id ? `/mitra-tani/lacak-verifikasi?plotId=${activePlot.id}` : '/mitra-tani/lacak-verifikasi';
+                      window.history.pushState({ tab: 'timeline' }, '', url);
+                      window.dispatchEvent(new PopStateEvent('popstate'));
+                    }
+                  }}
                   className="font-semibold text-stone-700 underline cursor-pointer hover:text-emerald-700"
                 >
                   Lacak Verifikasi
@@ -1748,14 +1806,29 @@ export default function LandManagementView({
       {toastVisible && (
         <div
           id="toast"
-          className="fixed bottom-6 right-6 z-[60] flex w-full max-w-xs items-start gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-xl animate-slide-up"
+          role={toastMessage.type === 'error' ? 'alert' : 'status'}
+          className={`fixed bottom-6 right-6 z-[60] flex w-full max-w-xs items-start gap-3 rounded-2xl border bg-white p-4 shadow-xl animate-slide-up ${
+            toastMessage.type === 'error' ? 'border-rose-300' : 'border-stone-200'
+          }`}
         >
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
-            <CheckCheck className="h-[18px] w-[18px]" />
+          <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${
+            toastMessage.type === 'error'
+              ? 'bg-rose-50 text-rose-600'
+              : 'bg-emerald-50 text-emerald-700'
+          }`}>
+            {toastMessage.type === 'error' ? (
+              <AlertTriangle className="h-[18px] w-[18px]" />
+            ) : (
+              <CheckCheck className="h-[18px] w-[18px]" />
+            )}
           </span>
           <div>
-            <p className="text-sm font-semibold text-stone-900">{toastMessage.title}</p>
-            <p className="mt-0.5 text-xs text-stone-500">{toastMessage.desc}</p>
+            <p className={`text-sm font-semibold ${
+              toastMessage.type === 'error' ? 'text-rose-900' : 'text-stone-900'
+            }`}>{toastMessage.title}</p>
+            <p className={`mt-0.5 text-xs ${
+              toastMessage.type === 'error' ? 'text-rose-700' : 'text-stone-500'
+            }`}>{toastMessage.desc}</p>
           </div>
         </div>
       )}

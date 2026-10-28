@@ -35,7 +35,7 @@ async def test_create_and_delete_draft_land_plot():
         corp_headers = {"Authorization": f"Bearer {corp_token}"}
 
         # 3. Create Draft Land Plot
-        polygon_geojson = '{"type":"Polygon","coordinates":[[[106.83300,-6.36850],[106.83371,-6.36842],[106.83379,-6.36904],[106.83308,-6.36912],[106.83300,-6.36850]]]}'
+        polygon_geojson = '{"type":"Polygon","coordinates":[[[106.87000,-6.36850],[106.87071,-6.36842],[106.87079,-6.36904],[106.87008,-6.36912],[106.87000,-6.36850]]]}'
         create_res = await client.post(
             "/api/v1/farmer/lands",
             headers=headers,

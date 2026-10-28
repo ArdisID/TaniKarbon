@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as turf from '@turf/turf';
 import { MapContainer, TileLayer, Polygon, Polyline, Marker, useMap, useMapEvents } from 'react-leaflet';
@@ -24,18 +24,59 @@ import {
   Loader2,
   Send,
   CheckCheck,
-  Sparkles
+  Sparkles,
+  LockOpen,
+  AlertTriangle,
+  XCircle
 } from 'lucide-react';
-import { registerLandPlot } from '../../api/farmer';
+import { registerLandPlot, validateLandPolygon, getSpatialOverlay } from '../../api/farmer';
 
 // Contoh koordinat default (Jawa Barat / Agroforestri)
 const DEFAULT_CENTER = [-6.3688, 106.8334];
+// Area contoh sengaja berada di zona kosong agar tidak menabrak petak terverifikasi.
 const SAMPLE_POLYGON_POINTS = [
-  [-6.36850, 106.83300],
-  [-6.36842, 106.83371],
-  [-6.36904, 106.83379],
-  [-6.36912, 106.83308]
+  [-6.54990, 107.04990],
+  [-6.54990, 107.05010],
+  [-6.55010, 107.05010],
+  [-6.55010, 107.04990]
 ];
+const SAMPLE_POLYGON_CENTER = [-6.5500, 107.0500];
+const MIN_AREA_SQM = 100;
+const MAX_AREA_SQM = 150000;
+const DOCUMENT_REQUIRED_AREA_SQM = 20000;
+const DOCUMENT_REQUIRED_OWNERSHIPS = ['milik sendiri (shm)', 'hgu / perkebunan'];
+
+const EMPTY_POLYGON_VALIDATION = {
+  status: 'idle', // 'idle' | 'validating' | 'valid' | 'error'
+  message: '',
+  areaSqm: 0,
+  conflict: null
+};
+
+function parseBoundaryToLeafletRings(boundary) {
+  if (!boundary) return [];
+  let geo = boundary;
+  if (typeof geo === 'string') {
+    try {
+      geo = JSON.parse(geo);
+    } catch {
+      return [];
+    }
+  }
+  if (!geo || typeof geo !== 'object') return [];
+
+  const ringToLatLng = (ring) => (Array.isArray(ring) ? ring.map(([lng, lat]) => [lat, lng]) : []);
+  if (geo.type === 'Polygon') {
+    return [ringToLatLng(geo.coordinates?.[0])];
+  }
+  if (geo.type === 'MultiPolygon') {
+    return (geo.coordinates || []).map((poly) => ringToLatLng(poly?.[0]));
+  }
+  if (geo.type === 'Feature' && geo.geometry) {
+    return parseBoundaryToLeafletRings(geo.geometry);
+  }
+  return [];
+}
 
 // Helper Leaflet Map Controller
 function MapViewController({ center, zoom }) {
@@ -125,7 +166,7 @@ export default function LandRegistrationWizard({
   });
   const [isPolygonClosed, setIsPolygonClosed] = useState(() => {
     const d = getInitialDraft();
-    return Boolean(d?.isPolygonClosed);
+    return Boolean(d?.isPolygonClosed && d?.polygonValidation?.status === 'valid');
   });
   const [mapCenter, setMapCenter] = useState(() => {
     const d = getInitialDraft();
@@ -133,21 +174,45 @@ export default function LandRegistrationWizard({
   });
   const [mapZoom, setMapZoom] = useState(17);
   const [isLocating, setIsLocating] = useState(false);
+  const [isClosingPolygon, setIsClosingPolygon] = useState(false);
+
+  // Validasi pre-flight backend (ST_IsValid, luas, anti-overlap PostGIS)
+  const [polygonValidation, setPolygonValidation] = useState(() => {
+    const d = getInitialDraft();
+    if (d?.polygonValidation?.status === 'valid') {
+      return {
+        ...EMPTY_POLYGON_VALIDATION,
+        ...d.polygonValidation
+      };
+    }
+    return EMPTY_POLYGON_VALIDATION;
+  });
+
+  // Layer referensi petak aktif (nama petani lain disamarkan backend)
+  const [overlayZones, setOverlayZones] = useState([]);
+  const [isOverlayLoading, setIsOverlayLoading] = useState(false);
 
   // Step 3 (Confirmation & MRV) States
   const [agreePhysical, setAgreePhysical] = useState(false);
   const [agreeMrv, setAgreeMrv] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Local Toast notification
+  // Local Toast notification (success | error | warning)
   const [toastMessage, setToastMessage] = useState(null);
-  const showLocalToast = (title, subtitle = '') => {
-    setToastMessage({ title, subtitle });
-    if (onToast) onToast(`${title} ${subtitle}`);
-    setTimeout(() => {
+  const toastTimerRef = useRef(null);
+  const showLocalToast = (title, subtitle = '', type = 'success') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage({ title, subtitle, type });
+    if (onToast) onToast(subtitle ? `${title}: ${subtitle}` : title, type);
+    toastTimerRef.current = setTimeout(() => {
       setToastMessage(null);
-    }, 4000);
+      toastTimerRef.current = null;
+    }, type === 'error' ? 5500 : 4000);
   };
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   // Simpan Draft ke LocalStorage setiap kali ada perubahan formData/vertices/step
   useEffect(() => {
@@ -159,13 +224,41 @@ export default function LandRegistrationWizard({
         ...formData,
         vertices,
         isPolygonClosed,
+        polygonValidation,
         currentStep
       };
       localStorage.setItem('draft_land_registration', JSON.stringify(draftPayload));
     } catch (err) {
       console.warn('Gagal menyimpan draft_land_registration ke localStorage:', err);
     }
-  }, [formData, vertices, isPolygonClosed, currentStep]);
+  }, [formData, vertices, isPolygonClosed, polygonValidation, currentStep]);
+
+  // Muat layer referensi petak aktif saat masuk Step 2 (anti-overlap visual)
+  useEffect(() => {
+    if (currentStep !== 2) return undefined;
+
+    let cancelled = false;
+    setIsOverlayLoading(true);
+    getSpatialOverlay()
+      .then((data) => {
+        if (!cancelled) {
+          setOverlayZones(Array.isArray(data) ? data : []);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.warn('Gagal memuat layer referensi spasial:', err);
+          setOverlayZones([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsOverlayLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStep]);
 
   // Kalkulasi Geometri via Turf.js
   const spatialMetrics = useMemo(() => {
@@ -240,48 +333,178 @@ export default function LandRegistrationWizard({
     }
   }, [vertices, spatialMetrics.areaSqm]);
 
+  const buildPolygonGeoJSON = (points = vertices) => {
+    const ring = points.map(([lat, lng]) => [lng, lat]);
+    if (ring.length > 0) {
+      ring.push([ring[0][0], ring[0][1]]);
+    }
+    return { type: 'Polygon', coordinates: [ring] };
+  };
+
+  // Setiap perubahan geometri membatalkan validasi & membuka kunci poligon
+  const invalidatePolygonValidation = () => {
+    setPolygonValidation(EMPTY_POLYGON_VALIDATION);
+    setIsPolygonClosed(false);
+  };
+
+  const rejectPolygon = (message, conflict = null, areaSqm = 0) => {
+    setPolygonValidation({
+      status: 'error',
+      message,
+      areaSqm,
+      conflict
+    });
+    setIsPolygonClosed(false);
+    showLocalToast('Poligon Ditolak', message, 'error');
+  };
+
   // Menambahkan titik ke poligon (unlimited, minimal 3 titik)
   const handleAddPoint = (point) => {
+    if (isPolygonClosed) return;
+    invalidatePolygonValidation();
     setVertices(prev => [...prev, point]);
   };
 
-  // Menutup poligon
-  const handleClosePolygon = () => {
+  // Menutup poligon: cek turf (kinks + luas) lalu validasi backend PostGIS
+  const handleClosePolygon = async () => {
+    if (isClosingPolygon) return;
     if (vertices.length < 3) {
-      showLocalToast('Titik kurang', 'Minimal 3 titik sudut untuk membentuk bidang poligon.');
+      showLocalToast('Titik kurang', 'Minimal 3 titik sudut untuk membentuk bidang poligon.', 'error');
       return;
     }
-    setIsPolygonClosed(true);
-    showLocalToast('Poligon tertutup', 'Batas lahan berhasil dikunci & luas terhitung.');
+
+    const geojson = buildPolygonGeoJSON();
+    let localArea = 0;
+    try {
+      const polygonFeature = turf.polygon(geojson.coordinates);
+      const kinks = turf.kinks(polygonFeature);
+      if (kinks?.features?.length > 0) {
+        rejectPolygon(
+          'Garis batas poligon saling menyilang (self-intersection). Perbaiki titik sudut sebelum mengunci poligon.',
+          null,
+          localArea
+        );
+        return;
+      }
+
+      localArea = turf.area(polygonFeature);
+      if (localArea < MIN_AREA_SQM) {
+        rejectPolygon(
+          `Luas poligon (${localArea.toFixed(2)} m²) di bawah batas minimal pendaftaran per petak (Minimal 0,01 Ha / 100 m²).`,
+          null,
+          localArea
+        );
+        return;
+      }
+      if (localArea > MAX_AREA_SQM) {
+        rejectPolygon(
+          `Luas poligon (${(localArea / 10000).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Ha) melebihi batas maksimal pendaftaran per petak (Maksimal 15,00 Ha).`,
+          null,
+          localArea
+        );
+        return;
+      }
+    } catch (geometryError) {
+      console.warn('Pemeriksaan geometri turf gagal:', geometryError);
+      rejectPolygon('Geometri poligon tidak dapat dihitung. Periksa kembali titik batas lahan.', null, localArea);
+      return;
+    }
+
+    setIsClosingPolygon(true);
+    setPolygonValidation({ ...EMPTY_POLYGON_VALIDATION, status: 'validating' });
+
+    try {
+      const result = await validateLandPolygon(geojson);
+      if (!result?.valid) {
+        rejectPolygon(
+          result?.message || 'Poligon ditolak oleh validasi spasial backend.',
+          result?.conflicting_plot || null,
+          Number(result?.area_sqm) || localArea
+        );
+        return;
+      }
+
+      const verifiedArea = Number(result.area_sqm) || localArea;
+      setPolygonValidation({
+        status: 'valid',
+        message: result.message || 'Poligon valid dan bebas tumpang-tindih.',
+        areaSqm: verifiedArea,
+        conflict: null
+      });
+      setIsPolygonClosed(true);
+      setActiveTool('pan');
+      setFormData(prev => ({
+        ...prev,
+        geojson,
+        calculated_area_sqm: verifiedArea
+      }));
+      showLocalToast(
+        'Poligon terkunci & valid',
+        `Luas ${(verifiedArea / 10000).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Ha, bebas tumpang-tindih.`
+      );
+    } catch (validationError) {
+      console.warn('Validasi poligon backend gagal:', validationError);
+      rejectPolygon(
+        validationError.message || 'Gagal menghubungi validasi spasial backend. Periksa koneksi lalu coba lagi.',
+        null,
+        localArea
+      );
+    } finally {
+      setIsClosingPolygon(false);
+    }
   };
 
   // Hapus titik terakhir
   const handleUndoVertex = () => {
     if (vertices.length === 0) return;
+    invalidatePolygonValidation();
     setVertices(prev => prev.slice(0, -1));
-    setIsPolygonClosed(false);
   };
 
   // Reset semua titik
   const handleResetVertices = () => {
+    invalidatePolygonValidation();
     setVertices([]);
-    setIsPolygonClosed(false);
     setFormData(prev => ({ ...prev, geojson: null, calculated_area_sqm: 0 }));
-    showLocalToast('Atur ulang', 'Seluruh titik poligon telah dihapus.');
+    showLocalToast('Atur ulang', 'Seluruh titik poligon telah dihapus.', 'warning');
   };
 
   // Hapus titik tertentu
   const handleRemoveSpecificVertex = (index) => {
+    invalidatePolygonValidation();
     setVertices(prev => prev.filter((_, i) => i !== index));
-    setIsPolygonClosed(false);
+  };
+
+  // Geser titik saat poligon tidak terkunci
+  const handleMoveVertex = (index, lat, lng) => {
+    if (isPolygonClosed) return;
+    invalidatePolygonValidation();
+    setVertices(prev => prev.map((point, i) => (i === index ? [lat, lng] : point)));
+  };
+
+  // Buka kunci poligon untuk edit ulang titik
+  const handleUnlockPolygon = () => {
+    invalidatePolygonValidation();
+    setActiveTool('draw');
+    showLocalToast(
+      'Buka Kunci Poligon',
+      'Titik batas dapat digeser atau diedit. Klik "Tutup & Kunci Poligon" untuk validasi ulang.',
+      'warning'
+    );
   };
 
   // Muat poligon contoh (1-klik untuk kemudahan pengujian QA)
   const handleLoadSamplePolygon = () => {
+    invalidatePolygonValidation();
     setVertices(SAMPLE_POLYGON_POINTS);
-    setIsPolygonClosed(true);
-    setMapCenter(DEFAULT_CENTER);
-    showLocalToast('Contoh dimuat', 'Poligon contoh 4 titik berhasil diaktifkan.');
+    setMapCenter(SAMPLE_POLYGON_CENTER);
+    setMapZoom(18);
+    setActiveTool('draw');
+    showLocalToast(
+      'Contoh dimuat',
+      'Poligon contoh berada di area kosong. Klik "Tutup & Kunci Poligon" untuk validasi PostGIS.',
+      'warning'
+    );
   };
 
   // GPS Lokasi Petani
@@ -309,22 +532,56 @@ export default function LandRegistrationWizard({
     }
   };
 
-  // Validasi Step Navigasi
-  const isStep1Valid = formData.name.trim().length > 0 && formData.ownership.trim().length > 0;
-  const isStep2Valid = isPolygonClosed && vertices.length >= 3 && formData.geojson !== null;
+  // Validasi Step Navigasi & dokumen hak berjenjang
+  const requiresDocumentByOwnership = DOCUMENT_REQUIRED_OWNERSHIPS.includes(
+    formData.ownership.trim().toLowerCase()
+  );
+  const hasDocumentNumber = formData.document_no.trim().length > 0;
+  const requiresDocumentByArea =
+    formData.calculated_area_sqm > DOCUMENT_REQUIRED_AREA_SQM && !hasDocumentNumber;
+  const isStep1Valid =
+    formData.name.trim().length > 0 &&
+    formData.ownership.trim().length > 0 &&
+    (!requiresDocumentByOwnership || hasDocumentNumber);
+  const isStep2Valid =
+    isPolygonClosed &&
+    polygonValidation.status === 'valid' &&
+    vertices.length >= 3 &&
+    formData.geojson !== null &&
+    !requiresDocumentByArea;
   const isStep3Valid = agreePhysical && agreeMrv;
 
   const nextStep = () => {
     if (currentStep === 1) {
-      if (!isStep1Valid) {
-        showLocalToast('Lengkapi Data', 'Nama petak kebun dan status kepemilikan wajib diisi.');
+      if (!formData.name.trim() || !formData.ownership.trim()) {
+        showLocalToast('Lengkapi Data', 'Nama petak kebun dan status kepemilikan wajib diisi.', 'error');
+        return;
+      }
+      if (requiresDocumentByOwnership && !hasDocumentNumber) {
+        showLocalToast(
+          'Dokumen Wajib',
+          `Nomor Dokumen / Bukti Hak wajib diisi untuk status kepemilikan "${formData.ownership}".`,
+          'error'
+        );
         return;
       }
       setCurrentStep(2);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else if (currentStep === 2) {
-      if (!isPolygonClosed || vertices.length < 3) {
-        showLocalToast('Tutup Poligon Wajib', 'Silakan klik tombol "⚡ Tutup & Kunci Poligon" terlebih dahulu sebelum melanjutkan.');
+      if (!isPolygonClosed || vertices.length < 3 || polygonValidation.status !== 'valid') {
+        showLocalToast(
+          'Tutup & Validasi Poligon Wajib',
+          'Silakan klik tombol "⚡ Tutup & Kunci Poligon" hingga status poligon valid sebelum melanjutkan.',
+          'error'
+        );
+        return;
+      }
+      if (requiresDocumentByArea) {
+        showLocalToast(
+          'Dokumen Wajib',
+          'Luas lahan di atas 2,00 Ha wajib menyertakan Nomor Dokumen / Surat Keterangan Desa. Lengkapi di Step 1.',
+          'error'
+        );
         return;
       }
       setCurrentStep(3);
@@ -342,7 +599,7 @@ export default function LandRegistrationWizard({
   // Step 3: Submission ke API POST /api/v1/farmer/lands
   const handleSubmitRegistration = async () => {
     if (!isStep3Valid) {
-      showLocalToast('Persetujuan Wajib', 'Centang kedua kotak persetujuan MRV terlebih dahulu.');
+      showLocalToast('Persetujuan Wajib', 'Centang kedua kotak persetujuan MRV terlebih dahulu.', 'error');
       return;
     }
     if (isSubmitting) return;
@@ -365,13 +622,11 @@ export default function LandRegistrationWizard({
       try {
         apiResponse = await registerLandPlot(payload);
       } catch (err) {
-        console.warn('Peringatan: Gagal menyimpan via API langsung, menggunakan mode offline fallback:', err);
-        apiResponse = {
-          id: 'land-' + Date.now(),
-          name: formData.name,
-          area_sqm: formData.calculated_area_sqm,
-          status: 'draft'
-        };
+        console.error('Gagal menyimpan pendaftaran lahan:', err);
+        const errMsg = err.message || 'Gagal mendaftarkan petak lahan ke sistem.';
+        showLocalToast('Pendaftaran Lahan Ditolak', errMsg, 'error');
+        setIsSubmitting(false);
+        return;
       }
 
       // Hapus localStorage HANYA jika proses submit ke API berhasil
@@ -412,6 +667,7 @@ export default function LandRegistrationWizard({
       });
       setVertices([]);
       setIsPolygonClosed(false);
+      setPolygonValidation(EMPTY_POLYGON_VALIDATION);
 
       if (onComplete) {
         try {
@@ -435,7 +691,7 @@ export default function LandRegistrationWizard({
 
     } catch (error) {
       console.error('Error saat pendaftaran lahan:', error);
-      showLocalToast('Kesalahan Sistem', error.message || 'Gagal mengirim pendaftaran.');
+      showLocalToast('Kesalahan Sistem', error.message || 'Gagal mengirim pendaftaran.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -678,17 +934,32 @@ export default function LandRegistrationWizard({
 
             <div>
               <label htmlFor="s1-document" className="mb-1.5 block text-xs font-semibold text-stone-700">
-                Nomor Dokumen / Bukti Hak <span className="text-stone-400 font-normal">(Opsional)</span>
+                Nomor Dokumen / Bukti Hak{' '}
+                {requiresDocumentByOwnership ? (
+                  <span className="text-red-500">*</span>
+                ) : (
+                  <span className="text-stone-400 font-normal">(Opsional)</span>
+                )}
               </label>
               <input
                 id="s1-document"
                 name="document_no"
                 type="text"
+                required={requiresDocumentByOwnership}
                 value={formData.document_no}
                 onChange={(e) => setFormData(prev => ({ ...prev, document_no: e.target.value }))}
-                placeholder="Mis. SHM No. 0412 / SPPT PBB (Opsional)"
-                className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-800 placeholder-stone-400 transition focus:border-emerald-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+                placeholder={requiresDocumentByOwnership ? 'Wajib: mis. SHM No. 0412' : 'Mis. SHM No. 0412 / SPPT PBB (Opsional)'}
+                className={`w-full rounded-xl border bg-stone-50 px-3.5 py-2.5 text-sm text-stone-800 placeholder-stone-400 transition focus:bg-white focus:outline-none focus:ring-1 ${
+                  requiresDocumentByOwnership && !hasDocumentNumber
+                    ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500/30'
+                    : 'border-stone-200 focus:border-emerald-600 focus:ring-emerald-600/30'
+                }`}
               />
+              {requiresDocumentByOwnership && (
+                <p className="mt-1 text-[10px] font-medium text-rose-600">
+                  Wajib untuk status kepemilikan {formData.ownership}. Lahan &gt; 2,00 Ha juga wajib dokumen.
+                </p>
+              )}
             </div>
           </div>
 
@@ -762,6 +1033,26 @@ export default function LandRegistrationWizard({
                   />
                 )}
 
+                {/* Layer referensi petak aktif (privacy-safe dari backend) */}
+                {overlayZones.map((zone) =>
+                  parseBoundaryToLeafletRings(zone.polygon_boundary).map((ring, ringIndex) =>
+                    ring.length >= 3 ? (
+                      <Polygon
+                        key={`overlay-${zone.id}-${ringIndex}`}
+                        positions={ring}
+                        pathOptions={{
+                          color: zone.is_own_land ? '#38BDF8' : '#FB7185',
+                          weight: 2,
+                          dashArray: zone.is_own_land ? '6 4' : '3 5',
+                          fillColor: zone.is_own_land ? '#38BDF8' : '#FB7185',
+                          fillOpacity: 0.12,
+                          interactive: false
+                        }}
+                      />
+                    ) : null
+                  )
+                )}
+
                 {/* Drawing Event Handler */}
                 <MapDrawHandler
                   tool={activeTool}
@@ -805,10 +1096,21 @@ export default function LandRegistrationWizard({
                       key={`v-${idx}-${pt[0]}-${pt[1]}`}
                       position={pt}
                       icon={createVertexIcon(idx, isFirst, isCloser)}
+                      draggable={!isPolygonClosed}
                       eventHandlers={{
                         click: () => {
-                          if (isFirst && vertices.length >= 3) {
+                          if (isFirst && !isPolygonClosed && vertices.length >= 3) {
                             handleClosePolygon();
+                          }
+                        },
+                        dragend: (event) => {
+                          const next = event?.target?.getLatLng?.();
+                          if (next) {
+                            handleMoveVertex(
+                              idx,
+                              parseFloat(next.lat.toFixed(5)),
+                              parseFloat(next.lng.toFixed(5))
+                            );
                           }
                         }
                       }}
@@ -839,27 +1141,50 @@ export default function LandRegistrationWizard({
                 </button>
               </div>
 
+              {/* Legend layer referensi */}
+              <div className="pointer-events-none absolute left-3 top-14 z-[400] rounded-xl bg-black/65 px-2.5 py-2 text-[10px] text-white shadow-md backdrop-blur-md space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-0.5 w-4 border-t-2 border-dashed border-sky-400" />
+                  <span>Petak Anda</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-0.5 w-4 border-t-2 border-dashed border-rose-400" />
+                  <span>Zona Terdaftar (petani lain)</span>
+                </div>
+                {isOverlayLoading && <p className="text-white/60">Memuat referensi…</p>}
+              </div>
+
               {/* Floating control: Status Badge / Action Button (Tengah Atas) */}
               {vertices.length >= 3 && !isPolygonClosed ? (
                 <button
                   type="button"
                   onClick={handleClosePolygon}
-                  className="pointer-events-auto absolute left-1/2 top-3 -translate-x-1/2 z-[400] inline-flex items-center gap-1.5 rounded-full bg-amber-500 hover:bg-amber-600 px-4 py-1.5 font-sans text-xs font-bold text-white shadow-lg ring-4 ring-amber-400/40 animate-pulse transition cursor-pointer"
+                  disabled={isClosingPolygon}
+                  className="pointer-events-auto absolute left-1/2 top-3 -translate-x-1/2 z-[400] inline-flex items-center gap-1.5 rounded-full bg-amber-500 hover:bg-amber-600 disabled:opacity-70 disabled:cursor-wait px-4 py-1.5 font-sans text-xs font-bold text-white shadow-lg ring-4 ring-amber-400/40 animate-pulse transition cursor-pointer"
                 >
-                  <Check className="h-3.5 w-3.5 stroke-[3]" />
-                  <span>⚡ Klik untuk Tutup &amp; Kunci Poligon (Wajib)</span>
+                  {isClosingPolygon ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5 stroke-[3]" />
+                  )}
+                  <span>
+                    {isClosingPolygon
+                      ? 'Memvalidasi PostGIS…'
+                      : '⚡ Klik untuk Tutup & Kunci Poligon (Wajib)'}
+                  </span>
+                </button>
+              ) : isPolygonClosed ? (
+                <button
+                  type="button"
+                  onClick={handleUnlockPolygon}
+                  className="pointer-events-auto absolute left-1/2 top-3 -translate-x-1/2 z-[400] inline-flex items-center gap-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 px-4 py-1.5 font-sans text-xs font-bold text-white shadow-lg ring-4 ring-emerald-400/30 transition cursor-pointer"
+                >
+                  <LockOpen className="h-3.5 w-3.5" />
+                  <span>🔓 Buka Kunci / Edit Ulang Titik</span>
                 </button>
               ) : (
-                <div
-                  className={`pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 z-[400] rounded-full px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-white shadow-md backdrop-blur-md ${
-                    isPolygonClosed ? 'bg-emerald-600' : 'bg-black/60'
-                  }`}
-                >
-                  {isPolygonClosed
-                    ? '✓ Poligon Terkunci & Valid'
-                    : activeTool === 'draw'
-                    ? 'Mode Gambar Aktif'
-                    : 'Mode Navigasi Peta'}
+                <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 z-[400] rounded-full bg-black/60 px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-white shadow-md backdrop-blur-md">
+                  {activeTool === 'draw' ? 'Mode Gambar Aktif' : 'Mode Navigasi Peta'}
                 </div>
               )}
 
@@ -969,17 +1294,25 @@ export default function LandRegistrationWizard({
                 <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Status Geometri</p>
                 <p
                   className={`mt-1 text-xs font-semibold ${
-                    spatialMetrics.isValidClosed
+                    polygonValidation.status === 'error'
+                      ? 'text-rose-700'
+                      : isPolygonClosed && polygonValidation.status === 'valid'
                       ? 'text-emerald-700'
+                      : polygonValidation.status === 'validating'
+                      ? 'text-sky-700'
                       : vertices.length >= 3
                       ? 'text-amber-700'
                       : 'text-stone-500'
                   }`}
                 >
-                  {spatialMetrics.isValidClosed
-                    ? 'Poligon Valid (Tertutup)'
+                  {polygonValidation.status === 'error'
+                    ? 'Poligon Ditolak — Perbaiki Titik'
+                    : isPolygonClosed && polygonValidation.status === 'valid'
+                    ? 'Poligon Valid (Terkunci)'
+                    : polygonValidation.status === 'validating'
+                    ? 'Memvalidasi PostGIS…'
                     : vertices.length >= 3
-                    ? 'Siap Ditutup (Klik Titik 1)'
+                    ? 'Siap Divalidasi (Klik Tutup Poligon)'
                     : 'Belum Cukup Titik (Min. 3)'}
                 </p>
               </div>
@@ -1010,6 +1343,16 @@ export default function LandRegistrationWizard({
                     <Check className="h-3.5 w-3.5 text-emerald-700 stroke-[3]" />
                     <span>✓ Poligon Terkunci &amp; Valid</span>
                   </span>
+                )}
+                {isPolygonClosed && (
+                  <button
+                    type="button"
+                    onClick={handleUnlockPolygon}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-stone-300 bg-white px-3 py-1.5 font-sans text-xs font-bold text-stone-700 transition hover:bg-stone-50 cursor-pointer"
+                  >
+                    <LockOpen className="h-3.5 w-3.5 text-emerald-700" />
+                    <span>🔓 Buka Kunci / Edit Ulang Titik</span>
+                  </button>
                 )}
                 <span className="shrink-0 rounded-md bg-stone-100 px-2.5 py-1 font-mono text-[11px] font-bold text-stone-700">
                   {vertices.length} Titik Batas
@@ -1097,11 +1440,48 @@ export default function LandRegistrationWizard({
 
           {/* Action Bar Step 2 */}
           <div className="space-y-3 pt-2">
-            {vertices.length >= 3 && !isPolygonClosed && (
+            {polygonValidation.status === 'error' && (
+              <div className="flex items-start gap-2.5 rounded-2xl border border-rose-300 bg-rose-50 p-3.5 text-xs text-rose-900 shadow-xs" role="alert">
+                <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                <div>
+                  <p className="font-bold">Poligon ditolak — belum dikunci</p>
+                  <p className="mt-1 font-medium leading-relaxed">{polygonValidation.message}</p>
+                  {polygonValidation.conflict && (
+                    <p className="mt-1 font-mono text-[10px] text-rose-700">
+                      Konflik: {polygonValidation.conflict.name} · {polygonValidation.conflict.status}
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-[10px] font-semibold text-rose-700">
+                    Poligon tetap terbuka. Geser/edit titik batas lalu klik "Tutup &amp; Kunci Poligon" kembali.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {requiresDocumentByArea && (
+              <div className="flex items-start gap-2.5 rounded-2xl border border-rose-300 bg-rose-50 p-3.5 text-xs text-rose-900 shadow-xs" role="alert">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                <p className="font-medium">
+                  <strong>Dokumen wajib:</strong> luas lahan melebihi 2,00 Ha. Kembali ke Step 1 dan isi{' '}
+                  <strong>Nomor Dokumen / Surat Keterangan Desa</strong> sebelum melanjutkan.
+                </p>
+              </div>
+            )}
+
+            {vertices.length >= 3 && !isPolygonClosed && polygonValidation.status !== 'error' && (
               <div className="flex items-center gap-2.5 rounded-2xl border border-amber-300 bg-amber-50/90 p-3.5 text-xs text-amber-900 shadow-xs">
                 <span className="text-amber-600 font-bold text-base shrink-0">⚠️</span>
                 <p className="font-medium">
                   <strong>Perhatian:</strong> Silakan klik tombol <strong>"⚡ Klik untuk Tutup &amp; Kunci Poligon (Wajib)"</strong> terlebih dahulu sebelum melanjutkan ke Step 3.
+                </p>
+              </div>
+            )}
+
+            {isPolygonClosed && polygonValidation.status === 'valid' && (
+              <div className="flex items-center gap-2.5 rounded-2xl border border-emerald-300 bg-emerald-50/90 p-3.5 text-xs text-emerald-900 shadow-xs">
+                <Check className="h-4 w-4 shrink-0 text-emerald-700 stroke-[3]" />
+                <p className="font-medium">
+                  <strong>Poligon tervalidasi PostGIS:</strong> {polygonValidation.message}
                 </p>
               </div>
             )}
@@ -1298,14 +1678,47 @@ export default function LandRegistrationWizard({
 
       {/* Toast Notification Container */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-[60] flex w-full max-w-sm items-start gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-xl animate-fade-in">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
-            <CheckCheck className="h-[18px] w-[18px]" />
+        <div
+          role={toastMessage.type === 'error' ? 'alert' : 'status'}
+          className={`fixed bottom-6 right-6 z-[60] flex w-full max-w-sm items-start gap-3 rounded-2xl border bg-white p-4 shadow-xl animate-fade-in ${
+            toastMessage.type === 'error'
+              ? 'border-rose-300'
+              : toastMessage.type === 'warning'
+              ? 'border-amber-300'
+              : 'border-stone-200'
+          }`}
+        >
+          <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${
+            toastMessage.type === 'error'
+              ? 'bg-rose-50 text-rose-600'
+              : toastMessage.type === 'warning'
+              ? 'bg-amber-50 text-amber-600'
+              : 'bg-emerald-50 text-emerald-700'
+          }`}>
+            {toastMessage.type === 'error' ? (
+              <XCircle className="h-[18px] w-[18px]" />
+            ) : toastMessage.type === 'warning' ? (
+              <AlertTriangle className="h-[18px] w-[18px]" />
+            ) : (
+              <CheckCheck className="h-[18px] w-[18px]" />
+            )}
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-bold text-stone-900">{toastMessage.title}</p>
+            <p className={`text-sm font-bold ${
+              toastMessage.type === 'error'
+                ? 'text-rose-900'
+                : toastMessage.type === 'warning'
+                ? 'text-amber-900'
+                : 'text-stone-900'
+            }`}>{toastMessage.title}</p>
             {toastMessage.subtitle && (
-              <p className="mt-0.5 text-xs text-stone-500">{toastMessage.subtitle}</p>
+              <p className={`mt-0.5 text-xs ${
+                toastMessage.type === 'error'
+                  ? 'text-rose-700'
+                  : toastMessage.type === 'warning'
+                  ? 'text-amber-700'
+                  : 'text-stone-500'
+              }`}>{toastMessage.subtitle}</p>
             )}
           </div>
         </div>

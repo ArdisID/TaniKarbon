@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, List
+from typing import Any, Dict, Optional, List, Union
 from uuid import UUID
 from datetime import datetime
 
@@ -28,6 +28,31 @@ class LandPlotRequest(BaseModel):
     regency: Optional[str] = Field(None, description="Kabupaten / Kota")
     status: Optional[str] = Field("draft", description="Status plot")
 
+class PolygonValidationRequest(BaseModel):
+    polygon_boundary: Union[Dict[str, Any], str] = Field(
+        ...,
+        description="GeoJSON Polygon/MultiPolygon yang akan divalidasi sebelum dikunci"
+    )
+
+class SpatialConflictItem(BaseModel):
+    id: UUID
+    name: str
+    is_own_land: bool
+    status: str
+
+class PolygonValidationResponse(BaseModel):
+    valid: bool
+    area_sqm: float = 0.0
+    message: str
+    conflicting_plot: Optional[SpatialConflictItem] = None
+
+class SpatialOverlayItem(BaseModel):
+    id: UUID
+    name: str
+    is_own_land: bool
+    status: str
+    polygon_boundary: Dict[str, Any]
+
 class TreeSampleInput(BaseModel):
     circumference_cm: float = Field(..., gt=0, example=45.5, description="Keliling batang (cm)")
 
@@ -41,11 +66,17 @@ class TreeBlockRequest(BaseModel):
 
 class WithdrawRequest(BaseModel):
     amount: float = Field(..., gt=0, example=500000, description="Jumlah saldo yang ditarik (Rupiah)")
-    bank_name: str = Field(..., example="Bank Mandiri")
-    account_number: str = Field(..., example="1234567890")
+    bank_code: Optional[str] = Field(None, example="BRI", description="Kode bank (BRI, BCA, MANDIRI, DANA, GOPAY, SHOPEEPAY)")
+    bank_name: Optional[str] = Field(None, example="Bank BRI", description="Nama bank alternatif")
+    account_number: str = Field(..., example="0142-01-084821-50-8", description="Nomor rekening atau nomor HP e-wallet")
 
 class DistributeRevenueRequest(BaseModel):
     transaction_id: UUID = Field(..., description="ID Transaksi dari pembelian korporat")
+
+class WalletInfoResponse(BaseModel):
+    available_balance: float
+    escrow_balance: float
+    recent_transactions: List[WalletTransactionResponse] = Field(default_factory=list)
 
 class SpeciesSummary(BaseModel):
     species_name: str
@@ -55,9 +86,11 @@ class SpeciesSummary(BaseModel):
 class UpcomingInspectionItem(BaseModel):
     land_plot_id: Optional[UUID] = None
     land_plot_name: str
-    surveyor_name: str = "Budi Surveyor"
-    surveyor_code: str = "SRV-BUDI-09"
-    scheduled_date: str = "28 Okt 2026"
+    surveyor_id: Optional[UUID] = None
+    surveyor_name: Optional[str] = None
+    surveyor_code: Optional[str] = None
+    scheduled_survey_date: Optional[datetime] = None
+    scheduled_date: Optional[str] = None
     status_note: str = "Inspeksi Poligon GPS & Sampel DBH"
 
 class RecentWalletActivityItem(BaseModel):
@@ -134,9 +167,17 @@ class LandPlotDetail(BaseModel):
     geojson_polygon: Optional[str] = None
     tree_blocks: List[TreeBlockDetail] = []
     created_at: Optional[datetime] = None
+    surveyor_id: Optional[UUID] = None
     surveyor_name: Optional[str] = None
     surveyor_code: Optional[str] = None
+    scheduled_survey_date: Optional[datetime] = None
+    scheduled_date: Optional[str] = None
     survey_logs: Optional[List[SurveyLogItem]] = []
+
+class AdminScheduleSurveyRequest(BaseModel):
+    surveyor_id: Optional[UUID] = Field(None, description="ID User surveyor yang ditugaskan")
+    scheduled_survey_date: datetime = Field(..., description="Waktu dan tanggal rencana inspeksi fisik oleh surveyor")
+    notes: Optional[str] = Field(None, description="Catatan instruksi khusus penugasan audit dari Admin")
 
 class WalletResponse(BaseModel):
     user_id: UUID
@@ -206,6 +247,66 @@ class TreeSpeciesResponse(BaseModel):
     requires_height: bool = False
     formula_display: Optional[str] = None
     reference_source: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ==============================================================================
+# Skema Profil Mitra Tani (Farmer Profile)
+# ==============================================================================
+class FarmerProfileUpdateRequest(BaseModel):
+    full_name: Optional[str] = Field(None, example="Pak Joko Widodo", description="Nama lengkap mitra tani")
+    nik: Optional[str] = Field(None, example="3307011234560001", description="16 digit NIK")
+    phone_number: Optional[str] = Field(None, example="0812-3456-7890", description="Nomor HP / WhatsApp")
+    address: Optional[str] = Field(None, example="Jl. Lereng Sindoro No. 12", description="Alamat tempat tinggal")
+    village: Optional[str] = Field(None, example="Kecitran", description="Desa / Kelurahan")
+    regency: Optional[str] = Field(None, example="Wonosobo", description="Kabupaten / Kota")
+    province: Optional[str] = Field(None, example="Jawa Tengah", description="Provinsi")
+    gapoktan_name: Optional[str] = Field(None, example="Gapoktan Sindoro Makmur", description="Nama kelompok tani")
+
+ProfileUpdateRequest = FarmerProfileUpdateRequest
+
+class FarmerProfileResponse(BaseModel):
+    id: Optional[UUID] = None
+    user_id: UUID
+    full_name: str
+    email: str
+    nik: Optional[str] = None
+    phone_number: Optional[str] = None
+    address: Optional[str] = None
+    village: Optional[str] = None
+    regency: Optional[str] = None
+    province: Optional[str] = None
+    gapoktan_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+ProfileResponse = FarmerProfileResponse
+
+# ==============================================================================
+# Skema Rekening Bank & E-Wallet Mitra Tani (Bank Accounts)
+# ==============================================================================
+class BankAccountCreateRequest(BaseModel):
+    bank_code: str = Field(..., example="BRI", min_length=2, max_length=50, description="Kode bank atau e-wallet (BRI, BCA, MANDIRI, DANA, dll)")
+    bank_name: str = Field(..., example="Bank BRI", min_length=2, max_length=100, description="Nama resmi bank/e-wallet")
+    account_number: str = Field(..., example="0142-01-084821-50-8", min_length=4, max_length=50, description="Nomor rekening atau nomor HP e-wallet")
+    account_holder_name: str = Field(..., example="Joko Widodo", min_length=2, max_length=150, description="Nama pemilik rekening sesuai buku tabungan/KTP")
+    is_primary: Optional[bool] = Field(False, description="Tandai sebagai rekening pencairan utama")
+
+class BankAccountResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    bank_code: str
+    bank_name: str
+    account_number: str
+    account_holder_name: str
+    is_primary: bool
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

@@ -26,7 +26,8 @@ import {
   Lock, 
   Database,
   Loader2,
-  Calendar
+  Calendar,
+  AlertOctagon
 } from 'lucide-react';
 import { MapContainer, TileLayer, GeoJSON, ZoomControl, useMap } from 'react-leaflet';
 import { getFarmerLands, getFarmerSummary, submitLandRevision } from '../../api/farmer';
@@ -173,8 +174,10 @@ const FALLBACK_LANDS = [
         formula_display: '0.098 × D^2.48'
       }
     ],
-    surveyor_name: 'Budi Surveyor',
-    surveyor_code: 'SRV-BUDI-09',
+    surveyor_name: null,
+    surveyor_code: null,
+    scheduled_date: null,
+    scheduled_survey_date: null,
     created_at: '2026-03-12T08:00:00Z',
     survey_logs: []
   },
@@ -200,6 +203,7 @@ const FALLBACK_LANDS = [
     ],
     surveyor_name: 'Budi Surveyor',
     surveyor_code: 'SRV-BUDI-09',
+    scheduled_date: '08 Mar 2026',
     created_at: '2026-03-02T08:00:00Z',
     survey_logs: [
       {
@@ -218,6 +222,16 @@ export default function VerificationTrackingView({
   onOpenMobileNav,
   onNavigateTab
 }) {
+  // Helper to read ?plotId= query param from window.location.search
+  const getQueryPlotId = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('plotId') || '';
+    } catch {
+      return '';
+    }
+  };
+
   // 1. STATE & DATA FETCHING
   const [lands, setLands] = useState([]);
   const [selectedLandId, setSelectedLandId] = useState('');
@@ -253,7 +267,7 @@ export default function VerificationTrackingView({
       title,
       desc
     });
-    if (onToast) onToast(`${title}: ${desc}`);
+    if (onToast) onToast(`${title}: ${desc}`, type);
   }, [onToast]);
 
   // Auto-hide toast after 4.2 seconds
@@ -286,16 +300,26 @@ export default function VerificationTrackingView({
 
       if (landsData && Array.isArray(landsData) && landsData.length > 0) {
         setLands(landsData);
-        setSelectedLandId(prev => {
-          if (prev && landsData.some(l => String(l.id) === String(prev))) {
-            return prev;
-          }
-          return landsData[0].id;
-        });
+        // Step 1: Auto-select via URL query (?plotId=...)
+        const qPlotId = getQueryPlotId();
+        const matchedPlot = qPlotId ? landsData.find(l => String(l.id) === String(qPlotId)) : null;
+
+        if (matchedPlot) {
+          setSelectedLandId(matchedPlot.id);
+        } else {
+          setSelectedLandId(prev => {
+            if (prev && landsData.some(l => String(l.id) === String(prev))) {
+              return prev;
+            }
+            return landsData[0].id;
+          });
+        }
       } else {
         // Fallback default sample data
         setLands(FALLBACK_LANDS);
-        setSelectedLandId(prev => prev || FALLBACK_LANDS[0].id);
+        const qPlotId = getQueryPlotId();
+        const matchedPlot = qPlotId ? FALLBACK_LANDS.find(l => String(l.id) === String(qPlotId)) : null;
+        setSelectedLandId(matchedPlot ? matchedPlot.id : FALLBACK_LANDS[0].id);
       }
     } catch (error) {
       console.error('Error saat fetch verification data:', error);
@@ -310,12 +334,47 @@ export default function VerificationTrackingView({
     loadData();
   }, [loadData]);
 
+  // Handle browser back/forward or manual URL search param changes
+  useEffect(() => {
+    const handlePopState = () => {
+      const qPlotId = getQueryPlotId();
+      if (qPlotId) {
+        setLands(currentLands => {
+          const match = currentLands.find(l => String(l.id) === String(qPlotId));
+          if (match) setSelectedLandId(match.id);
+          return currentLands;
+        });
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   // Handle newly submitted plot if passed from wizard
   useEffect(() => {
     if (newlySubmittedPlot && newlySubmittedPlot.id) {
       setSelectedLandId(newlySubmittedPlot.id);
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('plotId', newlySubmittedPlot.id);
+        window.history.replaceState({ plotId: newlySubmittedPlot.id }, '', url.toString());
+      } catch (err) {
+        console.warn('Gagal sinkronisasi URL search params:', err);
+      }
     }
   }, [newlySubmittedPlot]);
+
+  // Tab click selector that keeps URL query in sync (?plotId=...)
+  const handleSelectPlot = (plotId) => {
+    setSelectedLandId(plotId);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('plotId', plotId);
+      window.history.replaceState({ plotId }, '', url.toString());
+    } catch (e) {
+      console.warn('Gagal update URL parameter plotId:', e);
+    }
+  };
 
   // Active Selected Land Object
   const selectedLand = useMemo(() => {
@@ -343,26 +402,44 @@ export default function VerificationTrackingView({
     return lands;
   }, [lands, activeFilter]);
 
+  // Step 2 QA: Pemblokiran Audit untuk Lahan Kosong (Cek panjang tree_blocks)
+  const hasTreeBlocks = Array.isArray(selectedLand?.tree_blocks) && selectedLand.tree_blocks.length > 0;
+
+  // Step 3 QA: Dinamisasi Surveyor & Jadwal Inspeksi
+  // Baca surveyor_name dari relasi land_plots. Jika surveyor_id kosong (null), tampilkan "Menunggu Alokasi Petugas"
+  const hasAssignedSurveyor = Boolean(selectedLand?.surveyor_name);
+  const displaySurveyorName = hasAssignedSurveyor ? selectedLand.surveyor_name : 'Menunggu Alokasi Petugas';
+  const displaySurveyorCode = hasAssignedSurveyor ? selectedLand.surveyor_code : null;
+
+  // Baca scheduled_date (hanya jika Admin sudah menetapkan scheduled_survey_date)
+  const hasAdminSchedule = Boolean(selectedLand?.scheduled_survey_date);
+  const displayScheduledDate = useMemo(() => {
+    if (hasAdminSchedule && selectedLand?.scheduled_date && selectedLand.scheduled_date !== 'Dalam Penjadwalan' && selectedLand.scheduled_date !== 'Menunggu Penjadwalan') {
+      return selectedLand.scheduled_date;
+    }
+    return 'Menunggu Penjadwalan';
+  }, [hasAdminSchedule, selectedLand]);
+
   // 2. 4 BENTO KPI COMPUTATIONS
   // KPI 1: Total Petak Diaudit
   const totalPlotsCount = lands.length;
   const verifiedCount = lands.filter(l => l.status === 'verified' || l.status === 'active').length;
-  const pendingCount = lands.filter(l => l.status === 'draft' || l.status === 'pending' || l.status === 'pending_survey').length;
+  const pendingPlots = lands.filter(l => l.status === 'draft' || l.status === 'pending' || l.status === 'pending_survey');
+  const pendingCount = pendingPlots.length;
 
-  // KPI 2: Tahap Inspeksi Lapangan (surveyor info)
-  const scheduledInspectionsCount = pendingCount;
-  const upcomingInspection = farmerSummary?.upcoming_inspections?.[0];
-  const surveyorName = selectedLand?.surveyor_name || upcomingInspection?.surveyor_name || 'Budi Surveyor';
-  const surveyorCode = selectedLand?.surveyor_code || upcomingInspection?.surveyor_code || 'SRV-BUDI-09';
-  const scheduledDate = upcomingInspection?.scheduled_date || '15 Mar 2026';
+  // KPI 2: Tahap Inspeksi Lapangan — hanya draft yang sudah punya blok pohon
+  const pendingWithBlocksCount = pendingPlots.filter(
+    (l) => Array.isArray(l.tree_blocks) && l.tree_blocks.length > 0
+  ).length;
+  const noTreeDraftCount = pendingCount - pendingWithBlocksCount;
+  const scheduledInspectionsCount = pendingWithBlocksCount;
 
   // KPI 3: Rata-rata Indeks NDVI
-  // Plot verified typically higher canopy, draft has initial analysis
   const isVerifiedPlot = selectedLand?.status === 'verified' || selectedLand?.status === 'active';
   const selectedLandNdvi = isVerifiedPlot ? 0.79 : 0.84;
   const selectedLandScene = isVerifiedPlot ? 'S2B_MSIL2A_20260305T031651' : 'S2A_MSIL2A_20260312T031551';
   const selectedLandCloud = isVerifiedPlot ? '4.6%' : '1.8%';
-  const selectedLandCanopy = isVerifiedPlot ? '94.1%' : '96.4%';
+  const selectedLandCanopy = isVerifiedPlot ? '94.1%' : (hasTreeBlocks ? '96.4%' : 'Belum Ada Tegakan');
 
   // KPI 4: Serapan Tervalidasi (Sum of estimated tCO2e ONLY from verified lands)
   const totalVerifiedCarbon = useMemo(() => {
@@ -433,10 +510,10 @@ export default function VerificationTrackingView({
       logs.push({
         icon: ClipboardCheck,
         tone: 'emerald',
-        actor: `${surveyorName} · ${surveyorCode}`,
+        actor: `${displaySurveyorName} · ${displaySurveyorCode || 'SRV'}`,
         time: '08 Mar 2026 · 11:42',
         hash: '9be3d5',
-        text: 'Inspeksi lapangan selesai: 30 sampel diukur, deviasi patok ≤ 11.4 m, spesies 100% sesuai. Dokumentasi & tanda tangan terlampir.'
+        text: 'Inspeksi lapangan selesai: sampel diukur, deviasi patok ≤ 11.4 m, spesies 100% sesuai. Dokumentasi & tanda tangan terlampir.'
       });
 
       // 4. Registry Minting log if verified
@@ -474,7 +551,7 @@ export default function VerificationTrackingView({
     });
 
     return logs;
-  }, [selectedLand, isVerifiedPlot, selectedLandNdvi, selectedLandCloud, selectedLandCanopy, surveyorName, surveyorCode, selectedPlotCarbon, localAuditLogs]);
+  }, [selectedLand, isVerifiedPlot, selectedLandNdvi, selectedLandCloud, selectedLandCanopy, displaySurveyorName, displaySurveyorCode, selectedPlotCarbon, localAuditLogs]);
 
   // Handle Revision Submission
   const handleSubmitRevision = async (e) => {
@@ -516,26 +593,12 @@ export default function VerificationTrackingView({
       setRevisionNote('');
       triggerToast('success', `Pengajuan ${ticket} Terkirim`, `${selectedLand.name} · ${revisionCategory}`);
     } catch (err) {
-      console.warn('API submit revision fallback:', err);
-      const ticket = `REV-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-      
-      const newLog = {
-        icon: FilePenLine,
-        tone: 'amber',
-        actor: `Mitra Petani · Pengajuan ${ticket}`,
-        time: 'Baru saja',
-        hash: ticket.slice(4),
-        text: `[${revisionCategory}] ${trimmed}`
-      };
-
-      setLocalAuditLogs(prev => ({
-        ...prev,
-        [selectedLand.id]: [newLog, ...(prev[selectedLand.id] || [])]
-      }));
-
-      setIsRevisionModalOpen(false);
-      setRevisionNote('');
-      triggerToast('success', `Pengajuan ${ticket} Terkirim`, `${selectedLand.name} · ${revisionCategory}`);
+      console.error('Gagal mengirim pengajuan revisi:', err);
+      triggerToast(
+        'error',
+        'Pengajuan Gagal Dikirim',
+        err.message || 'Server tidak dapat memproses pengajuan revisi. Silakan coba lagi.'
+      );
     } finally {
       setIsSubmittingRevision(false);
     }
@@ -577,7 +640,7 @@ export default function VerificationTrackingView({
               type="button"
               onClick={onOpenMobileNav}
               aria-label="Buka navigasi"
-              className="grid h-10 w-10 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:bg-stone-50 lg:hidden"
+              className="grid h-10 w-10 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:bg-stone-50 lg:hidden cursor-pointer"
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -587,7 +650,7 @@ export default function VerificationTrackingView({
           <button
             type="button"
             onClick={() => setIsRevisionModalOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 shadow-xs transition hover:border-stone-400 hover:bg-stone-50 active:scale-[0.99]"
+            className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 shadow-xs transition hover:border-stone-400 hover:bg-stone-50 active:scale-[0.99] cursor-pointer"
           >
             <FilePenLine className="h-4 w-4 text-stone-500" />
             Ajukan Revisi Batas
@@ -597,7 +660,7 @@ export default function VerificationTrackingView({
           <button
             type="button"
             onClick={handleDownloadBa}
-            className="inline-flex items-center gap-2 rounded-xl bg-pine px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-pine-900 active:scale-[0.99]"
+            className="inline-flex items-center gap-2 rounded-xl bg-pine px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-pine-900 active:scale-[0.99] cursor-pointer"
           >
             <Download className="h-4 w-4 text-emerald-400" />
             Unduh Berita Acara MRV
@@ -654,11 +717,19 @@ export default function VerificationTrackingView({
             </span>
           </div>
           <p className="tnum mt-3 font-mono text-2xl font-bold leading-none tracking-tight text-pine">
-            {scheduledInspectionsCount > 0 ? `${scheduledInspectionsCount} Dijadwalkan` : 'Semua Terverifikasi'}
+            {pendingCount > 0 ? `${scheduledInspectionsCount} Dijadwalkan` : 'Semua Terverifikasi'}
           </p>
-          <p className="mt-2 truncate text-[11px] text-stone-500">
-            Petugas: <span className="font-semibold text-stone-700">{surveyorName}</span>{' '}
-            <span className="font-mono text-stone-400">(<span className="tnum">{surveyorCode}</span>)</span>
+          {noTreeDraftCount > 0 && (
+            <p className="mt-1.5 text-[11px] font-semibold text-rose-600">
+              {noTreeDraftCount} Menunggu Input Pohon
+            </p>
+          )}
+          <p className="mt-1.5 truncate text-[11px] text-stone-500">
+            Petugas:{' '}
+            <span className="font-semibold text-stone-700">{displaySurveyorName}</span>{' '}
+            {displaySurveyorCode && (
+              <span className="font-mono text-stone-400">(<span className="tnum">{displaySurveyorCode}</span>)</span>
+            )}
           </p>
         </article>
 
@@ -715,7 +786,7 @@ export default function VerificationTrackingView({
             <button
               type="button"
               onClick={() => setActiveFilter('all')}
-              className={`filter-btn shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition ${
+              className={`filter-btn shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition cursor-pointer ${
                 activeFilter === 'all' ? 'bg-white text-pine shadow-xs' : 'text-stone-500 hover:text-pine'
               }`}
             >
@@ -724,7 +795,7 @@ export default function VerificationTrackingView({
             <button
               type="button"
               onClick={() => setActiveFilter('pending')}
-              className={`filter-btn shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition ${
+              className={`filter-btn shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition cursor-pointer ${
                 activeFilter === 'pending' ? 'bg-white text-pine shadow-xs' : 'text-stone-500 hover:text-pine'
               }`}
             >
@@ -733,7 +804,7 @@ export default function VerificationTrackingView({
             <button
               type="button"
               onClick={() => setActiveFilter('verified')}
-              className={`filter-btn shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition ${
+              className={`filter-btn shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition cursor-pointer ${
                 activeFilter === 'verified' ? 'bg-white text-pine shadow-xs' : 'text-stone-500 hover:text-pine'
               }`}
             >
@@ -759,21 +830,26 @@ export default function VerificationTrackingView({
             {filteredLands.map((plot, i) => {
               const isSelected = String(plot.id) === String(selectedLandId);
               const isPlotVerified = plot.status === 'verified' || plot.status === 'active';
+              const plotHasBlocks = Array.isArray(plot.tree_blocks) && plot.tree_blocks.length > 0;
               const plotCode = `PLOT #${String(lands.findIndex(l => l.id === plot.id) + 1).padStart(2, '0')}`;
               const badgeText = isPlotVerified
                 ? '✓ Lolos Verifikasi Penuh (4/4 Tahap)'
+                : !plotHasBlocks
+                ? 'Wajib Input Blok Pohon'
                 : '⏳ Tahap 3: Menunggu Inspeksi Surveyor';
               const badgeClass = isPlotVerified
                 ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                : !plotHasBlocks
+                ? 'border-rose-300 bg-rose-50 text-rose-700'
                 : 'border-amber-300 bg-amber-50 text-amber-700';
 
               return (
                 <button
                   key={plot.id}
                   type="button"
-                  onClick={() => setSelectedLandId(plot.id)}
+                  onClick={() => handleSelectPlot(plot.id)}
                   aria-pressed={isSelected}
-                  className={`fade-up group rounded-2xl border p-4 text-left transition duration-200 ${
+                  className={`fade-up group rounded-2xl border p-4 text-left transition duration-200 cursor-pointer ${
                     isSelected
                       ? 'border-pine bg-pine/[0.03] shadow-card ring-1 ring-pine/15'
                       : 'border-stone-200 bg-white hover:-translate-y-0.5 hover:border-stone-300 hover:shadow-card'
@@ -832,9 +908,11 @@ export default function VerificationTrackingView({
               <span className={`shrink-0 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold ${
                 isVerifiedPlot
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : !hasTreeBlocks
+                  ? 'border-rose-300 bg-rose-50 text-rose-700'
                   : 'border-amber-200 bg-amber-50 text-amber-700'
               }`}>
-                {isVerifiedPlot ? '4/4 Tahap' : '2/4 Tahap'}
+                {isVerifiedPlot ? '4/4 Tahap' : !hasTreeBlocks ? '2/4 Tahap (Tertahan)' : '2/4 Tahap'}
               </span>
             </header>
 
@@ -929,7 +1007,7 @@ export default function VerificationTrackingView({
                 </div>
               </div>
 
-              {/* TAHAP 3 · Inspeksi Fisik & Sampling Alometrik */}
+              {/* TAHAP 3 · Inspeksi Fisik & Sampling Alometrik (Dengan QA Fix: Blokir Lahan Kosong & Dinamisasi Surveyor) */}
               <div className="relative pl-12 fade-up pb-5" style={{ animationDelay: '120ms' }}>
                 <span className={`absolute left-[15px] top-10 bottom-0 w-0.5 ${
                   isVerifiedPlot ? 'bg-emerald-300' : 'bg-stone-200'
@@ -937,13 +1015,25 @@ export default function VerificationTrackingView({
                 <span className={`absolute left-0 top-0 grid h-8 w-8 place-items-center rounded-full border-2 ${
                   isVerifiedPlot
                     ? 'border-emerald-600 bg-emerald-600 text-white'
+                    : !hasTreeBlocks
+                    ? 'border-rose-500 bg-rose-100 text-rose-700'
                     : 'border-amber-500 bg-amber-100 text-amber-700'
                 }`}>
-                  {isVerifiedPlot ? <Check className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
+                  {isVerifiedPlot ? (
+                    <Check className="h-4 w-4" />
+                  ) : !hasTreeBlocks ? (
+                    <AlertTriangle className="h-4 w-4" />
+                  ) : (
+                    <Clock className="h-4 w-4" />
+                  )}
                 </span>
 
                 <div className={`rounded-xl border p-4 ${
-                  isVerifiedPlot ? 'border-stone-100 bg-stone-50/60' : 'border-amber-300 bg-amber-50/40'
+                  isVerifiedPlot
+                    ? 'border-stone-100 bg-stone-50/60'
+                    : !hasTreeBlocks
+                    ? 'border-rose-300 bg-rose-50/40'
+                    : 'border-amber-300 bg-amber-50/40'
                 }`}>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
@@ -953,15 +1043,24 @@ export default function VerificationTrackingView({
                       </h3>
                       <p className="mt-0.5 text-[11px] text-stone-500">Surveyor Lapangan Independen</p>
                     </div>
+
+                    {/* Status Badge */}
                     <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold leading-tight ${
                       isVerifiedPlot
                         ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : !hasTreeBlocks
+                        ? 'border-rose-300 bg-rose-100 text-rose-800'
                         : 'border-amber-300 bg-amber-100 text-amber-800'
                     }`}>
                       {isVerifiedPlot ? (
                         <>
                           <CheckCircle2 className="h-3 w-3" />
                           Selesai / Disetujui Surveyor
+                        </>
+                      ) : !hasTreeBlocks ? (
+                        <>
+                          <AlertTriangle className="h-3 w-3" />
+                          Lengkapi Data Blok Tanaman
                         </>
                       ) : (
                         <>
@@ -972,76 +1071,126 @@ export default function VerificationTrackingView({
                     </span>
                   </div>
 
-                  {/* Surveyor Officer Sub-Card */}
-                  <div className={`mt-3 rounded-xl border ${
-                    isVerifiedPlot ? 'border-stone-100 bg-white' : 'border-amber-200 bg-white'
-                  } p-3.5`}>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${
-                        isVerifiedPlot ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                      } font-mono text-sm font-bold`}>
-                        BS
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-bold leading-tight text-stone-900">
-                          {surveyorName}
-                          <span className="ml-1 rounded-md bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-stone-600">
-                            {surveyorCode}
-                          </span>
-                        </p>
-                        <p className="tnum mt-0.5 truncate font-mono text-[10px] text-stone-500">
-                          +62 812-9009-2211 · {isVerifiedPlot ? '08 Mar 2026 · 09:15 WIB (selesai)' : `${scheduledDate} · 08:00–12:00 WIB`}
-                        </p>
+                  {/* KASUS 1: Lahan Kosong Tanpa Blok Pohon (QA Pemblokiran Audit) */}
+                  {!isVerifiedPlot && !hasTreeBlocks && (
+                    <div className="mt-3.5 rounded-xl border border-rose-200 bg-white p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-rose-100 text-rose-700">
+                          <AlertOctagon className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-bold leading-tight text-rose-900">
+                            Data Blok Pohon Belum Terdaftar
+                          </p>
+                          <p className="mt-1 text-[11px] leading-relaxed text-stone-600">
+                            Lahan Anda belum memiliki data pohon. Tambahkan minimal 1 blok tanaman di menu Manajemen Lahan agar jadwal inspeksi lapangan dapat diterbitkan.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => onNavigateTab?.('land')}
+                            className="mt-3 inline-flex items-center gap-2 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-rose-700 active:scale-[0.99] cursor-pointer"
+                          >
+                            <TreePine className="h-3.5 w-3.5" />
+                            Buka Manajemen Lahan &amp; Tambah Pohon →
+                          </button>
+                        </div>
                       </div>
-                      <span className="shrink-0 self-start rounded-lg border border-stone-200 bg-stone-50 px-2 py-1 font-mono text-[9px] font-semibold text-stone-500 sm:self-auto">
-                        {isVerifiedPlot ? 'Kunjungan fisik terlaksana & ditandatangani petani' : '+3 hari dari pendaftaran'}
-                      </span>
                     </div>
+                  )}
 
-                    <div className="mt-3 border-t border-dashed border-stone-200 pt-3">
-                      <p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-stone-400">Parameter Uji Lapangan</p>
-                      <ol className="mt-2 space-y-2">
-                        <li className="flex gap-2.5">
-                          <span className="tnum mt-px grid h-4 w-4 shrink-0 place-items-center rounded bg-pine/5 font-mono text-[9px] font-bold text-pine">1</span>
-                          <div className="min-w-0">
-                            <p className="text-[12px] font-semibold leading-snug text-stone-800">Validasi titik patok batas GPS</p>
-                            <p className="mt-0.5 text-[11px] leading-relaxed text-stone-500">
-                              {isVerifiedPlot ? (
-                                <>Deviasi maksimum <span className="font-mono">11.4 m</span> — memenuhi toleransi geofencing <span className="font-mono">&le; 50 m</span>.</>
-                              ) : (
-                                <>Toleransi geofencing <span className="font-mono">&le; 50 m</span> terhadap poligon PostGIS terdaftar.</>
-                              )}
-                            </p>
-                          </div>
-                        </li>
-                        <li className="flex gap-2.5">
-                          <span className="tnum mt-px grid h-4 w-4 shrink-0 place-items-center rounded bg-pine/5 font-mono text-[9px] font-bold text-pine">2</span>
-                          <div className="min-w-0">
-                            <p className="text-[12px] font-semibold leading-snug text-stone-800">Pengukuran sampel keliling / DBH (D) &amp; tinggi (H)</p>
-                            <p className="mt-0.5 text-[11px] leading-relaxed text-stone-500">
-                              {isVerifiedPlot ? (
-                                <>30 sampel terukur · rata-rata <span className="font-mono">D = 16.2 cm</span>, <span className="font-mono">H = 11.8 m</span>.</>
-                              ) : (
-                                <>Diameter setinggi dada <span className="font-mono">130 cm</span> pada blok tanaman terdaftar.</>
-                              )}
-                            </p>
-                          </div>
-                        </li>
-                        <li className="flex gap-2.5">
-                          <span className="tnum mt-px grid h-4 w-4 shrink-0 place-items-center rounded bg-pine/5 font-mono text-[9px] font-bold text-pine">3</span>
-                          <div className="min-w-0">
-                            <p className="text-[12px] font-semibold leading-snug text-stone-800">Verifikasi spesies pohon</p>
-                            <p className="mt-0.5 text-[11px] leading-relaxed text-stone-500">
-                              Mengacu standar alometrik <span className="font-semibold">ICRAF / KLHK</span>.
-                            </p>
-                          </div>
-                        </li>
-                      </ol>
+                  {/* KASUS 2: Ada Blok Pohon ATAU Terverifikasi -> Tampilkan Kartu Surveyor Dinamis */}
+                  {(isVerifiedPlot || hasTreeBlocks) && (
+                    <div className={`mt-3 rounded-xl border ${
+                      isVerifiedPlot ? 'border-stone-100 bg-white' : 'border-amber-200 bg-white'
+                    } p-3.5`}>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${
+                          isVerifiedPlot
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : hasAssignedSurveyor
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-stone-100 text-stone-600'
+                        } font-mono text-sm font-bold`}>
+                          {hasAssignedSurveyor
+                            ? displaySurveyorName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+                            : '?'}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-bold leading-tight text-stone-900">
+                            {displaySurveyorName}
+                            {displaySurveyorCode && (
+                              <span className="ml-1 rounded-md bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-stone-600">
+                                {displaySurveyorCode}
+                              </span>
+                            )}
+                          </p>
+                          <p className="tnum mt-0.5 truncate font-mono text-[10px] text-stone-500">
+                            {hasAssignedSurveyor ? '+62 812-9009-2211 · ' : ''}
+                            {isVerifiedPlot 
+                              ? '08 Mar 2026 · 09:15 WIB (selesai)' 
+                              : displayScheduledDate === 'Menunggu Penjadwalan'
+                              ? 'Menunggu Penjadwalan'
+                              : `${displayScheduledDate} · 08:00–12:00 WIB`}
+                          </p>
+                        </div>
+                        <span className="shrink-0 self-start rounded-lg border border-stone-200 bg-stone-50 px-2 py-1 font-mono text-[9px] font-semibold text-stone-500 sm:self-auto">
+                          {isVerifiedPlot
+                            ? 'Kunjungan fisik terlaksana & ditandatangani petani'
+                            : hasAssignedSurveyor
+                            ? (displayScheduledDate === 'Menunggu Penjadwalan' ? 'Petugas siap · Menunggu tanggal' : 'Jadwal terkonfirmasi')
+                            : 'Dalam Antrean Penugasan'}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 border-t border-dashed border-stone-200 pt-3">
+                        <p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-stone-400">Parameter Uji Lapangan</p>
+                        <ol className="mt-2 space-y-2">
+                          <li className="flex gap-2.5">
+                            <span className="tnum mt-px grid h-4 w-4 shrink-0 place-items-center rounded bg-pine/5 font-mono text-[9px] font-bold text-pine">1</span>
+                            <div className="min-w-0">
+                              <p className="text-[12px] font-semibold leading-snug text-stone-800">Validasi titik patok batas GPS</p>
+                              <p className="mt-0.5 text-[11px] leading-relaxed text-stone-500">
+                                {isVerifiedPlot ? (
+                                  <>Deviasi maksimum <span className="font-mono">11.4 m</span> — memenuhi toleransi geofencing <span className="font-mono">&le; 50 m</span>.</>
+                                ) : (
+                                  <>Toleransi geofencing <span className="font-mono">&le; 50 m</span> terhadap poligon PostGIS terdaftar.</>
+                                )}
+                              </p>
+                            </div>
+                          </li>
+                          <li className="flex gap-2.5">
+                            <span className="tnum mt-px grid h-4 w-4 shrink-0 place-items-center rounded bg-pine/5 font-mono text-[9px] font-bold text-pine">2</span>
+                            <div className="min-w-0">
+                              <p className="text-[12px] font-semibold leading-snug text-stone-800">Pengukuran sampel keliling / DBH (D) &amp; tinggi (H)</p>
+                              <p className="mt-0.5 text-[11px] leading-relaxed text-stone-500">
+                                {isVerifiedPlot ? (
+                                  <>30 sampel terukur · rata-rata <span className="font-mono">D = 16.2 cm</span>, <span className="font-mono">H = 11.8 m</span>.</>
+                                ) : (
+                                  <>Diameter setinggi dada <span className="font-mono">130 cm</span> pada blok tanaman terdaftar.</>
+                                )}
+                              </p>
+                            </div>
+                          </li>
+                          <li className="flex gap-2.5">
+                            <span className="tnum mt-px grid h-4 w-4 shrink-0 place-items-center rounded bg-pine/5 font-mono text-[9px] font-bold text-pine">3</span>
+                            <div className="min-w-0">
+                              <p className="text-[12px] font-semibold leading-snug text-stone-800">Verifikasi spesies pohon</p>
+                              <p className="mt-0.5 text-[11px] leading-relaxed text-stone-500">
+                                Mengacu standar alometrik <span className="font-semibold">ICRAF / KLHK</span>.
+                              </p>
+                            </div>
+                          </li>
+                        </ol>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <p className="mt-3 truncate font-mono text-[9px] text-stone-400">
-                    {isVerifiedPlot ? 'Berita Acara: BA/MRV/2026/03/00881' : `Antrean jadwal kunjungan #AQ-${String(selectedLand?.id || '2291').slice(-4).toUpperCase()}`}
+                    {isVerifiedPlot
+                      ? 'Berita Acara: BA/MRV/2026/03/00881'
+                      : !hasTreeBlocks
+                      ? 'Status: Tertunda · Menunggu Input Data Blok Tanaman'
+                      : `Antrean jadwal kunjungan #AQ-${String(selectedLand?.id || '2291').slice(-4).toUpperCase()}`}
                   </p>
                 </div>
               </div>
@@ -1115,6 +1264,8 @@ export default function VerificationTrackingView({
                   <p className="mt-3 truncate font-mono text-[9px] text-stone-400">
                     {isVerifiedPlot
                       ? 'Klaster: KLSTR-KORP-2026-Q1 · Registry ID: TKR-8821-ID'
+                      : !hasTreeBlocks
+                      ? 'Terkunci hingga data blok tanaman dilengkapi dan inspeksi selesai'
                       : 'Terkunci hingga inspeksi lapangan selesai'}
                   </p>
                 </div>
@@ -1168,7 +1319,9 @@ export default function VerificationTrackingView({
                 <div className="flex gap-2.5 rounded-xl border border-dashed border-amber-300 bg-amber-50/40 p-3.5">
                   <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                   <p className="text-[11px] leading-relaxed text-amber-800">
-                    Belum ada log inspeksi lapangan fisik pada petak ini. Catatan surveyor akan muncul otomatis setelah kunjungan fisik {scheduledDate}.
+                    {!hasTreeBlocks
+                      ? 'Lahan belum memiliki blok tanaman. Lengkapi data blok pohon terlebih dahulu agar jadwal inspeksi lapangan diterbitkan.'
+                      : `Belum ada log inspeksi lapangan fisik pada petak ini. Catatan surveyor akan muncul otomatis setelah kunjungan fisik${displayScheduledDate !== 'Menunggu Penjadwalan' ? ` (${displayScheduledDate})` : ''}.`}
                   </p>
                 </div>
               )}
@@ -1201,7 +1354,7 @@ export default function VerificationTrackingView({
                 <button
                   type="button"
                   onClick={() => setMapMode('satellite')}
-                  className={`rounded-lg px-3 py-1.5 transition ${
+                  className={`rounded-lg px-3 py-1.5 transition cursor-pointer ${
                     mapMode === 'satellite' ? 'bg-white text-pine shadow-xs' : 'text-stone-500 hover:text-pine'
                   }`}
                 >
@@ -1210,7 +1363,7 @@ export default function VerificationTrackingView({
                 <button
                   type="button"
                   onClick={() => setMapMode('ndvi')}
-                  className={`rounded-lg px-3 py-1.5 transition ${
+                  className={`rounded-lg px-3 py-1.5 transition cursor-pointer ${
                     mapMode === 'ndvi' ? 'bg-white text-pine shadow-xs' : 'text-stone-500 hover:text-pine'
                   }`}
                 >
@@ -1457,7 +1610,7 @@ export default function VerificationTrackingView({
             <button
               type="button"
               onClick={() => setIsRevisionModalOpen(true)}
-              className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-xl bg-pine px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-pine-900 active:scale-[0.99]"
+              className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-xl bg-pine px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-pine-900 active:scale-[0.99] cursor-pointer"
             >
               <FilePenLine className="h-4 w-4 text-emerald-400" />
               Ajukan Revisi Batas / Kirim Catatan ke Surveyor
@@ -1503,7 +1656,7 @@ export default function VerificationTrackingView({
                 type="button"
                 aria-label="Tutup modal"
                 onClick={() => setIsRevisionModalOpen(false)}
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -1518,7 +1671,7 @@ export default function VerificationTrackingView({
                 <select
                   id="revPlot"
                   value={selectedLandId}
-                  onChange={e => setSelectedLandId(e.target.value)}
+                  onChange={e => handleSelectPlot(e.target.value)}
                   className="w-full rounded-xl border-stone-300 bg-stone-50/70 text-sm font-medium text-stone-800 focus:border-emerald-500 focus:ring-emerald-500"
                 >
                   {lands.map((plot, i) => (
@@ -1569,7 +1722,7 @@ export default function VerificationTrackingView({
                 <button
                   type="submit"
                   disabled={isSubmittingRevision}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmittingRevision ? (
                     <>
@@ -1586,7 +1739,7 @@ export default function VerificationTrackingView({
                 <button
                   type="button"
                   onClick={() => setIsRevisionModalOpen(false)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:bg-stone-50 cursor-pointer"
                 >
                   Batal
                 </button>
@@ -1607,10 +1760,13 @@ export default function VerificationTrackingView({
               ? 'bg-emerald-100 text-emerald-700'
               : toastConfig.type === 'info'
               ? 'bg-pine/5 text-pine'
+              : toastConfig.type === 'error'
+              ? 'bg-rose-100 text-rose-700'
               : 'bg-amber-100 text-amber-700'
           }`}>
             {toastConfig.type === 'success' && <CheckCircle2 className="h-4 w-4" />}
             {toastConfig.type === 'info' && <Download className="h-4 w-4" />}
+            {toastConfig.type === 'error' && <AlertOctagon className="h-4 w-4" />}
             {toastConfig.type === 'warning' && <AlertTriangle className="h-4 w-4" />}
           </span>
           <div className="min-w-0 flex-1">
@@ -1620,7 +1776,7 @@ export default function VerificationTrackingView({
           <button
             type="button"
             onClick={() => setToastConfig(prev => ({ ...prev, visible: false }))}
-            className="text-stone-400 hover:text-stone-600"
+            className="text-stone-400 hover:text-stone-600 cursor-pointer"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -1630,4 +1786,3 @@ export default function VerificationTrackingView({
     </div>
   );
 }
-

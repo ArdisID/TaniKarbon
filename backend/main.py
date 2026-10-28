@@ -1,7 +1,8 @@
 import math
 import uuid
+import json
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -12,18 +13,27 @@ from fastapi.security.api_key import APIKeyHeader
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database import get_db
-from models import User, CompanyProfile, Wallet, Cluster, Transaction, Certificate, TreeBlock, WalletTransaction, TreeSpecies
+from models import (
+    User, CompanyProfile, Wallet, Cluster, Transaction, Certificate,
+    TreeBlock, WalletTransaction, TreeSpecies, FarmerProfile, BankAccount, BankAccounts
+)
 from schemas import (
     AutoBuyRequest, AutoBuyResponse, LandPlotRequest, TreeBlockRequest,
     WithdrawRequest, DistributeRevenueRequest, FarmerDashboardSummary,
     TokenResponse, UserLoginRequest, UserRegisterRequest, UserResponse,
     DISPOSABLE_EMAIL_DOMAINS, TreeBlockDetail, LandPlotDetail, WalletResponse,
+    WalletInfoResponse,
     UpcomingInspectionItem, RecentWalletActivityItem, WalletTransactionResponse,
-    TreeSpeciesResponse, LandRevisionRequest
+    TreeSpeciesResponse, LandRevisionRequest, PolygonValidationRequest,
+    PolygonValidationResponse, SpatialConflictItem, SpatialOverlayItem,
+    AdminScheduleSurveyRequest,
+    FarmerProfileUpdateRequest, FarmerProfileResponse, ProfileUpdateRequest, ProfileResponse,
+    BankAccountCreateRequest, BankAccountResponse
 )
 from security import (
     limiter, hash_password, verify_password,
@@ -55,6 +65,34 @@ async def on_startup():
             );
         """))
         await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS farmer_profiles (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                nik VARCHAR(20),
+                phone_number VARCHAR(30),
+                address VARCHAR(255),
+                village VARCHAR(100),
+                regency VARCHAR(100),
+                province VARCHAR(100),
+                gapoktan_name VARCHAR(150),
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS bank_accounts (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                bank_code VARCHAR(50) NOT NULL,
+                bank_name VARCHAR(100) NOT NULL,
+                account_number VARCHAR(50) NOT NULL,
+                account_holder_name VARCHAR(150) NOT NULL,
+                is_primary BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+        await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS tree_species (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 local_name VARCHAR(150) UNIQUE NOT NULL,
@@ -76,6 +114,7 @@ async def on_startup():
         # Pastikan kolom surveyor_id di survey_logs nullable agar pengajuan revisi/catatan petani bisa tersimpan
         try:
             await conn.execute(text("ALTER TABLE survey_logs ALTER COLUMN surveyor_id DROP NOT NULL;"))
+            await conn.execute(text("ALTER TABLE land_plots ADD COLUMN IF NOT EXISTS scheduled_survey_date TIMESTAMP WITHOUT TIME ZONE;"))
         except Exception:
             pass
 
@@ -496,7 +535,336 @@ async def auto_buy_offset(
 DEFAULT_CLUSTER_ID = "44444444-4444-4444-8444-444444444444"
 
 # ------------------------------------------------------------------------------
-# 4. Endpoint Mitra Tani (Terproteksi RBAC 'farmer')
+# 4a. Guardrail Spasial & Anti-Griefing Pendaftaran Lahan Petani
+# ------------------------------------------------------------------------------
+MIN_LAND_AREA_SQM = 100.0          # 0,01 Ha
+MAX_LAND_AREA_SQM = 150000.0       # 15,00 Ha per petak pendaftaran mandiri
+MAX_ACTIVE_DRAFT_PLOTS = 5         # Kuota draft aktif per petani
+DOCUMENT_REQUIRED_AREA_SQM = 20000.0  # Di atas 2,00 Ha wajib dokumen/surat desa
+DOCUMENT_REQUIRED_OWNERSHIPS = {
+    "milik sendiri (shm)",
+    "hgu / perkebunan",
+}
+
+
+def _format_hectares(area_sqm: float) -> str:
+    """Format luas ke satuan Ha dengan pemisah desimal Indonesia."""
+    hectares = max(0.0, float(area_sqm)) / 10000.0
+    if 0 < hectares < 0.01:
+        return f"{hectares:.4f}".replace(".", ",")
+    return f"{hectares:.2f}".replace(".", ",")
+
+
+def _geoJSON_to_string(value) -> str:
+    """Normalisasi payload GeoJSON (dict/str) menjadi string untuk PostGIS."""
+    if value is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Data poligon GeoJSON wajib dikirimkan."
+        )
+    if isinstance(value, str):
+        clean = value.strip()
+        if not clean:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Data poligon GeoJSON tidak boleh kosong."
+            )
+        return clean
+    try:
+        return json.dumps(value)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Format GeoJSON poligon tidak dapat dibaca."
+        )
+
+
+def _masked_plot_name(plot_id) -> str:
+    """Samarkan identitas petak milik petani lain (privasi lintas-akun)."""
+    return f"Zona Terdaftar #{str(plot_id).split('-')[0].upper()}"
+
+
+async def _inspect_polygon_geometry(db: AsyncSession, geojson_value: str) -> dict:
+    """
+    Periksa validitas geometri + tipe objek via PostGIS.
+    Mengembalikan dict: valid, area_sqm, message.
+    """
+    try:
+        row = (
+            await db.execute(
+                text("""
+                    WITH input AS (
+                        SELECT ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326) AS geom
+                    )
+                    SELECT
+                        ST_IsValid(geom) AS is_valid,
+                        ST_IsValidReason(geom) AS invalid_reason,
+                        ST_GeometryType(geom) AS geometry_type,
+                        ST_IsEmpty(geom) AS is_empty
+                    FROM input
+                """),
+                {"geojson": geojson_value}
+            )
+        ).fetchone()
+    except DBAPIError:
+        return {
+            "valid": False,
+            "area_sqm": 0.0,
+            "message": "Validasi gagal: GeoJSON poligon tidak dapat dibaca oleh PostGIS."
+        }
+
+    if row is None:
+        return {
+            "valid": False,
+            "area_sqm": 0.0,
+            "message": "Validasi gagal: geometri poligon tidak terbentuk."
+        }
+
+    geometry_type = str(row.geometry_type or "")
+    if geometry_type not in ("ST_Polygon", "ST_MultiPolygon"):
+        return {
+            "valid": False,
+            "area_sqm": 0.0,
+            "message": "Validasi gagal: objek GeoJSON harus berupa Polygon atau MultiPolygon."
+        }
+
+    if row.is_empty:
+        return {
+            "valid": False,
+            "area_sqm": 0.0,
+            "message": "Validasi gagal: poligon tidak memiliki area (geometri kosong)."
+        }
+
+    if not row.is_valid:
+        reason = str(row.invalid_reason or "garis batas menyilang atau tidak tertutup")
+        return {
+            "valid": False,
+            "area_sqm": 0.0,
+            "message": f"Geometri poligon tidak valid: {reason}."
+        }
+
+    try:
+        area_row = (
+            await db.execute(
+                text("""
+                    SELECT ST_Area(
+                        ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326)::geography
+                    ) AS area_sqm
+                """),
+                {"geojson": geojson_value}
+            )
+        ).fetchone()
+        area_sqm = float(area_row.area_sqm) if area_row and area_row.area_sqm is not None else 0.0
+    except DBAPIError:
+        return {
+            "valid": False,
+            "area_sqm": 0.0,
+            "message": "Validasi gagal: luas geometri tidak dapat dihitung oleh PostGIS."
+        }
+
+    return {"valid": True, "area_sqm": area_sqm, "message": "Geometri poligon valid."}
+
+
+def _assert_area_within_limits(area_sqm: float) -> None:
+    """Tolak poligon mikroskopis maupun yang melebihi kuota 15 Ha per petak."""
+    if area_sqm > MAX_LAND_AREA_SQM:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Luas poligon ({_format_hectares(area_sqm)} Ha) melebihi batas maksimal "
+                f"pendaftaran per petak (Maksimal 15,00 Ha)."
+            )
+        )
+    if area_sqm < MIN_LAND_AREA_SQM:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Luas poligon ({_format_hectares(area_sqm)} Ha) di bawah batas minimal "
+                f"pendaftaran per petak (Minimal 0,01 Ha / 100 m²)."
+            )
+        )
+
+
+def _assert_document_requirement(ownership: Optional[str], document_no: Optional[str], area_sqm: float) -> None:
+    """Validasi dokumen hak berjenjang: SHM/HGU wajib, atau lahan > 2 Ha."""
+    normalized_ownership = (ownership or "").strip().lower()
+    has_document = bool((document_no or "").strip())
+
+    if normalized_ownership in DOCUMENT_REQUIRED_OWNERSHIPS and not has_document:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Nomor Dokumen / Bukti Hak wajib diisi untuk status kepemilikan "
+                f"'{ownership.strip()}'."
+            )
+        )
+
+    if area_sqm > DOCUMENT_REQUIRED_AREA_SQM and not has_document:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Lahan dengan luas di atas 2,00 Ha wajib menyertakan Nomor Dokumen / "
+                "Surat Keterangan Desa."
+            )
+        )
+
+
+async def _find_overlapping_plot(db: AsyncSession, geojson_value: str):
+    """Cari satu petak aktif yang beririsan dengan poligon kandidat."""
+    return (
+        await db.execute(
+            text("""
+                SELECT lp.id, lp.name, lp.farmer_id, CAST(lp.status AS TEXT) AS status
+                FROM land_plots lp
+                WHERE CAST(lp.status AS TEXT) != 'rejected'
+                  AND lp.polygon_boundary IS NOT NULL
+                  AND ST_Intersects(
+                      lp.polygon_boundary,
+                      ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326)
+                  )
+                ORDER BY lp.created_at ASC
+                LIMIT 1
+            """),
+            {"geojson": geojson_value}
+        )
+    ).fetchone()
+
+
+def _build_conflict_payload(row, current_user: User) -> dict:
+    is_own_land = row.farmer_id == current_user.id
+    return {
+        "id": row.id,
+        "name": row.name if is_own_land else _masked_plot_name(row.id),
+        "is_own_land": is_own_land,
+        "status": str(row.status),
+    }
+
+
+# ------------------------------------------------------------------------------
+# 4b. Pre-Check Spasial Real-Time (Step 2 Wizard) & Layer Referensi Peta
+# ------------------------------------------------------------------------------
+@app.post("/api/v1/farmer/lands/validate-polygon", response_model=PolygonValidationResponse)
+async def validate_land_polygon(
+    payload: PolygonValidationRequest,
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Validasi pre-flight sebelum poligon dikunci di Step 2:
+    - ST_IsValid (geometri tidak menyilang)
+    - ST_Area dalam rentang 100 m² s/d 150.000 m²
+    - ST_Intersects terhadap seluruh petak aktif (anti-overlap)
+    """
+    geojson_value = _geoJSON_to_string(payload.polygon_boundary)
+    inspection = await _inspect_polygon_geometry(db, geojson_value)
+
+    if not inspection["valid"]:
+        return PolygonValidationResponse(
+            valid=False,
+            area_sqm=float(inspection.get("area_sqm") or 0.0),
+            message=inspection["message"],
+            conflicting_plot=None
+        )
+
+    area_sqm = float(inspection["area_sqm"])
+    if area_sqm > MAX_LAND_AREA_SQM:
+        return PolygonValidationResponse(
+            valid=False,
+            area_sqm=area_sqm,
+            message=(
+                f"Luas poligon ({_format_hectares(area_sqm)} Ha) melebihi batas maksimal "
+                f"pendaftaran per petak (Maksimal 15,00 Ha)."
+            )
+        )
+    if area_sqm < MIN_LAND_AREA_SQM:
+        return PolygonValidationResponse(
+            valid=False,
+            area_sqm=area_sqm,
+            message=(
+                f"Luas poligon ({_format_hectares(area_sqm)} Ha) di bawah batas minimal "
+                f"pendaftaran per petak (Minimal 0,01 Ha / 100 m²)."
+            )
+        )
+
+    overlapping_plot = await _find_overlapping_plot(db, geojson_value)
+    if overlapping_plot:
+        conflict = _build_conflict_payload(overlapping_plot, current_user)
+        label = (
+            f"lahan Anda '{conflict['name']}'"
+            if conflict["is_own_land"]
+            else f"{conflict['name']}"
+        )
+        return PolygonValidationResponse(
+            valid=False,
+            area_sqm=area_sqm,
+            message=(
+                f"Poligon tumpang-tindih dengan {label} yang sudah terdaftar. "
+                "Sesuaikan batas lahan Anda agar tidak menimpa zona terproteksi."
+            ),
+            conflicting_plot=conflict
+        )
+
+    return PolygonValidationResponse(
+        valid=True,
+        area_sqm=area_sqm,
+        message=(
+            f"Poligon valid ({_format_hectares(area_sqm)} Ha) dan bebas tumpang-tindih "
+            "dengan lahan terdaftar."
+        ),
+        conflicting_plot=None
+    )
+
+
+@app.get("/api/v1/farmer/lands/spatial-overlay", response_model=List[SpatialOverlayItem])
+async def get_land_spatial_overlay(
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Layer referensi seluruh poligon aktif untuk peta Step 2.
+    Nama petak milik petani lain disamarkan demi privasi (anti-klaim/anti-mafia lahan).
+    """
+    rows = (
+        await db.execute(
+            text("""
+                SELECT
+                    lp.id,
+                    lp.name,
+                    lp.farmer_id,
+                    CAST(lp.status AS TEXT) AS status,
+                    ST_AsGeoJSON(lp.polygon_boundary) AS geojson
+                FROM land_plots lp
+                WHERE CAST(lp.status AS TEXT) != 'rejected'
+                  AND lp.polygon_boundary IS NOT NULL
+                ORDER BY lp.created_at ASC
+            """)
+        )
+    ).fetchall()
+
+    overlay = []
+    for row in rows:
+        try:
+            polygon_boundary = json.loads(row.geojson) if isinstance(row.geojson, str) else row.geojson
+        except (TypeError, ValueError):
+            continue
+        if not polygon_boundary:
+            continue
+
+        is_own_land = row.farmer_id == current_user.id
+        overlay.append(
+            SpatialOverlayItem(
+                id=row.id,
+                name=row.name if is_own_land else _masked_plot_name(row.id),
+                is_own_land=is_own_land,
+                status=str(row.status),
+                polygon_boundary=polygon_boundary
+            )
+        )
+    return overlay
+
+
+# ------------------------------------------------------------------------------
+# 4c. Endpoint Mitra Tani (Terproteksi RBAC 'farmer')
 # ------------------------------------------------------------------------------
 @app.post("/api/v1/farmer/lands", status_code=status.HTTP_201_CREATED)
 async def register_land_plot(
@@ -504,6 +872,62 @@ async def register_land_plot(
     current_user: User = Depends(require_roles(["farmer"])),
     db: AsyncSession = Depends(get_db)
 ):
+    geojson_value = _geoJSON_to_string(payload.geojson_polygon)
+
+    # 1. Validasi geometri & batas luas (min 100 m², maks 150.000 m² / 15 Ha)
+    inspection = await _inspect_polygon_geometry(db, geojson_value)
+    if not inspection["valid"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=inspection["message"]
+        )
+
+    area_sqm = float(inspection["area_sqm"])
+    _assert_area_within_limits(area_sqm)
+
+    # 2. Validasi dokumen hak berjenjang (SHM/HGU wajib; > 2 Ha wajib surat desa)
+    _assert_document_requirement(payload.ownership, payload.document_no, area_sqm)
+
+    # 3. Batas kuota 5 petak draft aktif per petani (anti-griefing/anti-klaim massal)
+    draft_count_row = (
+        await db.execute(
+            text("""
+                SELECT COUNT(*) AS total
+                FROM land_plots
+                WHERE farmer_id = :farmer_id
+                  AND CAST(status AS TEXT) = 'draft'
+            """),
+            {"farmer_id": current_user.id}
+        )
+    ).fetchone()
+    draft_count = int(draft_count_row.total) if draft_count_row else 0
+    if draft_count >= MAX_ACTIVE_DRAFT_PLOTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Kuota {MAX_ACTIVE_DRAFT_PLOTS} petak draft aktif sudah tercapai. "
+                "Selesaikan verifikasi atau hapus petak draft sebelumnya sebelum "
+                "mendaftarkan lahan baru."
+            )
+        )
+
+    # 4. Validasi Geometri Spasial Anti-Overlap PostGIS (ST_Intersects)
+    overlapping_plot = await _find_overlapping_plot(db, geojson_value)
+    if overlapping_plot:
+        conflict = _build_conflict_payload(overlapping_plot, current_user)
+        label = (
+            f"lahan Anda '{conflict['name']}'"
+            if conflict["is_own_land"]
+            else conflict["name"]
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Gagal menyimpan. Batas poligon yang Anda gambar tumpang-tindih "
+                f"(overlap) dengan {label} yang sudah terdaftar di sistem."
+            )
+        )
+
     query = text("""
         INSERT INTO land_plots (farmer_id, cluster_id, name, polygon_boundary, centroid, total_area_sqm, status)
         VALUES (
@@ -518,14 +942,15 @@ async def register_land_plot(
     
     result = await db.execute(query, {
         "farmer_id": current_user.id, "cluster_id": DEFAULT_CLUSTER_ID,
-        "name": payload.name, "geojson": payload.geojson_polygon
+        "name": payload.name, "geojson": geojson_value
     })
     await db.commit()
     
     row = result.fetchone()
     return {
-        "id": row.id, "name": row.name, 
-        "area_sqm": row.total_area_sqm, "geojson_polygon": row.geojson_result
+        "id": row.id, "name": row.name,
+        "area_sqm": float(row.total_area_sqm), "geojson_polygon": row.geojson_result,
+        "status": "draft"
     }
 
 @app.delete("/api/v1/farmer/lands/{land_id}")
@@ -590,7 +1015,7 @@ async def get_land_plots(
     query = text("""
         SELECT lp.id, lp.name, lp.total_area_sqm, CAST(lp.status AS TEXT) as status,
                ST_AsGeoJSON(lp.polygon_boundary) as geojson,
-               lp.created_at, lp.surveyor_id,
+               lp.created_at, lp.surveyor_id, lp.scheduled_survey_date,
                u.full_name as surveyor_name
         FROM land_plots lp
         LEFT JOIN users u ON lp.surveyor_id = u.id
@@ -652,9 +1077,23 @@ async def get_land_plots(
             for sl in sl_result.fetchall()
         ]
 
-        srv_name = row.surveyor_name or default_surveyor_name
-        first_word = srv_name.split()[0].upper()[:4] if srv_name else "BUDI"
-        srv_code = f"SRV-{first_word}-09"
+        # Dinamisasi surveyor: baca dari relasi jika ada, jangan hardcode default jika surveyor_id null
+        if row.surveyor_name:
+            srv_name = row.surveyor_name
+            first_word = srv_name.split()[0].upper()[:4] if srv_name else "SRV"
+            srv_code = f"SRV-{first_word}-09"
+        else:
+            srv_name = None
+            srv_code = None
+
+        # Penjadwalan survei diatur oleh Admin (jika belum diatur admin, return None)
+        if row.scheduled_survey_date:
+            scheduled_dt = row.scheduled_survey_date
+            month_names_id = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+            month_str = month_names_id[scheduled_dt.month - 1]
+            formatted_sched_date = f"{scheduled_dt.day} {month_str} {scheduled_dt.year}"
+        else:
+            formatted_sched_date = None
 
         lands_data.append({
             "id": row.id,
@@ -663,8 +1102,11 @@ async def get_land_plots(
             "status": str(row.status),
             "geojson_polygon": row.geojson,
             "created_at": row.created_at,
+            "surveyor_id": row.surveyor_id,
             "surveyor_name": srv_name,
             "surveyor_code": srv_code,
+            "scheduled_survey_date": row.scheduled_survey_date,
+            "scheduled_date": formatted_sched_date,
             "tree_blocks": tree_blocks,
             "survey_logs": survey_logs
         })
@@ -868,39 +1310,71 @@ async def withdraw_balance(
     current_user: User = Depends(require_roles(["farmer"])),
     db: AsyncSession = Depends(get_db)
 ):
-    # Mencari dompet petani terautentikasi berdasarkan current_user.id
-    wallet_result = await db.execute(select(Wallet).where(Wallet.user_id == current_user.id))
-    wallet = wallet_result.scalars().first()
-    
-    if not wallet:
-        raise HTTPException(status_code=404, detail="Dompet petani tidak ditemukan.")
-        
-    if float(wallet.available_balance) < payload.amount:
-        raise HTTPException(status_code=400, detail=f"Saldo tidak mencukupi. Saldo saat ini: Rp{wallet.available_balance:,.2f}")
-        
-    # Eksekusi pemotongan saldo penarikan
-    wallet.available_balance = float(wallet.available_balance) - payload.amount
+    # Validasi ketat nominal penarikan: harus > 0, bukan NaN/Infinity
+    if payload.amount <= 0 or math.isnan(payload.amount) or math.isinf(payload.amount):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nominal penarikan harus lebih besar dari Rp 0 dan berupa angka valid."
+        )
 
-    # Catat transaksi mutasi penarikan ke database
-    new_tx = WalletTransaction(
-        user_id=current_user.id,
-        amount=payload.amount,
-        transaction_type="debit_withdraw",
-        description=f"Penarikan dana ke rekening {payload.bank_name} ({payload.account_number})",
-        status="completed"
-    )
-    db.add(new_tx)
-    await db.commit()
-    await db.refresh(new_tx)
-    
-    return {
-        "status": "success",
-        "message": f"Penarikan dana sebesar Rp{payload.amount:,.2f} ke {payload.bank_name} berhasil diproses.",
-        "remaining_balance": float(wallet.available_balance),
-        "transaction_id": new_tx.id
-    }
+    try:
+        # 1. Kunci baris dompet petani (Pessimistic Row Lock: SELECT ... FOR UPDATE)
+        # Mencegah Race Condition / Double Spending saat spam klik / concurrent request
+        wallet_result = await db.execute(
+            select(Wallet)
+            .where(Wallet.user_id == current_user.id)
+            .with_for_update()
+        )
+        wallet = wallet_result.scalars().first()
+        if not wallet:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dompet petani tidak ditemukan.")
+        
+        current_balance = float(wallet.available_balance)
+        if current_balance < payload.amount:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail=f"Saldo tidak mencukupi. Saldo saat ini: Rp{current_balance:,.2f}"
+            )
+        
+        # 2. Kurangi saldo tersedia & perbarui timestamp
+        wallet.available_balance = current_balance - payload.amount
+        wallet.updated_at = datetime.utcnow()
+        
+        bank_dest = payload.bank_name or payload.bank_code or "Bank Terdaftar"
+        acc_num = payload.account_number or "Rekening Terdaftar"
 
-@app.get("/api/v1/farmer/wallet", response_model=WalletResponse)
+        # 3. Catat transaksi withdrawal ke ledger
+        new_tx = WalletTransaction(
+            user_id=current_user.id,
+            amount=abs(payload.amount),  # simpan positif
+            transaction_type="debit_withdraw",
+            description=f"Penarikan dana ke {bank_dest} ({acc_num})",
+            status="completed",
+            created_at=datetime.utcnow()
+        )
+        db.add(new_tx)
+        
+        # 4. Atomic Commit
+        await db.commit()
+        await db.refresh(new_tx)
+        
+        return {
+            "status": "success",
+            "message": f"Penarikan dana sebesar Rp{payload.amount:,.2f} ke {bank_dest} berhasil diproses.",
+            "remaining_balance": float(wallet.available_balance),
+            "transaction_id": new_tx.id
+        }
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Gagal memproses penarikan saldo: {str(e)}"
+        )
+
+@app.get("/api/v1/farmer/wallet", response_model=WalletInfoResponse)
 async def get_farmer_wallet(
     current_user: User = Depends(require_roles(["farmer"])),
     db: AsyncSession = Depends(get_db)
@@ -908,15 +1382,40 @@ async def get_farmer_wallet(
     wallet_result = await db.execute(select(Wallet).where(Wallet.user_id == current_user.id))
     wallet = wallet_result.scalars().first()
     if not wallet:
-        return {
-            "user_id": current_user.id,
-            "available_balance": 0.0,
-            "escrow_balance": 0.0
-        }
+        # Auto-create wallet jika belum ada
+        wallet = Wallet(
+            user_id=current_user.id,
+            available_balance=0.0,
+            escrow_balance=0.0
+        )
+        db.add(wallet)
+        await db.commit()
+        await db.refresh(wallet)
+    
+    # Ambil recent transactions terbaru (max 10)
+    tx_result = await db.execute(
+        select(WalletTransaction)
+        .where(WalletTransaction.user_id == current_user.id)
+        .order_by(WalletTransaction.created_at.desc())
+        .limit(10)
+    )
+    recent_txs = tx_result.scalars().all()
+    
     return {
-        "user_id": current_user.id,
         "available_balance": float(wallet.available_balance),
-        "escrow_balance": float(wallet.escrow_balance)
+        "escrow_balance": float(wallet.escrow_balance),
+        "recent_transactions": [
+            {
+                "id": tx.id,
+                "user_id": tx.user_id,
+                "amount": float(tx.amount),
+                "transaction_type": tx.transaction_type,
+                "description": tx.description,
+                "status": tx.status,
+                "created_at": tx.created_at
+            }
+            for tx in recent_txs
+        ]
     }
 
 @app.get("/api/v1/farmer/wallet/transactions", response_model=List[WalletTransactionResponse])
@@ -943,6 +1442,186 @@ async def get_farmer_wallet_transactions(
         }
         for tx in txs
     ]
+
+
+# ------------------------------------------------------------------------------
+# 4e. Profil Mitra Tani & Manajemen Rekening Bank (CRUD Handoff Ready)
+# ------------------------------------------------------------------------------
+@app.get("/api/v1/farmer/profile", response_model=FarmerProfileResponse)
+async def get_farmer_profile(
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(FarmerProfile).where(FarmerProfile.user_id == current_user.id)
+    )
+    profile = result.scalars().first()
+    if not profile:
+        profile = FarmerProfile(
+            user_id=current_user.id,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
+
+    return FarmerProfileResponse(
+        id=profile.id,
+        user_id=current_user.id,
+        full_name=current_user.full_name,
+        email=current_user.email,
+        nik=profile.nik,
+        phone_number=profile.phone_number,
+        address=profile.address,
+        village=profile.village,
+        regency=profile.regency,
+        province=profile.province,
+        gapoktan_name=profile.gapoktan_name,
+        created_at=profile.created_at,
+        updated_at=profile.updated_at
+    )
+
+
+@app.patch("/api/v1/farmer/profile", response_model=FarmerProfileResponse)
+@app.put("/api/v1/farmer/profile", response_model=FarmerProfileResponse)
+async def update_farmer_profile(
+    payload: FarmerProfileUpdateRequest,
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(FarmerProfile).where(FarmerProfile.user_id == current_user.id)
+    )
+    profile = result.scalars().first()
+    if not profile:
+        profile = FarmerProfile(user_id=current_user.id)
+        db.add(profile)
+
+    if payload.full_name is not None and payload.full_name.strip():
+        current_user.full_name = payload.full_name.strip()
+
+    if payload.nik is not None:
+        profile.nik = payload.nik.strip()
+    if payload.phone_number is not None:
+        profile.phone_number = payload.phone_number.strip()
+    if payload.address is not None:
+        profile.address = payload.address.strip()
+    if payload.village is not None:
+        profile.village = payload.village.strip()
+    if payload.regency is not None:
+        profile.regency = payload.regency.strip()
+    if payload.province is not None:
+        profile.province = payload.province.strip()
+    if payload.gapoktan_name is not None:
+        profile.gapoktan_name = payload.gapoktan_name.strip()
+
+    profile.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(profile)
+
+    return FarmerProfileResponse(
+        id=profile.id,
+        user_id=current_user.id,
+        full_name=current_user.full_name,
+        email=current_user.email,
+        nik=profile.nik,
+        phone_number=profile.phone_number,
+        address=profile.address,
+        village=profile.village,
+        regency=profile.regency,
+        province=profile.province,
+        gapoktan_name=profile.gapoktan_name,
+        created_at=profile.created_at,
+        updated_at=profile.updated_at
+    )
+
+
+@app.get("/api/v1/farmer/bank-accounts", response_model=List[BankAccountResponse])
+async def get_farmer_bank_accounts(
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(BankAccount)
+        .where(BankAccount.user_id == current_user.id)
+        .order_by(BankAccount.is_primary.desc(), BankAccount.created_at.asc())
+    )
+    accounts = result.scalars().all()
+    return accounts
+
+
+@app.post("/api/v1/farmer/bank-accounts", response_model=BankAccountResponse, status_code=status.HTTP_201_CREATED)
+async def create_farmer_bank_account(
+    payload: BankAccountCreateRequest,
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    # Cek apakah ini rekening pertama petani
+    existing_result = await db.execute(
+        select(BankAccount).where(BankAccount.user_id == current_user.id)
+    )
+    existing_accounts = existing_result.scalars().all()
+
+    should_be_primary = bool(payload.is_primary or len(existing_accounts) == 0)
+
+    if should_be_primary and len(existing_accounts) > 0:
+        for acc in existing_accounts:
+            acc.is_primary = False
+
+    new_acc = BankAccount(
+        user_id=current_user.id,
+        bank_code=payload.bank_code.strip().upper(),
+        bank_name=payload.bank_name.strip(),
+        account_number=payload.account_number.strip(),
+        account_holder_name=payload.account_holder_name.strip(),
+        is_primary=should_be_primary,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+    db.add(new_acc)
+    await db.commit()
+    await db.refresh(new_acc)
+    return new_acc
+
+
+@app.delete("/api/v1/farmer/bank-accounts/{account_id}")
+async def delete_farmer_bank_account(
+    account_id: uuid.UUID,
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(BankAccount)
+        .where(BankAccount.id == account_id, BankAccount.user_id == current_user.id)
+    )
+    acc = result.scalars().first()
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Rekening bank tidak ditemukan."
+        )
+
+    was_primary = acc.is_primary
+    await db.delete(acc)
+
+    # Jika yang dihapus adalah rekening primer, angkat rekening tertua yang tersisa jadi primer
+    if was_primary:
+        remaining_result = await db.execute(
+            select(BankAccount)
+            .where(BankAccount.user_id == current_user.id, BankAccount.id != account_id)
+            .order_by(BankAccount.created_at.asc())
+        )
+        remaining_acc = remaining_result.scalars().first()
+        if remaining_acc:
+            remaining_acc.is_primary = True
+
+    await db.commit()
+    return {
+        "status": "success",
+        "message": "Rekening bank berhasil dihapus."
+    }
+
 
 
 # ------------------------------------------------------------------------------
@@ -1000,6 +1679,71 @@ async def distribute_revenue(
         "total_farmers_received": len(farmer_rows)
     }
 
+@app.patch("/api/v1/admin/lands/{land_id}/schedule", status_code=status.HTTP_200_OK)
+async def admin_schedule_land_survey(
+    land_id: uuid.UUID,
+    payload: AdminScheduleSurveyRequest,
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint Manajemen Admin:
+    Mengatur alokasi surveyor dan waktu tanggal rencana inspeksi fisik untuk petak lahan tertentu.
+    """
+    check_query = text("SELECT id, name, CAST(status AS TEXT) as status, farmer_id FROM land_plots WHERE id = :land_id")
+    check_res = await db.execute(check_query, {"land_id": land_id})
+    plot = check_res.fetchone()
+    if not plot:
+        raise HTTPException(status_code=404, detail="Petak lahan tidak ditemukan")
+
+    surveyor_name = None
+    if payload.surveyor_id:
+        srv_query = text("SELECT id, full_name, role FROM users WHERE id = :surveyor_id")
+        srv_res = await db.execute(srv_query, {"surveyor_id": payload.surveyor_id})
+        srv = srv_res.fetchone()
+        if not srv or srv.role != "surveyor":
+            raise HTTPException(status_code=400, detail="User yang dipilih bukan seorang surveyor resmi.")
+        surveyor_name = srv.full_name
+
+    update_query = text("""
+        UPDATE land_plots
+        SET surveyor_id = :surveyor_id,
+            scheduled_survey_date = :scheduled_date
+        WHERE id = :land_id
+    """)
+    await db.execute(update_query, {
+        "land_id": land_id,
+        "surveyor_id": payload.surveyor_id,
+        "scheduled_date": payload.scheduled_survey_date
+    })
+
+    if payload.notes:
+        log_query = text("""
+            INSERT INTO survey_logs (land_plot_id, surveyor_id, notes, created_at)
+            VALUES (:land_id, :surveyor_id, :notes, CURRENT_TIMESTAMP)
+        """)
+        await db.execute(log_query, {
+            "land_id": land_id,
+            "surveyor_id": payload.surveyor_id,
+            "notes": f"[Penjadwalan Admin] {payload.notes}"
+        })
+
+    await db.commit()
+
+    month_names_id = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+    dt = payload.scheduled_survey_date
+    formatted_date = f"{dt.day} {month_names_id[dt.month - 1]} {dt.year}"
+
+    return {
+        "status": "success",
+        "message": f"Jadwal inspeksi untuk petak '{plot.name}' berhasil ditentukan oleh Admin.",
+        "land_id": str(land_id),
+        "surveyor_id": str(payload.surveyor_id) if payload.surveyor_id else None,
+        "surveyor_name": surveyor_name,
+        "scheduled_survey_date": payload.scheduled_survey_date.isoformat(),
+        "scheduled_date": formatted_date
+    }
+
 
 @app.get("/api/v1/farmer/dashboard/summary", response_model=FarmerDashboardSummary)
 async def get_farmer_dashboard_summary(
@@ -1041,6 +1785,7 @@ async def get_farmer_dashboard_summary(
         JOIN tree_blocks tb ON lp.id = tb.land_plot_id
         WHERE lp.farmer_id = :farmer_id
         GROUP BY tb.species_name
+        ORDER BY SUM(tb.total_population) DESC, tb.species_name ASC
     """)
     species_result = await db.execute(species_query, {"farmer_id": current_user.id})
 
@@ -1055,37 +1800,50 @@ async def get_farmer_dashboard_summary(
     avail_bal = float(wallet.available_balance) if wallet else 0.0
     escrow_bal = float(wallet.escrow_balance) if wallet else 0.0
 
-    # 5. Query Jadwal Inspeksi Aktif (Lahan status draft/pending)
+    # 5. Query Jadwal Inspeksi Aktif (hanya draft/pending yang SUDAH punya blok pohon)
+    # Selaras dengan aturan UI: petak tanpa blok pohon belum masuk antrean surveyor.
     draft_plots_query = text("""
-        SELECT lp.id, lp.name, CAST(lp.status AS TEXT) as status, lp.created_at
+        SELECT lp.id, lp.name, CAST(lp.status AS TEXT) as status, lp.created_at,
+               lp.surveyor_id, lp.scheduled_survey_date, u.full_name as surveyor_name
         FROM land_plots lp
-        WHERE lp.farmer_id = :farmer_id AND CAST(lp.status AS TEXT) IN ('draft', 'pending', 'pending_survey')
+        LEFT JOIN users u ON lp.surveyor_id = u.id
+        WHERE lp.farmer_id = :farmer_id
+          AND CAST(lp.status AS TEXT) IN ('draft', 'pending', 'pending_survey')
+          AND EXISTS (
+              SELECT 1 FROM tree_blocks tb WHERE tb.land_plot_id = lp.id
+          )
         ORDER BY lp.created_at ASC
     """)
     draft_result = await db.execute(draft_plots_query, {"farmer_id": current_user.id})
     draft_rows = draft_result.fetchall()
-    
-    surveyor_query = text("SELECT full_name, email FROM users WHERE role = 'surveyor' LIMIT 1")
-    surveyor_result = await db.execute(surveyor_query)
-    surveyor_row = surveyor_result.fetchone()
-    surveyor_name = surveyor_row.full_name if surveyor_row else "Petugas Surveyor"
-    first_word = surveyor_name.split()[0].upper()[:4] if surveyor_name else "LAP"
-    surveyor_code = f"SRV-{first_word}-01"
 
     month_names_id = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
 
     upcoming_inspections = []
     for row in draft_rows:
-        created_dt = row.created_at if row.created_at else datetime.utcnow()
-        scheduled_dt = created_dt + timedelta(days=3)
-        month_str = month_names_id[scheduled_dt.month - 1]
-        formatted_date = f"{scheduled_dt.day} {month_str} {scheduled_dt.year}"
+        # Penjadwalan survei diatur oleh Admin (bukan otomatis backend)
+        if row.scheduled_survey_date:
+            scheduled_dt = row.scheduled_survey_date
+            month_str = month_names_id[scheduled_dt.month - 1]
+            formatted_date = f"{scheduled_dt.day} {month_str} {scheduled_dt.year}"
+        else:
+            formatted_date = None
+
+        if row.surveyor_name:
+            srv_name = row.surveyor_name
+            first_word = srv_name.split()[0].upper()[:4] if srv_name else "SRV"
+            srv_code = f"SRV-{first_word}-09"
+        else:
+            srv_name = None
+            srv_code = None
 
         upcoming_inspections.append({
             "land_plot_id": row.id,
             "land_plot_name": row.name,
-            "surveyor_name": surveyor_name,
-            "surveyor_code": surveyor_code,
+            "surveyor_id": row.surveyor_id,
+            "surveyor_name": srv_name,
+            "surveyor_code": srv_code,
+            "scheduled_survey_date": row.scheduled_survey_date,
             "scheduled_date": formatted_date,
             "status_note": "Inspeksi Poligon GPS & Sampel DBH (Geofencing \u2264 50m)"
         })

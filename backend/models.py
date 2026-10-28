@@ -18,6 +18,8 @@ class User(Base):
     
     wallet = relationship("Wallet", back_populates="user", uselist=False)
     company_profile = relationship("CompanyProfile", back_populates="user", uselist=False)
+    farmer_profile = relationship("FarmerProfile", back_populates="user", uselist=False)
+    bank_accounts = relationship("BankAccount", back_populates="user", cascade="all, delete-orphan")
 
 class CompanyProfile(Base):
     __tablename__ = "company_profiles"
@@ -101,3 +103,36 @@ class TreeSpecies(Base):
     requires_height = Column(Boolean, default=False, nullable=False)
     formula_display = Column(String(255), nullable=True)
     reference_source = Column(String(150), nullable=True)
+
+class FarmerProfile(Base):
+    __tablename__ = "farmer_profiles"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False)
+    nik = Column(String(20), nullable=True)
+    phone_number = Column(String(30), nullable=True)
+    address = Column(String(255), nullable=True)
+    village = Column(String(100), nullable=True)
+    regency = Column(String(100), nullable=True)
+    province = Column(String(100), nullable=True)
+    gapoktan_name = Column(String(150), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="farmer_profile")
+
+class BankAccount(Base):
+    __tablename__ = "bank_accounts"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    bank_code = Column(String(50), nullable=False)
+    bank_name = Column(String(100), nullable=False)
+    account_number = Column(String(50), nullable=False)
+    account_holder_name = Column(String(150), nullable=False)
+    is_primary = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="bank_accounts")
+
+# Alias penamaan konvensi jamak (BankAccounts)
+BankAccounts = BankAccount

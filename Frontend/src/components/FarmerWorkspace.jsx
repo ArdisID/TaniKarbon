@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import FarmerSidebar from './farmer/FarmerSidebar';
 import FarmerDashboardView from './farmer/FarmerDashboardView';
 import LandManagementView from './farmer/LandManagementView';
@@ -17,6 +17,8 @@ import {
   Download, 
   ShieldCheck, 
   CheckCircle2, 
+  XCircle,
+  AlertTriangle,
   MapPin, 
   Calendar,
   Menu
@@ -201,16 +203,31 @@ export default function FarmerWorkspace({
   });
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Two-way synchronization antara activeTab dan URL browser
-  const setActiveTab = useCallback((tabId, replace = false) => {
+  // Two-way synchronization antara activeTab dan URL browser (mendukung query parameter seperti ?plotId=...)
+  const setActiveTab = useCallback((tabId, queryOrOptions = {}, replace = false) => {
+    let queryStr = '';
+    let isReplace = replace;
+    if (typeof queryOrOptions === 'boolean') {
+      isReplace = queryOrOptions;
+    } else if (typeof queryOrOptions === 'string') {
+      queryStr = queryOrOptions.startsWith('?') ? queryOrOptions : `?plotId=${queryOrOptions}`;
+    } else if (typeof queryOrOptions === 'object' && queryOrOptions !== null) {
+      const params = new URLSearchParams(queryOrOptions).toString();
+      if (params) queryStr = `?${params}`;
+    }
+
     setActiveTabState(tabId);
-    const targetPath = FARMER_TAB_PATHS[tabId] || '/mitra-tani/dashboard';
-    if (window.location.pathname.toLowerCase() !== targetPath.toLowerCase()) {
-      if (replace) {
+    const basePath = FARMER_TAB_PATHS[tabId] || '/mitra-tani/dashboard';
+    const targetPath = `${basePath}${queryStr}`;
+    const currentFull = `${window.location.pathname}${window.location.search}`;
+
+    if (currentFull.toLowerCase() !== targetPath.toLowerCase()) {
+      if (isReplace) {
         window.history.replaceState({ tab: tabId }, '', targetPath);
       } else {
         window.history.pushState({ tab: tabId }, '', targetPath);
       }
+      window.dispatchEvent(new PopStateEvent('popstate'));
     }
   }, []);
 
@@ -253,15 +270,22 @@ export default function FarmerWorkspace({
   const [customPlots, setCustomPlots] = useState([]);
   const [newlySubmittedPlot, setNewlySubmittedPlot] = useState(null);
 
-  // Toast feedback banner
-  const [toastMessage, setToastMessage] = useState('');
+  // Toast feedback banner (success | error | warning)
+  const [toastMessage, setToastMessage] = useState(null);
+  const toastTimerRef = useRef(null);
 
-  const showToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage('');
+  const showToast = (msg, type = 'success') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage({ message: msg, type });
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
     }, 4500);
   };
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   // Fetch real data from PostgreSQL backend
   const fetchFarmerData = useCallback(async () => {
@@ -413,11 +437,23 @@ export default function FarmerWorkspace({
 
           {/* Toast Notification Banner */}
           {toastMessage && (
-            <div className="fixed top-6 right-6 z-50 bg-[#0F291E] text-white px-4 py-3 rounded-2xl shadow-xl border border-emerald-400/40 flex items-center gap-2.5 text-xs animate-slide-up max-w-md">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="font-medium flex-1">{toastMessage}</span>
+            <div className={`fixed top-6 right-6 z-50 px-4 py-3 rounded-2xl shadow-xl border flex items-center gap-2.5 text-xs animate-slide-up max-w-md ${
+              toastMessage.type === 'error'
+                ? 'bg-rose-950 text-white border-rose-400/50'
+                : toastMessage.type === 'warning'
+                ? 'bg-amber-950 text-white border-amber-400/50'
+                : 'bg-[#0F291E] text-white border-emerald-400/40'
+            }`}>
+              {toastMessage.type === 'error' ? (
+                <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              ) : toastMessage.type === 'warning' ? (
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              )}
+              <span className="font-medium flex-1">{toastMessage.message}</span>
               <button 
-                onClick={() => setToastMessage('')}
+                onClick={() => setToastMessage(null)}
                 className="text-white/60 hover:text-white p-1"
               >
                 ✕

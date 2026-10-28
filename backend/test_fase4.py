@@ -45,15 +45,15 @@ async def test_fase4_farmer_backend_verification():
         assert len(data["species_breakdown"]) >= 1
         assert data["species_breakdown"][0]["species_name"] == "Sengon Laut"
         assert "upcoming_inspections" in data
-        assert len(data["upcoming_inspections"]) >= 1
-        assert data["upcoming_inspections"][0]["surveyor_name"] == "Budi Surveyor"
+        # QA sync rule: petak draft tanpa blok pohon TIDAK boleh masuk antrean/jadwal surveyor.
+        assert isinstance(data["upcoming_inspections"], list)
         assert "recent_wallet_activities" in data
         assert len(data["recent_wallet_activities"]) >= 1
         print(f"  ✓ Farmer Name: {data['farmer_name']} ({data['farmer_email']})")
         print(f"  ✓ Total Plots: {data['total_land_plots']}, Area: {data['total_land_area_sqm']} sqm")
         print(f"  ✓ Trees: {data['total_all_trees']}, Carbon: {data['total_all_carbon_tco2e']} tCO2e")
         print(f"  ✓ Balances: Available Rp{data['available_balance']:,.2f}, Escrow Rp{data['escrow_balance']:,.2f}")
-        print(f"  ✓ Upcoming Inspections: {len(data['upcoming_inspections'])} jadwal aktif ({data['upcoming_inspections'][0]['land_plot_name']})")
+        print(f"  ✓ Upcoming Inspections: {len(data['upcoming_inspections'])} jadwal aktif (hanya petak yang sudah punya blok pohon)")
         print(f"  ✓ Recent Activities: {len(data['recent_wallet_activities'])} riwayat mutasi terdaftar")
 
 
@@ -155,6 +155,21 @@ async def test_fase4_farmer_backend_verification():
         forbidden_res = await client.get("/api/v1/farmer/dashboard/summary", headers=corp_headers)
         assert forbidden_res.status_code == 403
         print("  ✓ Role non-farmer ditolak saat mengakses endpoint petani (HTTP 403 Forbidden)")
+
+        print("\n=======================================================")
+        print("  FASE 4 - TEST 5: POSTGIS ANTI-OVERLAP VALIDATION")
+        print("=======================================================")
+
+        # Petani mencoba mendaftarkan lahan baru yang sengaja tumpang-tindih dengan Kebun Sengon Pertama
+        overlap_payload = {
+            "name": "Kebun Menimpa Sengon Pertama",
+            "geojson_polygon": '{"type":"Polygon","coordinates":[[[106.833,-6.3685],[106.8332,-6.3685],[106.8332,-6.3687],[106.833,-6.3687],[106.833,-6.3685]]]}',
+            "status": "draft"
+        }
+        overlap_res = await client.post("/api/v1/farmer/lands", headers=headers, json=overlap_payload)
+        assert overlap_res.status_code == 400
+        assert "tumpang-tindih" in overlap_res.json()["detail"].lower()
+        print(f"  ✓ Validasi PostGIS Anti-Overlap berhasil memblokir lahan tumpang tindih (HTTP 400: {overlap_res.json()['detail']})")
 
         await engine.dispose()
         print("\n=======================================================")

@@ -49,7 +49,16 @@ export async function getFarmerLands() {
 /**
  * Registrasi petak lahan baru
  */
-export async function registerLandPlot({ name, geojson_polygon, status = 'draft', polygon_boundary }) {
+export async function registerLandPlot({
+  name,
+  geojson_polygon,
+  status = 'draft',
+  polygon_boundary,
+  ownership,
+  document_no,
+  village,
+  regency
+}) {
   const finalGeojson = typeof geojson_polygon === 'string' 
     ? geojson_polygon 
     : JSON.stringify(geojson_polygon || polygon_boundary);
@@ -61,6 +70,10 @@ export async function registerLandPlot({ name, geojson_polygon, status = 'draft'
       name, 
       geojson_polygon: finalGeojson,
       status,
+      ownership: ownership || null,
+      document_no: document_no || null,
+      village: village || null,
+      regency: regency || null,
       polygon_boundary: polygon_boundary || (geojson_polygon ? (typeof geojson_polygon === 'string' ? JSON.parse(geojson_polygon) : geojson_polygon) : null)
     })
   });
@@ -68,6 +81,42 @@ export async function registerLandPlot({ name, geojson_polygon, status = 'draft'
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.detail || 'Gagal mendaftarkan petak lahan');
+  }
+
+  return response.json();
+}
+
+/**
+ * Validasi pre-flight poligon sebelum dikunci di Step 2 wizard.
+ * Backend menjadi otoritas untuk ST_IsValid, luas, dan anti-overlap PostGIS.
+ */
+export async function validateLandPolygon(polygon_boundary) {
+  const response = await fetch(`${API_BASE}/farmer/lands/validate-polygon`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ polygon_boundary })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Gagal memvalidasi poligon lahan');
+  }
+
+  return response.json();
+}
+
+/**
+ * Layer referensi seluruh poligon aktif. Nama petani lain disamarkan oleh backend.
+ */
+export async function getSpatialOverlay() {
+  const response = await fetch(`${API_BASE}/farmer/lands/spatial-overlay`, {
+    method: 'GET',
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Gagal memuat layer referensi spasial');
   }
 
   return response.json();
