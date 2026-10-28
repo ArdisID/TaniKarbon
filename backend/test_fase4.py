@@ -102,36 +102,42 @@ async def test_fase4_farmer_backend_verification():
         # 3b. Penarikan valid jika saldo > 10000
         if initial_available >= 10000:
             test_withdraw_amt = 10000
-            wd_res = await client.post("/api/v1/farmer/wallet/withdraw", json={
-                "amount": test_withdraw_amt,
-                "bank_name": "Bank BRI",
-                "account_number": "0142-01-084821-50-8"
-            }, headers=headers)
-            assert wd_res.status_code == 200
-            assert wd_res.json()["remaining_balance"] == initial_available - test_withdraw_amt
-            print(f"  ✓ Penarikan Rp{test_withdraw_amt:,.2f} berhasil diproses.")
+            test_tx_id = None
+            try:
+                wd_res = await client.post("/api/v1/farmer/wallet/withdraw", json={
+                    "amount": test_withdraw_amt,
+                    "bank_name": "Bank BRI",
+                    "account_number": "0142-01-084821-50-8"
+                }, headers=headers)
+                assert wd_res.status_code == 200
+                wd_json = wd_res.json()
+                test_tx_id = wd_json.get("transaction_id")
+                assert wd_json["remaining_balance"] == initial_available - test_withdraw_amt
+                print(f"  ✓ Penarikan Rp{test_withdraw_amt:,.2f} berhasil diproses.")
 
-            # Verifikasi mutasi baru tercatat di summary dan endpoint transactions
-            sum_after = await client.get("/api/v1/farmer/dashboard/summary", headers=headers)
-            recent_acts = sum_after.json()["recent_wallet_activities"]
-            assert len(recent_acts) >= 1
-            assert recent_acts[0]["transaction_type"] == "debit_withdraw"
-            assert recent_acts[0]["amount"] == test_withdraw_amt
-            print("  ✓ Mutasi penarikan baru terdaftar di posisi teratas recent_wallet_activities.")
+                # Verifikasi mutasi baru tercatat di summary dan endpoint transactions
+                sum_after = await client.get("/api/v1/farmer/dashboard/summary", headers=headers)
+                recent_acts = sum_after.json()["recent_wallet_activities"]
+                assert len(recent_acts) >= 1
+                assert recent_acts[0]["transaction_type"] == "debit_withdraw"
+                assert recent_acts[0]["amount"] == test_withdraw_amt
+                print("  ✓ Mutasi penarikan baru terdaftar di posisi teratas recent_wallet_activities.")
 
-            txs_res = await client.get("/api/v1/farmer/wallet/transactions", headers=headers)
-            assert txs_res.status_code == 200
-            assert len(txs_res.json()) >= 1
-            print("  ✓ Endpoint GET /api/v1/farmer/wallet/transactions mengembalikan daftar mutasi valid.")
-
-            # Kembalikan saldo awal agar data seed tetap konsisten
-            async with engine.begin() as conn:
-                await conn.execute(text("""
-                    UPDATE wallets 
-                    SET available_balance = :bal
-                    WHERE user_id = '11111111-1111-4111-8111-111111111111'
-                """), {"bal": initial_available})
-            print(f"  ✓ Saldo awal Rp{initial_available:,.2f} direstorasi ke database.")
+                txs_res = await client.get("/api/v1/farmer/wallet/transactions", headers=headers)
+                assert txs_res.status_code == 200
+                assert len(txs_res.json()) >= 1
+                print("  ✓ Endpoint GET /api/v1/farmer/wallet/transactions mengembalikan daftar mutasi valid.")
+            finally:
+                # Teardown: Hapus transaksi uji coba dan kembalikan saldo awal agar database tetap bersih
+                async with engine.begin() as conn:
+                    if test_tx_id:
+                        await conn.execute(text("DELETE FROM wallet_transactions WHERE id = :tx_id"), {"tx_id": test_tx_id})
+                    await conn.execute(text("""
+                        UPDATE wallets 
+                        SET available_balance = :bal
+                        WHERE user_id = '11111111-1111-4111-8111-111111111111'
+                    """), {"bal": initial_available})
+                print(f"  ✓ Teardown: Transaksi uji coba dihapus & saldo awal Rp{initial_available:,.2f} direstorasi.")
 
         print("\n=======================================================")
         print("  FASE 4 - TEST 4: RBAC ROUTE PROTECTION")

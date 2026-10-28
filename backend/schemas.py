@@ -69,6 +69,14 @@ class RecentWalletActivityItem(BaseModel):
     status: str  # 'completed' | 'processing'
     timestamp: datetime
 
+class ClusterInfo(BaseModel):
+    cluster_id: UUID
+    cluster_name: str
+    cluster_status: Optional[str] = "gathering"
+    target_tco2e: float
+    current_carbon_tco2e: float
+    percentage: Optional[float] = 0.0
+
 class FarmerDashboardSummary(BaseModel):
     farmer_name: str
     farmer_email: str
@@ -81,6 +89,7 @@ class FarmerDashboardSummary(BaseModel):
     species_breakdown: List[SpeciesSummary]
     upcoming_inspections: List[UpcomingInspectionItem] = []
     recent_wallet_activities: List[RecentWalletActivityItem] = []
+    cluster_info: Optional[ClusterInfo] = None
 
 class WalletTransactionResponse(BaseModel):
     id: UUID
@@ -92,12 +101,30 @@ class WalletTransactionResponse(BaseModel):
     created_at: datetime
 
 
+class SurveyLogItem(BaseModel):
+    id: UUID
+    notes: str
+    created_at: Optional[datetime] = None
+    surveyor_name: Optional[str] = None
+
+class LandRevisionRequest(BaseModel):
+    category: str = Field(..., example="Revisi Titik Poligon Batas")
+    notes: Optional[str] = Field(None, example="Patok sisi utara bergeser...")
+    reason: Optional[str] = Field(None, example="Patok sisi utara bergeser...")
+    land_plot_id: Optional[UUID] = None
+
+    @property
+    def detail_notes(self) -> str:
+        return (self.notes or self.reason or "").strip()
+
 class TreeBlockDetail(BaseModel):
     id: UUID
     species_name: str
     planting_year: int
     total_population: int
     estimated_tco2e_per_year: float
+    avg_dbh_cm: Optional[float] = None
+    formula_display: Optional[str] = None
 
 class LandPlotDetail(BaseModel):
     id: UUID
@@ -106,6 +133,10 @@ class LandPlotDetail(BaseModel):
     status: str
     geojson_polygon: Optional[str] = None
     tree_blocks: List[TreeBlockDetail] = []
+    created_at: Optional[datetime] = None
+    surveyor_name: Optional[str] = None
+    surveyor_code: Optional[str] = None
+    survey_logs: Optional[List[SurveyLogItem]] = []
 
 class WalletResponse(BaseModel):
     user_id: UUID

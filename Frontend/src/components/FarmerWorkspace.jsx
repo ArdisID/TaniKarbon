@@ -3,7 +3,7 @@ import FarmerSidebar from './farmer/FarmerSidebar';
 import FarmerDashboardView from './farmer/FarmerDashboardView';
 import LandManagementView from './farmer/LandManagementView';
 import LandRegistrationWizard from './farmer/LandRegistrationWizard';
-import VerificationTimelineView from './farmer/VerificationTimelineView';
+import VerificationTrackingView from './farmer/VerificationTrackingView';
 import FarmerWalletView from './farmer/FarmerWalletView';
 import SamplePhotoModal from './farmer/SamplePhotoModal';
 import ViewfinderModal from './farmer/ViewfinderModal';
@@ -464,9 +464,11 @@ export default function FarmerWorkspace({
           )}
 
           {activeTab === 'timeline' && (
-            <VerificationTimelineView
+            <VerificationTrackingView
               newlySubmittedPlot={newlySubmittedPlot}
               onToast={showToast}
+              onOpenMobileNav={() => setMobileOpen(true)}
+              onNavigateTab={setActiveTab}
             />
           )}
 

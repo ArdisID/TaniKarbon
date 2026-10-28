@@ -186,3 +186,27 @@ export async function getTreeSpecies() {
 
   return response.json();
 }
+
+/**
+ * Kirim pengajuan revisi batas petak / catatan ke surveyor
+ */
+export async function submitLandRevision({ land_id, category, notes, reason }) {
+  const finalNotes = notes || reason || '';
+  const response = await fetch(`${API_BASE}/farmer/lands/${land_id}/revisions`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      category,
+      notes: finalNotes,
+      reason: finalNotes,
+      land_plot_id: land_id
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Gagal mengirim pengajuan revisi ke surveyor');
+  }
+
+  return response.json();
+}

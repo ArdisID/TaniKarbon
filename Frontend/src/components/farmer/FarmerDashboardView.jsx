@@ -81,6 +81,9 @@ export default function FarmerDashboardView({
     ? farmerSummary.recent_wallet_activities
     : [];
 
+  // 3. Cluster Info - Real cluster aggregation from PostgreSQL clusters table
+  const clusterInfo = farmerSummary?.cluster_info || null;
+
   const formatDate = (ts) => {
     if (!ts) return '-';
     try {
@@ -425,49 +428,60 @@ export default function FarmerDashboardView({
               <p className="mt-1 text-[11px] text-stone-500">Agregasi klaster menuju transaksi offset korporasi.</p>
             </div>
             <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold ring-1 ring-inset ${
-              verifiedCount > 0 
+              clusterInfo 
                 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' 
-                : 'bg-stone-100 text-stone-600 ring-stone-200'
+                : 'bg-amber-50 text-amber-700 ring-amber-200'
             }`}>
               <span className="relative flex h-1.5 w-1.5">
-                {verifiedCount > 0 && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75"></span>}
-                <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${verifiedCount > 0 ? 'bg-emerald-500' : 'bg-stone-400'}`}></span>
+                {clusterInfo && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75"></span>}
+                <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${clusterInfo ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
               </span>
-              {verifiedCount > 0 ? 'Siklus Aktif' : 'Menunggu Verifikasi'}
+              {clusterInfo ? 'Siklus Klaster Aktif' : 'Menunggu Alokasi Klaster'}
             </span>
           </header>
 
           {/* Part 1 · Cluster quota progress */}
           <div className="mt-5 rounded-xl border border-stone-100 bg-stone-50/60 p-4">
-            {verifiedCount > 0 && Number(totalCarbon) > 0 ? (
+            {clusterInfo ? (
               <>
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <p className="tnum font-mono text-2xl font-bold leading-none tracking-tight text-pine">
-                      {Math.min(100, Math.round((Number(totalCarbon) / 500) * 100))}%
-                    </p>
-                    <p className="mt-1 text-[11px] text-stone-500">Kontribusi Klaster Terdata</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-pine truncate">{clusterInfo.cluster_name}</p>
+                    <div className="mt-1.5 flex items-baseline gap-2">
+                      <p className="tnum font-mono text-2xl font-bold leading-none tracking-tight text-pine">
+                        {clusterInfo.percentage}%
+                      </p>
+                      <p className="text-[11px] text-stone-500">Kuota Terpenuhi</p>
+                    </div>
                   </div>
-                  <p className="tnum font-mono text-[11px] font-medium text-stone-500">{totalCarbon} / 500 tCO2e</p>
+                  <p className="tnum font-mono text-[11px] font-medium text-stone-500 shrink-0">
+                    {clusterInfo.current_carbon_tco2e} / {clusterInfo.target_tco2e} tCO2e
+                  </p>
                 </div>
 
                 {/* Progress bar */}
                 <div className="mt-3.5 h-2.5 w-full overflow-hidden rounded-full bg-stone-200/70">
                   <div 
                     className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 transition-[width] duration-700" 
-                    style={{ width: `${Math.min(100, Math.max(4, Math.round((Number(totalCarbon) / 500) * 100)))}%` }}
+                    style={{ width: `${Math.min(100, Math.max(2, clusterInfo.percentage))}%` }}
                   ></div>
                 </div>
                 <div className="mt-2 flex justify-between font-mono text-[9px] text-stone-400">
-                  <span>0</span><span>250</span><span>500 tCO2e</span>
+                  <span>0</span>
+                  <span>{Math.round(clusterInfo.target_tco2e / 2)}</span>
+                  <span>{clusterInfo.target_tco2e} tCO2e</span>
                 </div>
               </>
             ) : (
-              <div className="py-2 text-center">
-                <p className="tnum font-mono text-lg font-bold text-stone-400">0%</p>
-                <p className="mt-1 text-xs font-medium text-stone-600">Belum Ada Klaster Aktif</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-stone-400">
-                  Lahan terverifikasi akan otomatis diagregasikan ke klaster perdagangan karbon korporat.
+              <div className="py-2.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-stone-700">Kontribusi Serapan Mandiri</span>
+                  <span className="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100">
+                    {totalCarbon} tCO2e/thn
+                  </span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-stone-500">
+                  Kebun terverifikasi Anda sedang dalam antrean pengelompokan klaster regional oleh Surveyor/Admin sebelum ditawarkan ke korporasi pembeli offset.
                 </p>
               </div>
             )}

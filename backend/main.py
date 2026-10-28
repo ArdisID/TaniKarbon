@@ -23,7 +23,7 @@ from schemas import (
     TokenResponse, UserLoginRequest, UserRegisterRequest, UserResponse,
     DISPOSABLE_EMAIL_DOMAINS, TreeBlockDetail, LandPlotDetail, WalletResponse,
     UpcomingInspectionItem, RecentWalletActivityItem, WalletTransactionResponse,
-    TreeSpeciesResponse
+    TreeSpeciesResponse, LandRevisionRequest
 )
 from security import (
     limiter, hash_password, verify_password,
@@ -72,6 +72,12 @@ async def on_startup():
             "ALTER TABLE tree_species ADD COLUMN IF NOT EXISTS reference_source VARCHAR(150)"
         ]:
             await conn.execute(text(col_ddl))
+
+        # Pastikan kolom surveyor_id di survey_logs nullable agar pengajuan revisi/catatan petani bisa tersimpan
+        try:
+            await conn.execute(text("ALTER TABLE survey_logs ALTER COLUMN surveyor_id DROP NOT NULL;"))
+        except Exception:
+            pass
 
         # Bersihkan duplikat/spesies usang lama agar master data dropdown presisi 13 spesies standar + 1 Lainnya
         await conn.execute(text("""
@@ -582,20 +588,37 @@ async def get_land_plots(
     db: AsyncSession = Depends(get_db)
 ):
     query = text("""
-        SELECT id, name, total_area_sqm, status, ST_AsGeoJSON(polygon_boundary) as geojson
-        FROM land_plots WHERE farmer_id = :farmer_id
-        ORDER BY created_at ASC
+        SELECT lp.id, lp.name, lp.total_area_sqm, CAST(lp.status AS TEXT) as status,
+               ST_AsGeoJSON(lp.polygon_boundary) as geojson,
+               lp.created_at, lp.surveyor_id,
+               u.full_name as surveyor_name
+        FROM land_plots lp
+        LEFT JOIN users u ON lp.surveyor_id = u.id
+        WHERE lp.farmer_id = :farmer_id
+        ORDER BY lp.created_at ASC
     """)
     result = await db.execute(query, {"farmer_id": current_user.id})
     land_rows = result.fetchall()
     
+    surveyor_query = text("SELECT full_name FROM users WHERE role = 'surveyor' LIMIT 1")
+    s_res = await db.execute(surveyor_query)
+    default_srv_row = s_res.fetchone()
+    default_surveyor_name = default_srv_row.full_name if default_srv_row else "Budi Surveyor"
+
     lands_data = []
     for row in land_rows:
         tb_query = text("""
-            SELECT id, species_name, planting_year, total_population, estimated_tco2e_per_year
-            FROM tree_blocks
-            WHERE land_plot_id = :plot_id
-            ORDER BY created_at ASC
+            SELECT tb.id, tb.species_name, tb.planting_year, tb.total_population, tb.estimated_tco2e_per_year,
+                   ts_spec.formula_display,
+                   (
+                       SELECT ROUND(AVG(ts.circumference_cm / 3.14159265)::numeric, 1)
+                       FROM tree_samples ts
+                       WHERE ts.tree_block_id = tb.id
+                   ) as avg_dbh_cm
+            FROM tree_blocks tb
+            LEFT JOIN tree_species ts_spec ON LOWER(tb.species_name) = LOWER(ts_spec.local_name)
+            WHERE tb.land_plot_id = :plot_id
+            ORDER BY tb.created_at ASC
         """)
         tb_result = await db.execute(tb_query, {"plot_id": row.id})
         tree_blocks = [
@@ -604,19 +627,114 @@ async def get_land_plots(
                 "species_name": tb.species_name,
                 "planting_year": tb.planting_year,
                 "total_population": tb.total_population,
-                "estimated_tco2e_per_year": float(tb.estimated_tco2e_per_year)
+                "estimated_tco2e_per_year": float(tb.estimated_tco2e_per_year),
+                "avg_dbh_cm": float(tb.avg_dbh_cm) if tb.avg_dbh_cm is not None else None,
+                "formula_display": tb.formula_display or "AGB = 0.11 × ρ × D^2.62"
             }
             for tb in tb_result.fetchall()
         ]
+
+        sl_query = text("""
+            SELECT sl.id, sl.notes, sl.created_at, u.full_name as surveyor_name
+            FROM survey_logs sl
+            LEFT JOIN users u ON sl.surveyor_id = u.id
+            WHERE sl.land_plot_id = :plot_id
+            ORDER BY sl.created_at ASC
+        """)
+        sl_result = await db.execute(sl_query, {"plot_id": row.id})
+        survey_logs = [
+            {
+                "id": sl.id,
+                "notes": sl.notes,
+                "created_at": sl.created_at,
+                "surveyor_name": sl.surveyor_name
+            }
+            for sl in sl_result.fetchall()
+        ]
+
+        srv_name = row.surveyor_name or default_surveyor_name
+        first_word = srv_name.split()[0].upper()[:4] if srv_name else "BUDI"
+        srv_code = f"SRV-{first_word}-09"
+
         lands_data.append({
             "id": row.id,
             "name": row.name,
             "area_sqm": float(row.total_area_sqm),
             "status": str(row.status),
             "geojson_polygon": row.geojson,
-            "tree_blocks": tree_blocks
+            "created_at": row.created_at,
+            "surveyor_name": srv_name,
+            "surveyor_code": srv_code,
+            "tree_blocks": tree_blocks,
+            "survey_logs": survey_logs
         })
     return lands_data
+
+
+@app.post("/api/v1/farmer/lands/{land_id}/revisions", status_code=status.HTTP_201_CREATED)
+async def submit_land_revision(
+    land_id: uuid.UUID,
+    payload: LandRevisionRequest,
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    check_query = text("SELECT id, name, farmer_id FROM land_plots WHERE id = :land_id")
+    res = await db.execute(check_query, {"land_id": land_id})
+    plot = res.fetchone()
+    if not plot:
+        raise HTTPException(status_code=404, detail="Petak lahan tidak ditemukan")
+    if plot.farmer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Akses ditolak: Anda bukan pemilik petak lahan ini")
+
+    note_text = payload.detail_notes
+    if len(note_text) < 5:
+        raise HTTPException(status_code=400, detail="Rincian pengajuan minimal 5 karakter")
+
+    ticket_id = f"REV-{uuid.uuid4().hex[:6].upper()}"
+    log_content = f"[{ticket_id} - {payload.category}] {note_text}"
+
+    surveyor_query = text("SELECT id FROM users WHERE role = 'surveyor' LIMIT 1")
+    s_res = await db.execute(surveyor_query)
+    s_row = s_res.fetchone()
+    surveyor_id = s_row.id if s_row else None
+
+    if surveyor_id:
+        await db.execute(
+            text("""
+                INSERT INTO survey_logs (id, land_plot_id, surveyor_id, notes, created_at)
+                VALUES (gen_random_uuid(), :plot_id, :srv_id, :notes, CURRENT_TIMESTAMP)
+            """),
+            {"plot_id": land_id, "srv_id": surveyor_id, "notes": log_content}
+        )
+    else:
+        await db.execute(
+            text("""
+                INSERT INTO survey_logs (id, land_plot_id, notes, created_at)
+                VALUES (gen_random_uuid(), :plot_id, :notes, CURRENT_TIMESTAMP)
+            """),
+            {"plot_id": land_id, "notes": log_content}
+        )
+
+    await db.commit()
+
+    return {
+        "status": "success",
+        "ticket": ticket_id,
+        "message": f"Pengajuan {ticket_id} berhasil diteruskan ke surveyor.",
+        "land_plot_id": str(land_id),
+        "category": payload.category
+    }
+
+
+@app.post("/api/v1/farmer/verification-revisions", status_code=status.HTTP_201_CREATED)
+async def submit_verification_revision(
+    payload: LandRevisionRequest,
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    if not payload.land_plot_id:
+        raise HTTPException(status_code=400, detail="land_plot_id harus dicantumkan")
+    return await submit_land_revision(payload.land_plot_id, payload, current_user, db)
 
 
 SPECIES_ALIASES = {
@@ -996,6 +1114,42 @@ async def get_farmer_dashboard_summary(
         for row in tx_rows
     ]
 
+    # 7. Query Klaster Aktif yang Terhubung ke Petak Lahan Petani
+    cluster_query = text("""
+        SELECT 
+            c.id as cluster_id,
+            c.name as cluster_name,
+            CAST(c.status AS TEXT) as cluster_status,
+            COALESCE(c.target_quota_tco2e, 1000.0) as target_tco2e,
+            (
+                SELECT COALESCE(SUM(tb.estimated_tco2e_per_year), 0)
+                FROM land_plots lp2
+                JOIN tree_blocks tb ON lp2.id = tb.land_plot_id
+                WHERE lp2.cluster_id = c.id
+            ) as current_carbon_tco2e
+        FROM land_plots lp
+        JOIN clusters c ON lp.cluster_id = c.id
+        WHERE lp.farmer_id = :farmer_id AND lp.cluster_id IS NOT NULL
+        ORDER BY lp.created_at DESC
+        LIMIT 1
+    """)
+    cluster_result = await db.execute(cluster_query, {"farmer_id": current_user.id})
+    cluster_row = cluster_result.fetchone()
+
+    cluster_info = None
+    if cluster_row:
+        target_val = float(cluster_row.target_tco2e)
+        current_val = round(float(cluster_row.current_carbon_tco2e), 2)
+        pct = round((current_val / target_val) * 100.0, 1) if target_val > 0 else 0.0
+        cluster_info = {
+            "cluster_id": cluster_row.cluster_id,
+            "cluster_name": cluster_row.cluster_name,
+            "cluster_status": cluster_row.cluster_status,
+            "target_tco2e": target_val,
+            "current_carbon_tco2e": current_val,
+            "percentage": min(100.0, pct)
+        }
+
     return {
         "farmer_name": current_user.full_name,
         "farmer_email": current_user.email,
@@ -1007,5 +1161,6 @@ async def get_farmer_dashboard_summary(
         "escrow_balance": escrow_bal,
         "species_breakdown": breakdown,
         "upcoming_inspections": upcoming_inspections,
-        "recent_wallet_activities": recent_wallet_activities
+        "recent_wallet_activities": recent_wallet_activities,
+        "cluster_info": cluster_info
     }
