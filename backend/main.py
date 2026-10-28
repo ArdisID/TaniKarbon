@@ -2,6 +2,10 @@ import math
 import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 from fastapi import FastAPI, Depends, HTTPException, Security, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader

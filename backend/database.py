@@ -1,8 +1,13 @@
+import os
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
-# 1. Alamat database lokal lu di DBngin (user: postgres, tanpa password, port 5432)
-DATABASE_URL = "postgresql+asyncpg://postgres:@localhost:5432/tanikarbon_db"
+# Load environment variables from .env file if available
+load_dotenv()
+
+# 1. Alamat database (Twelve-Factor App: membaca dari environment variable dengan fallback lokal)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:@localhost:5432/tanikarbon_db")
 
 # 2. Membuat "mesin" penghubung ke database yang sifatnya asinkron (ngebut)
 engine = create_async_engine(DATABASE_URL, echo=True)

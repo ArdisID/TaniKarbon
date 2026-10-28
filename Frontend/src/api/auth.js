@@ -2,7 +2,7 @@
 // TaniKarbon Frontend - Modul Utilitas Autentikasi JWT End-to-End
 // ==============================================================================
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
 /**
  * Mengirim kredensial login ke backend FastAPI (dengan rate limit anti-brute force).
@@ -14,7 +14,7 @@ export async function loginUser({ identifier, password, role }) {
     role: role || undefined,
   };
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+  const response = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -42,7 +42,7 @@ export async function registerUser({ email, full_name, password, role, website_u
     website_url: website_url || undefined,
   };
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
+  const response = await fetch(`${API_BASE}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -66,7 +66,7 @@ export async function getMe() {
   if (!token) return null;
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
+    const response = await fetch(`${API_BASE}/auth/me`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
