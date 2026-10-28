@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import {
   Lock, Mail, Eye, EyeOff, Smartphone, Building2,
-  ArrowLeft, ArrowRight, ShieldCheck, Compass, Zap
+  ArrowLeft, ArrowRight, ShieldCheck, Compass, Zap,
+  AlertCircle, CheckCircle2, UserPlus, LogIn
 } from 'lucide-react';
+import { loginUser, registerUser } from '../api/auth';
 
 export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, onNavigateRole }) {
   // Mode: 'login' | 'register'
@@ -17,12 +19,16 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
     role === 'farmer' ? '0812-9847-1920' : 'esg-team@industrihijau.co.id'
   );
   const [password, setPassword] = useState('••••••••••••');
+  const [websiteUrl, setWebsiteUrl] = useState(''); // Honeypot anti-bot
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [infoMessage, setInfoMessage] = useState('');
 
   // Switch between Mitra Tani and Perusahaan ESG
   const handleSwitchTab = (newRole) => {
     setRole(newRole);
+    setErrorMessage('');
     if (mode === 'login') {
       if (newRole === 'farmer') {
         setFullName('Pak Joko Widodo');
@@ -31,26 +37,100 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
         setFullName('PT Industri Hijau Nusantara (Tbk)');
         setIdentifier('esg-team@industrihijau.co.id');
       }
+    } else {
+      if (newRole === 'farmer') {
+        setFullName('Petani Mitra Baru');
+        setIdentifier('petani.baru@tanikarbon.com');
+      } else {
+        setFullName('PT Solusi Karbon Indonesia');
+        setIdentifier('kontak@solusikarbon.co.id');
+      }
+      setPassword('Password123!');
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSwitchMode = (newMode) => {
+    setMode(newMode);
+    setErrorMessage('');
+    if (newMode === 'register') {
+      if (role === 'farmer') {
+        setFullName('Pak Sugeng Slamet');
+        setIdentifier('sugeng.slamet@petanimaju.id');
+      } else {
+        setFullName('PT Nusa Hijau Lestari');
+        setIdentifier('esg@nusahijau.co.id');
+      }
+      setPassword('Password123!');
+    } else {
+      if (role === 'farmer') {
+        setFullName('Pak Joko Widodo');
+        setIdentifier('0812-9847-1920');
+      } else {
+        setFullName('PT Industri Hijau Nusantara (Tbk)');
+        setIdentifier('esg-team@industrihijau.co.id');
+      }
+      setPassword('••••••••••••');
+    }
+  };
+
+  const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
+    setErrorMessage('');
+
+    try {
+      const targetRole = role === 'farmer' ? 'farmer' : 'corporate';
+      let data;
+
+      if (mode === 'login') {
+        data = await loginUser({
+          identifier,
+          password,
+          role: targetRole,
+        });
+      } else {
+        data = await registerUser({
+          email: identifier,
+          full_name: fullName,
+          password,
+          role: targetRole,
+          website_url: websiteUrl,
+        });
+      }
+
+      const resolvedRole = data.role === 'company' ? 'corporate' : data.role;
+      onLogin(resolvedRole, data);
+    } catch (err) {
+      setErrorMessage(err.message || 'Gagal memproses autentikasi.');
+    } finally {
       setLoading(false);
-      onLogin(role);
-    }, 600);
+    }
   };
 
   // 1-Click Demo Login for Competition Demo
-  const handleQuickDemo = (targetRole) => {
+  const handleQuickDemo = async (targetRole) => {
     const roleToLogin = targetRole || role;
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setErrorMessage('');
+
+    try {
+      let creds;
+      if (roleToLogin === 'farmer') {
+        creds = { identifier: 'petani@tanikarbon.com', password: 'Password123!', role: 'farmer' };
+      } else {
+        creds = { identifier: 'esg@korporathijau.com', password: 'Password123!', role: 'corporate' };
+      }
+
+      const data = await loginUser(creds);
+      const resolvedRole = data.role === 'company' ? 'corporate' : data.role;
+      onLogin(resolvedRole, data);
+    } catch (err) {
+      console.warn('Backend quick demo fallback:', err);
+      // Fallback ke login offline jika backend tidak tersedia
       onLogin(roleToLogin);
-    }, 400);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -95,46 +175,75 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
         </button>
       </div>
 
-      {/* Center Floating Card (Exact Morva Labs Dribbble proportions & glow) */}
+      {/* Center Floating Card */}
       <div className="relative z-20 my-auto py-4 flex items-center justify-center">
-        <div className="w-full max-w-[390px] bg-white/95 backdrop-blur-2xl rounded-[32px] p-7 sm:p-8 border border-white shadow-[0_24px_70px_-15px_rgba(0,0,0,0.35)] text-center transition-all animate-fade-in space-y-4">
+        <div className="w-full max-w-[400px] bg-white/95 backdrop-blur-2xl rounded-[32px] p-7 sm:p-8 border border-white shadow-[0_24px_70px_-15px_rgba(0,0,0,0.35)] text-center transition-all animate-fade-in space-y-4">
 
-          {/* Top Squircle Icon: Arrow entering bracket (->]) from Dribbble shot */}
+          {/* Top Squircle Icon */}
           <div className="w-12 h-12 rounded-2xl bg-white border border-stone-100 shadow-[0_4px_16px_rgba(0,0,0,0.06)] flex items-center justify-center mx-auto text-stone-900">
-            <svg
-              className="w-5 h-5 text-stone-800"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="4" y1="12" x2="15" y2="12" />
-              <polyline points="11 8 15 12 11 16" />
-              <path d="M16 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3" />
-            </svg>
+            {mode === 'login' ? (
+              <svg
+                className="w-5 h-5 text-stone-800"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="4" y1="12" x2="15" y2="12" />
+                <polyline points="11 8 15 12 11 16" />
+                <path d="M16 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3" />
+              </svg>
+            ) : (
+              <UserPlus className="w-5 h-5 text-emerald-700" />
+            )}
           </div>
 
           {/* Heading & Subtitle */}
           <div>
             <h1 className="text-xl font-bold text-stone-900 tracking-tight font-sans">
-              Sign in with email
+              {mode === 'login' ? 'Masuk ke TaniKarbon' : 'Daftar Akun Baru'}
             </h1>
-            <p className="text-[11px] text-stone-500 mt-1.5 leading-relaxed max-w-[270px] mx-auto font-sans">
-              Make a new doc to bring your words, data, and teams together. For free
+            <p className="text-[11px] text-stone-500 mt-1.5 leading-relaxed max-w-[280px] mx-auto font-sans">
+              {mode === 'login'
+                ? 'Portal verifikasi dan perdagangan offset karbon terintegrasi.'
+                : 'Mulai langkah dekarbonisasi dan monetisasi kredit biomassa hijau.'}
             </p>
           </div>
 
-          {/* Role Segmented Selector: Mitra Tani vs Perusahaan ESG (Clean Pill) */}
+          {/* Mode Switcher: Masuk vs Daftar */}
+          <div className="flex items-center justify-center gap-1 p-1 bg-stone-100 rounded-xl text-xs font-semibold text-stone-600 font-sans">
+            <button
+              type="button"
+              onClick={() => handleSwitchMode('login')}
+              className={`flex-1 py-1 rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                mode === 'login' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
+              }`}
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Masuk</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchMode('register')}
+              className={`flex-1 py-1 rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                mode === 'register' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
+              }`}
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Daftar</span>
+            </button>
+          </div>
+
+          {/* Role Segmented Selector: Mitra Tani vs Perusahaan ESG */}
           <div className="p-1 bg-[#F3F4F6] rounded-xl flex items-center text-xs font-semibold text-stone-600 font-sans">
             <button
               type="button"
               onClick={() => handleSwitchTab('farmer')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${role === 'farmer'
-                ? 'bg-white text-stone-900 font-bold shadow-xs'
-                : 'hover:text-stone-900'
-                }`}
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                role === 'farmer' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
+              }`}
             >
               <Smartphone className={`w-3.5 h-3.5 ${role === 'farmer' ? 'text-emerald-600' : 'text-stone-400'}`} />
               <span>Mitra Tani</span>
@@ -142,18 +251,45 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
             <button
               type="button"
               onClick={() => handleSwitchTab('corporate')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${role === 'corporate'
-                ? 'bg-white text-stone-900 font-bold shadow-xs'
-                : 'hover:text-stone-900'
-                }`}
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                role === 'corporate' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
+              }`}
             >
               <Building2 className={`w-3.5 h-3.5 ${role === 'corporate' ? 'text-sky-600' : 'text-stone-400'}`} />
               <span>Perusahaan ESG</span>
             </button>
           </div>
 
-          {/* Form with Dribbble-style filled pill inputs */}
+          {/* Error Banner */}
+          {errorMessage && (
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 text-left animate-fade-in font-sans">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+              <span className="leading-tight font-medium">{errorMessage}</span>
+            </div>
+          )}
+
+          {/* Info Banner */}
+          {infoMessage && (
+            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2 text-left animate-fade-in font-sans">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+              <span className="leading-tight font-medium">{infoMessage}</span>
+            </div>
+          )}
+
+          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3 text-left">
+
+            {/* Hidden Honeypot Input (Anti-Bot) */}
+            <input
+              type="text"
+              name="website_url"
+              value={websiteUrl}
+              onChange={(e) => setWebsiteUrl(e.target.value)}
+              style={{ display: 'none' }}
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+            />
 
             {/* If Register mode: Full Name field */}
             {mode === 'register' && (
@@ -177,11 +313,11 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
                 <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               )}
               <input
-                type={role === 'farmer' ? 'text' : 'email'}
+                type={role === 'farmer' && mode === 'login' ? 'text' : 'email'}
                 required
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="Email"
+                placeholder={mode === 'register' ? 'Alamat Email Resmi' : (role === 'farmer' ? 'Nomor WhatsApp / Email' : 'Email Resmi Korporat')}
                 className="w-full pl-10 pr-4 py-2.5 bg-[#F3F4F6] focus:bg-white border border-transparent focus:border-stone-300 rounded-xl text-xs text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
               />
             </div>
@@ -195,7 +331,7 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password"
+                  placeholder={mode === 'register' ? 'Password (Min. 8 karakter)' : 'Password'}
                   className="w-full pl-10 pr-10 py-2.5 bg-[#F3F4F6] focus:bg-white border border-transparent focus:border-stone-300 rounded-xl text-xs text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
                 />
                 <button
@@ -207,19 +343,24 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
                 </button>
               </div>
 
-              {/* Forgot password link - right aligned like Dribbble ref */}
-              <div className="text-right">
-                <button
-                  type="button"
-                  onClick={() => alert('Petunjuk pemulihan telah dikirim.')}
-                  className="text-[11px] text-stone-400 hover:text-stone-700 transition cursor-pointer font-sans"
-                >
-                  Forgot password?
-                </button>
-              </div>
+              {/* Forgot password link */}
+              {mode === 'login' && (
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setErrorMessage('');
+                      setInfoMessage('Petunjuk pemulihan kata sandi telah dikirim ke nomor WhatsApp / email Anda.');
+                    }}
+                    className="text-[11px] text-stone-400 hover:text-stone-700 transition cursor-pointer font-sans"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Primary Dark Button: Get Started */}
+            {/* Primary Dark Button */}
             <button
               type="submit"
               disabled={loading}
@@ -228,19 +369,19 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
               {loading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
-                <span>Get Started</span>
+                <span>{mode === 'login' ? 'Masuk ke Platform' : 'Daftar Akun Baru'}</span>
               )}
             </button>
           </form>
 
-          {/* Dotted Divider: ········· Or sign in with ········· */}
+          {/* Dotted Divider */}
           <div className="pt-1 flex items-center justify-center">
             <span className="text-[10px] font-mono text-stone-400 tracking-wider select-none">
               ········· Or sign in with ·········
             </span>
           </div>
 
-          {/* 3 Social Buttons in a Row (Google, WhatsApp/Social, Apple) */}
+          {/* 3 Social Buttons in a Row (Google, WhatsApp, Apple) */}
           <div className="grid grid-cols-3 gap-2 pt-0.5">
             {/* Google */}
             <button

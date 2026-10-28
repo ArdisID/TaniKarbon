@@ -11,10 +11,13 @@ import {
   Building2,
   ExternalLink,
   Layers,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
 
 export default function CorporateSidebar({ 
+  currentUser,
+  onLogout,
   currentTab, 
   onSelectTab, 
   collapsed, 
@@ -157,44 +160,70 @@ export default function CorporateSidebar({
           })}
         </nav>
 
-        {/* Profil Entitas Aktif (PT Industri Hijau Nusantara) */}
-        <div className="p-3 border-t border-slate-100 bg-slate-50/70">
+        {/* Profil Entitas Aktif & Tombol Logout */}
+        <div className="p-3 border-t border-slate-100 bg-slate-50/70 font-sans">
           {(!collapsed || mobileOpen) ? (
-            <div 
-              onClick={() => {
-                onOpenCompanyProfile();
-                if (onCloseMobile) onCloseMobile();
-              }}
-              className="p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-emerald-300 transition cursor-pointer group"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-[#14382C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs font-mono">
-                  IHN
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-xs font-semibold text-stone-900 leading-snug truncate group-hover:text-emerald-800 font-sans">
-                    PT Industri Hijau Nusantara
-                  </h4>
-                  <div className="flex items-center gap-1 mt-1">
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 truncate">
-                      SRN-PPI Verified Buyer
-                    </span>
+            <div>
+              <div 
+                onClick={() => {
+                  onOpenCompanyProfile();
+                  if (onCloseMobile) onCloseMobile();
+                }}
+                className="p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-emerald-300 transition cursor-pointer group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-[#14382C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs font-mono">
+                    {(currentUser?.full_name || 'IHN').substring(0, 3).toUpperCase()}
                   </div>
-                  <p className="text-[10px] text-slate-500 font-sans mt-0.5 truncate">
-                    IDX: <span className="font-mono font-medium text-slate-700">IHN</span> • Scope 1 &amp; 2
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-semibold text-stone-900 leading-snug truncate group-hover:text-emerald-800 font-sans">
+                      {currentUser?.full_name || 'PT Industri Hijau Nusantara'}
+                    </h4>
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 truncate">
+                        SRN-PPI Verified Buyer
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-sans mt-0.5 truncate">
+                      {currentUser?.email || 'esg@korporathijau.com'}
+                    </p>
+                  </div>
                 </div>
               </div>
+
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs"
+                  title="Keluar dari akun"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Keluar Akun</span>
+                </button>
+              )}
             </div>
           ) : (
-            <div 
-              onClick={onOpenCompanyProfile}
-              className="flex justify-center cursor-pointer group py-1"
-              title="PT Industri Hijau Nusantara - SRN-PPI Verified Buyer"
-            >
-              <div className="w-9 h-9 rounded-xl bg-[#14382C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs font-mono">
-                IHN
+            <div className="flex flex-col items-center gap-2 py-1">
+              <div 
+                onClick={onOpenCompanyProfile}
+                className="cursor-pointer group"
+                title={`${currentUser?.full_name || 'PT Industri Hijau Nusantara'} (${currentUser?.email || ''})`}
+              >
+                <div className="w-9 h-9 rounded-xl bg-[#14382C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs font-mono">
+                  {(currentUser?.full_name || 'IHN').substring(0, 3).toUpperCase()}
+                </div>
               </div>
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 transition border border-rose-200 cursor-pointer"
+                  title="Keluar Akun"
+                >
+                  <LogOut className="w-4 h-4 text-rose-600" />
+                </button>
+              )}
             </div>
           )}
         </div>

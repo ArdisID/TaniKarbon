@@ -12,7 +12,7 @@ class User(Base):
     full_name = Column(String(150), nullable=False)
     email = Column(String(150), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
-    role = Column(String(50), nullable=False)
+    role = Column(Enum('farmer', 'surveyor', 'company', 'corporate', 'admin', name='user_role'), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -23,7 +23,9 @@ class CompanyProfile(Base):
     __tablename__ = "company_profiles"
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
     company_name = Column(String(150), nullable=False)
+    industry_type = Column(String(100), nullable=True)
     api_key = Column(String(255), unique=True)
+    webhook_url = Column(String(255), nullable=True)
     
     user = relationship("User", back_populates="company_profile")
 
@@ -31,7 +33,9 @@ class Wallet(Base):
     __tablename__ = "wallets"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    escrow_balance = Column(Numeric(15, 2), default=0.00)
     available_balance = Column(Numeric(15, 2), default=0.00)
+    updated_at = Column(DateTime, default=datetime.utcnow)
     
     user = relationship("User", back_populates="wallet")
 
@@ -71,3 +75,29 @@ class TreeBlock(Base):
     planting_year = Column(Integer, nullable=False)
     total_population = Column(Integer, nullable=False)
     estimated_tco2e_per_year = Column(Numeric(15, 4), nullable=False)
+
+class WalletTransaction(Base):
+    __tablename__ = "wallet_transactions"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    amount = Column(Numeric(15, 2), nullable=False)
+    transaction_type = Column(String(50), nullable=False)  # 'credit_payout', 'debit_withdraw'
+    description = Column(String(255), nullable=False)
+    status = Column(String(50), default="completed", nullable=False)  # 'completed', 'processing'
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+class TreeSpecies(Base):
+    __tablename__ = "tree_species"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    local_name = Column(String(150), unique=True, nullable=False)
+    latin_name = Column(String(150), nullable=True)
+    category = Column(String(100), nullable=False, default="Dikotil (Umum)")
+    wood_density = Column(Numeric(5, 3), nullable=False)
+    formula_type = Column(String(50), nullable=False, default="ketterings")  # 'ketterings', 'power_law', 'monocot_cylinder'
+    coeff_a = Column(Numeric(10, 5), nullable=True)
+    exp_b = Column(Numeric(10, 5), nullable=True)
+    requires_height = Column(Boolean, default=False, nullable=False)
+    formula_display = Column(String(255), nullable=True)
+    reference_source = Column(String(150), nullable=True)

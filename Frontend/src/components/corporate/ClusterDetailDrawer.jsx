@@ -169,11 +169,19 @@ export default function ClusterDetailDrawer({ cluster, onClose, onBuyClick }) {
             <p className="text-[11px] text-emerald-800 leading-relaxed">
               Klaster telah divalidasi oleh verifikator independen dan citra optik multispektral satelit Sentinel-2. Memenuhi persyaratan SRN-PPI untuk pelaporan POJK 51.
             </p>
-            <div className="pt-1 flex gap-2">
+            <div className="pt-1 flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => alert('Mengunduh Dokumen BAP Audit KLHK No: 2026/AUD/WNSB-042 (PDF)...')}
-                className="px-3 py-1.5 bg-white border border-emerald-300 rounded-xl text-emerald-800 font-bold text-[11px] hover:bg-emerald-50 transition flex items-center gap-1.5"
+                onClick={() => {
+                  const blob = new Blob([`Laporan Audit KLHK Klaster ${cluster.name}\nNo: 2026/AUD/WNSB-042\nStatus: Terverifikasi Satelit Sentinel-2 Tier-3`], { type: 'application/pdf' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `BAP-AUDIT-${cluster.id || 'WNSB'}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="px-3 py-1.5 bg-white border border-emerald-300 rounded-xl text-emerald-800 font-bold text-[11px] hover:bg-emerald-50 transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Unduh Laporan Audit (PDF)</span>

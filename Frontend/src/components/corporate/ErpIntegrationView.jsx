@@ -256,9 +256,7 @@ print("Certificate UUID:", response.json().get("certificate_uuid"))`
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm('Yakin ingin mencabut kunci API ini?')) {
-                    if (onToast) onToast('Kunci API berhasil dicabut (Revoked).');
-                  }
+                  if (onToast) onToast('Kunci API lama berhasil dicabut (Revoked). Silakan buat kunci baru jika dibutuhkan.');
                 }}
                 className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs rounded-xl transition"
               >

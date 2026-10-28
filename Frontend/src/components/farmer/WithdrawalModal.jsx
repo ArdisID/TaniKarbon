@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { X, Landmark, Smartphone, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Landmark, Smartphone, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { formatRupiah } from '../../data';
+import { withdrawFarmerBalance } from '../../api/farmer';
 
 export default function WithdrawalModal({ availableBalance, onClose, onSuccess, onToast }) {
   const [method, setMethod] = useState('bri');
   const [accountNumber, setAccountNumber] = useState('0142-01-084821-50-8');
   const [accountHolder, setAccountHolder] = useState('JOKO WIDODO');
-  const [amount, setAmount] = useState('1000000');
+  const [amount, setAmount] = useState('50000');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -32,8 +33,10 @@ export default function WithdrawalModal({ availableBalance, onClose, onSuccess, 
     setError('');
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return; // Anti-double-click guard
+
     if (numericAmount <= 0) {
       setError('Masukkan nominal penarikan yang valid.');
       return;
@@ -44,25 +47,41 @@ export default function WithdrawalModal({ availableBalance, onClose, onSuccess, 
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    setError('');
+
+    try {
       const selectedOpt = paymentOptions.find(o => o.id === method) || paymentOptions[0];
+      const bankName = selectedOpt.name.split(' (')[0];
+      
+      const res = await withdrawFarmerBalance({
+        amount: numericAmount,
+        bank_name: bankName,
+        account_number: accountNumber
+      });
+
       const newTransaction = {
         id: `WD-${Date.now().toString().slice(-6)}`,
-        title: `Pencairan Saldo ke ${selectedOpt.name.split(' (')[0]}`,
-        recipient: `${selectedOpt.name.split(' (')[0]} - ${accountNumber} (a.n. ${accountHolder})`,
+        title: `Pencairan Saldo ke ${bankName}`,
+        recipient: `${bankName} - ${accountNumber} (a.n. ${accountHolder})`,
         amount: numericAmount,
         date: 'Hari ini, baru saja',
-        status: 'Success',
+        status: 'Dana Terkirim',
+        statusColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
         refNumber: `TRX-${Math.floor(10000000 + Math.random() * 90000000)}`
       };
 
-      onSuccess(numericAmount, newTransaction);
+      if (onSuccess) {
+        onSuccess(numericAmount, newTransaction, res.remaining_balance);
+      }
       if (onToast) {
-        onToast(`Penarikan ${formatRupiah(numericAmount)} berhasil diproses ke rekening ${accountHolder}!`);
+        onToast(`Penarikan ${formatRupiah(numericAmount)} berhasil diproses! Sisa saldo: ${formatRupiah(res.remaining_balance)}`);
       }
       onClose();
-    }, 600);
+    } catch (err) {
+      setError(err.message || 'Gagal memproses penarikan dana ke backend.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

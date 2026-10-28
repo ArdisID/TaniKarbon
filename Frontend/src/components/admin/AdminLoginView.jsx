@@ -11,32 +11,54 @@ import {
   Activity, 
   Eye, 
   EyeOff,
-  Database
+  Database,
+  AlertCircle
 } from 'lucide-react';
+import { loginUser } from '../../api/auth';
 
 export default function AdminLoginView({ onLogin, onBack, onNavigate }) {
   const [adminId, setAdminId] = useState('ADM-ROOT-01');
   const [password, setPassword] = useState('••••••••••••');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
+    setErrorMessage('');
+    try {
+      const data = await loginUser({
+        identifier: adminId,
+        password: password,
+        role: 'admin'
+      });
+      onLogin('admin', data);
+    } catch (err) {
+      setErrorMessage(err.message || 'Autentikasi admin gagal.');
+    } finally {
       setLoading(false);
-      onLogin('admin');
-    }, 600);
+    }
   };
 
-  const handleQuickDemo = () => {
+  const handleQuickDemo = async () => {
     setAdminId('ADM-ROOT-01');
     setPassword('••••••••••••');
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setErrorMessage('');
+    try {
+      const data = await loginUser({
+        identifier: 'admin@tanikarbon.com',
+        password: 'Password123!',
+        role: 'admin'
+      });
+      onLogin('admin', data);
+    } catch (err) {
+      console.warn('Demo fallback:', err);
       onLogin('admin');
-    }, 400);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -92,6 +114,14 @@ export default function AdminLoginView({ onLogin, onBack, onNavigate }) {
               Otoritas pengesahan audit bursa karbon, brankas keuangan escrow, dan kontrol rumus alometrik.
             </p>
           </div>
+
+          {/* Error Banner */}
+          {errorMessage && (
+            <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-800 text-rose-300 text-xs flex items-start gap-2.5 text-left font-sans animate-fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+              <span className="leading-tight font-medium">{errorMessage}</span>
+            </div>
+          )}
 
           {/* Form Login */}
           <form onSubmit={handleSubmit} className="space-y-3.5 text-left">

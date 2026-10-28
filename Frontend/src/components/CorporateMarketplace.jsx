@@ -120,6 +120,8 @@ function CorporateProfileModal({ onClose, onToast }) {
 // MAIN COMPONENT: CorporateMarketplace (B2B ESG Portal Orchestrator)
 // ============================================================================
 export default function CorporateMarketplace({
+  currentUser,
+  onLogout,
   totalRetired = 1200,
   onRetire,
   onBack,
@@ -394,6 +396,8 @@ export default function CorporateMarketplace({
 
       {/* 1. Left Sidebar Navigation (Desktop-First Enterprise Sidebar) */}
       <CorporateSidebar
+        currentUser={currentUser}
+        onLogout={onLogout}
         currentTab={currentTab}
         onSelectTab={(tabId) => setCurrentTab(tabId)}
         collapsed={sidebarCollapsed}
@@ -407,6 +411,8 @@ export default function CorporateMarketplace({
       <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-x-hidden">
         {/* 2. Topbar Kontekstual */}
         <CorporateTopBar
+          currentUser={currentUser}
+          onLogout={onLogout}
           onNavigateRole={handleRoleSwitch}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setMobileMenuOpen(prev => !prev)}

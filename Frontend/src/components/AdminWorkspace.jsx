@@ -10,7 +10,11 @@ import RegistryAndApiMonitorView from './admin/RegistryAndApiMonitorView';
 import UserAndSurveyorManagementView from './admin/UserAndSurveyorManagementView';
 import { X, CheckCircle2, AlertCircle } from 'lucide-react';
 
-export default function AdminWorkspace({ onNavigateRole }) {
+export default function AdminWorkspace({ 
+  currentUser,
+  onLogout,
+  onNavigateRole 
+}) {
   // Current active tab in Admin platform
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -65,6 +69,8 @@ export default function AdminWorkspace({ onNavigateRole }) {
           />
           <div className="relative w-72 max-w-[80vw] bg-white h-full shadow-2xl z-10 flex flex-col">
             <AdminSidebar
+              currentUser={currentUser}
+              onLogout={onLogout}
               currentTab={currentTab}
               onSelectTab={handleSelectTab}
               actionRequiredCount={8}
@@ -77,6 +83,8 @@ export default function AdminWorkspace({ onNavigateRole }) {
       <div className="flex-1 flex">
         {/* Fixed Left Sidebar (Desktop Only) */}
         <AdminSidebar
+          currentUser={currentUser}
+          onLogout={onLogout}
           currentTab={currentTab}
           onSelectTab={handleSelectTab}
           actionRequiredCount={8}
@@ -87,6 +95,8 @@ export default function AdminWorkspace({ onNavigateRole }) {
           
           {/* Global TopBar */}
           <AdminTopBar
+            currentUser={currentUser}
+            onLogout={onLogout}
             onNavigateRole={onNavigateRole}
             onToggleMobileMenu={() => setIsMobileMenuOpen(prev => !prev)}
           />

@@ -1,7 +1,5 @@
-import React, { useState } from 'react';
-import FarmerTopBar from './farmer/FarmerTopBar';
+import React, { useState, useEffect, useCallback } from 'react';
 import FarmerSidebar from './farmer/FarmerSidebar';
-import FarmerMobileNav from './farmer/FarmerMobileNav';
 import FarmerDashboardView from './farmer/FarmerDashboardView';
 import LandManagementView from './farmer/LandManagementView';
 import LandRegistrationWizard from './farmer/LandRegistrationWizard';
@@ -11,6 +9,7 @@ import SamplePhotoModal from './farmer/SamplePhotoModal';
 import ViewfinderModal from './farmer/ViewfinderModal';
 import WithdrawalModal from './farmer/WithdrawalModal';
 import TransferReceiptModal from './farmer/TransferReceiptModal';
+import { getFarmerSummary, getFarmerLands, getFarmerWalletTransactions } from '../api/farmer';
 import { 
   X, 
   Globe, 
@@ -19,7 +18,8 @@ import {
   ShieldCheck, 
   CheckCircle2, 
   MapPin, 
-  Calendar 
+  Calendar,
+  Menu
 } from 'lucide-react';
 
 // Sentinel-2 Telemetry Modal
@@ -89,20 +89,34 @@ function SatelliteTelemetryModal({ onClose, onToast }) {
   );
 }
 
-// Compact Profile Modal for Pak Joko Widodo
-function FarmerProfileModal({ onClose, onToast }) {
+// Dynamic Profile Modal
+function FarmerProfileModal({ currentUser, farmerSummary, onClose, onToast }) {
+  const displayName = currentUser?.full_name || farmerSummary?.farmer_name || 'Petani Mitra';
+  const displayEmail = currentUser?.email || farmerSummary?.farmer_email || 'petani@tanikarbon.id';
+  const rawArea = (farmerSummary?.total_land_area_sqm !== undefined && farmerSummary?.total_land_area_sqm !== null)
+    ? Number(farmerSummary.total_land_area_sqm)
+    : 0;
+  const totalAreaHa = (rawArea / 10000).toFixed(2);
+  const totalPlots = (farmerSummary?.total_land_plots !== undefined && farmerSummary?.total_land_plots !== null)
+    ? Number(farmerSummary.total_land_plots)
+    : 0;
+
+  const farmerIdCode = currentUser?.id 
+    ? `#TK-${String(currentUser.id).slice(0, 8).toUpperCase()}` 
+    : '#TK-MITRA-01';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div className="bg-white rounded-3xl max-w-md w-full border border-stone-200 shadow-2xl overflow-hidden relative" onClick={e => e.stopPropagation()}>
         <div className="bg-[#14382C] p-5 sm:p-6 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl overflow-hidden ring-2 ring-emerald-400 shrink-0">
-              <img src="/pak-joko.jpg" alt="Pak Joko Widodo" className="w-full h-full object-cover" />
+            <div className="w-12 h-12 rounded-2xl overflow-hidden ring-2 ring-emerald-400 shrink-0 bg-emerald-800 flex items-center justify-center text-white font-black text-xl">
+              {displayName.charAt(0).toUpperCase()}
             </div>
             <div>
               <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest">Profil Mitra Tani</span>
-              <h3 className="font-extrabold text-white text-base">Pak Joko Widodo</h3>
-              <p className="text-xs text-emerald-200/80">Ketua Regu Petani Karbon Garung</p>
+              <h3 className="font-extrabold text-white text-base">{displayName}</h3>
+              <p className="text-xs text-emerald-200/80">{displayEmail}</p>
             </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition">
@@ -114,40 +128,36 @@ function FarmerProfileModal({ onClose, onToast }) {
           <div className="grid grid-cols-2 gap-2.5 text-xs">
             <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
               <span className="text-stone-400 block text-[10px] uppercase font-bold">ID Mitra Tani</span>
-              <strong className="text-[#14382C] text-sm font-bold">#TK-WNSB-042</strong>
+              <strong className="text-[#14382C] text-sm font-bold font-mono">{farmerIdCode}</strong>
             </div>
             <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
               <span className="text-stone-400 block text-[10px] uppercase font-bold">Kelompok Tani</span>
-              <strong className="text-[#14382C] text-sm font-bold">Gapoktan Wono Subur</strong>
+              <strong className="text-stone-700 text-sm font-semibold">{currentUser?.gapoktan || 'Mandiri / Belum Tergabung'}</strong>
             </div>
             <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
               <span className="text-stone-400 block text-[10px] uppercase font-bold">Domisili Lahan</span>
-              <strong className="text-[#14382C] text-sm font-bold">Dusun Garung, Wonosobo</strong>
+              <strong className="text-stone-700 text-sm font-semibold">{currentUser?.domicile || 'Belum diatur'}</strong>
             </div>
             <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
               <span className="text-stone-400 block text-[10px] uppercase font-bold">Total Lahan</span>
-              <strong className="text-emerald-700 text-sm font-bold">1.2 Hektar (2 Petak)</strong>
+              <strong className="text-emerald-700 text-sm font-bold">{totalAreaHa} Ha ({totalPlots} Petak)</strong>
             </div>
           </div>
 
           <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200 space-y-2 text-xs">
             <span className="text-[11px] font-bold text-stone-600 uppercase tracking-wider block">Rekening Penarikan Terdaftar</span>
-            <div className="flex items-center justify-between py-1 border-b border-stone-200/60">
-              <span className="font-semibold text-blue-900">Bank BRI (Rek. ****4821)</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Aktif</span>
-            </div>
-            <div className="flex items-center justify-between py-1">
-              <span className="font-semibold text-sky-900">DANA e-Wallet (0812-****-7890)</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Aktif</span>
+            <div className="py-2.5 text-center">
+              <p className="text-xs text-stone-500 font-medium">Belum diatur</p>
+              <p className="text-[10px] text-stone-400 mt-0.5">Rekening bank atau e-wallet dapat ditentukan saat penarikan saldo.</p>
             </div>
           </div>
 
           <button
             onClick={() => {
-              onToast('Data profil Pak Joko Widodo terverifikasi sesuai KTP & SHM.');
+              onToast(`Data profil ${displayName} tersinkronisasi dengan database PostgreSQL.`);
               onClose();
             }}
-            className="w-full py-3 bg-[#14382C] hover:bg-[#1a4436] text-white font-bold text-xs rounded-xl transition shadow-xs"
+            className="w-full py-3 bg-[#14382C] hover:bg-[#1a4436] text-white font-bold text-xs rounded-xl transition shadow-xs cursor-pointer"
           >
             Tutup Profil
           </button>
@@ -157,8 +167,27 @@ function FarmerProfileModal({ onClose, onToast }) {
   );
 }
 
+const FARMER_TAB_PATHS = {
+  dashboard: '/mitra-tani/dashboard',
+  land: '/mitra-tani/manajemen-lahan',
+  wizard: '/mitra-tani/daftarkan-lahan',
+  timeline: '/mitra-tani/lacak-verifikasi',
+  wallet: '/mitra-tani/dompet-karbon',
+};
+
+function getFarmerTabFromPath(pathname) {
+  const normalized = (pathname || '').toLowerCase().replace(/\/$/, '');
+  if (normalized.endsWith('/manajemen-lahan')) return 'land';
+  if (normalized.endsWith('/daftarkan-lahan')) return 'wizard';
+  if (normalized.endsWith('/lacak-verifikasi')) return 'timeline';
+  if (normalized.endsWith('/dompet-karbon')) return 'wallet';
+  return 'dashboard';
+}
+
 export default function FarmerWorkspace({
-  walletBalance = 3250000,
+  currentUser,
+  onLogout,
+  walletBalance = 0,
   onUpdateBalance,
   trees = [],
   onAddTree,
@@ -166,17 +195,55 @@ export default function FarmerWorkspace({
   onNavigateRole
 }) {
   // Navigation tab state: 'dashboard' | 'land' | 'wizard' | 'timeline' | 'wallet'
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Inisialisasi awal membaca langsung dari window.location.pathname agar kebal refresh F5/Cmd+R
+  const [activeTab, setActiveTabState] = useState(() => {
+    return getFarmerTabFromPath(window.location.pathname);
+  });
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Two-way synchronization antara activeTab dan URL browser
+  const setActiveTab = useCallback((tabId, replace = false) => {
+    setActiveTabState(tabId);
+    const targetPath = FARMER_TAB_PATHS[tabId] || '/mitra-tani/dashboard';
+    if (window.location.pathname.toLowerCase() !== targetPath.toLowerCase()) {
+      if (replace) {
+        window.history.replaceState({ tab: tabId }, '', targetPath);
+      } else {
+        window.history.pushState({ tab: tabId }, '', targetPath);
+      }
+    }
+  }, []);
+
+  // Normalisasi URL awal jika user mengakses root /mitra-tani
+  useEffect(() => {
+    const current = window.location.pathname.toLowerCase().replace(/\/$/, '');
+    if (current === '/mitra-tani') {
+      window.history.replaceState({ tab: 'dashboard' }, '', '/mitra-tani/dashboard');
+    }
+  }, []);
+
+  // Dengarkan browser Back / Forward (popstate) agar tab berganti sesuai riwayat sub-path
+  useEffect(() => {
+    const handlePopState = () => {
+      const tabFromUrl = getFarmerTabFromPath(window.location.pathname);
+      setActiveTabState(tabFromUrl);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Real backend synchronization state
+  const [farmerSummary, setFarmerSummary] = useState(null);
+  const [realLands, setRealLands] = useState([]);
 
   // Financial state
-  const [currentAvailableBalance, setCurrentAvailableBalance] = useState(walletBalance || 3250000);
-  const [escrowBalance, setEscrowBalance] = useState(1450000);
+  const [currentAvailableBalance, setCurrentAvailableBalance] = useState(walletBalance || 0);
+  const [escrowBalance, setEscrowBalance] = useState(0);
   const [transactions, setTransactions] = useState([]);
 
   // Modals state
   const [selectedSampleTree, setSelectedSampleTree] = useState(null);
-  const [viewfinderConfig, setViewfinderConfig] = useState(null); // { index, photo, onSave }
+  const [viewfinderConfig, setViewfinderConfig] = useState(null);
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
   const [showSatelliteModal, setShowSatelliteModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -196,47 +263,97 @@ export default function FarmerWorkspace({
     }, 4500);
   };
 
+  // Fetch real data from PostgreSQL backend
+  const fetchFarmerData = useCallback(async () => {
+    try {
+      const [summary, lands, txs] = await Promise.all([
+        getFarmerSummary(),
+        getFarmerLands(),
+        getFarmerWalletTransactions().catch(() => [])
+      ]);
+      setFarmerSummary(summary);
+      setRealLands(lands);
+      if (summary?.available_balance !== undefined) {
+        setCurrentAvailableBalance(summary.available_balance);
+        if (onUpdateBalance) onUpdateBalance(summary.available_balance);
+      }
+      if (summary?.escrow_balance !== undefined) {
+        setEscrowBalance(summary.escrow_balance);
+      }
+      if (txs && txs.length > 0) {
+        const mappedTx = txs.map(act => ({
+          id: act.id,
+          title: act.description,
+          recipient: act.transaction_type === 'credit_payout' ? 'Dompet TaniKarbon (Bagi Hasil)' : 'Rekening Bank Terdaftar',
+          recipientFull: act.description,
+          amount: act.amount,
+          date: new Date(act.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' WIB',
+          status: act.status === 'completed' ? 'Dana Terkirim' : 'Diproses Admin',
+          statusColor: act.status === 'completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-100 text-amber-800 border-amber-300',
+          refNumber: `TRX-${String(act.id).slice(0, 8).toUpperCase()}`,
+          transaction_type: act.transaction_type
+        }));
+        setTransactions(mappedTx);
+      }
+    } catch (err) {
+      console.warn('Gagal sinkronisasi data riil petani:', err);
+    }
+  }, [onUpdateBalance]);
+
+  useEffect(() => {
+    fetchFarmerData();
+  }, [fetchFarmerData]);
+
   // Handle successful withdrawal from modal
-  const handleWithdrawSuccess = (amount, newTx) => {
-    const updatedBalance = currentAvailableBalance - amount;
+  const handleWithdrawSuccess = (amount, newTx, remainingBalance) => {
+    const updatedBalance = remainingBalance !== undefined ? remainingBalance : (currentAvailableBalance - amount);
     setCurrentAvailableBalance(updatedBalance);
     if (onUpdateBalance) onUpdateBalance(updatedBalance);
     setTransactions(prev => [newTx, ...prev]);
+    fetchFarmerData();
   };
 
   // Handle completion of wizard
-  const handleWizardComplete = (newPlotData) => {
-    // Add to custom plots in Land Management
+  const handleWizardComplete = (newPlotData = {}) => {
+    const samples = Array.isArray(newPlotData?.samples) ? newPlotData.samples : [];
+    const avgDbhStr = samples.length > 0
+      ? `${(samples.reduce((a, s) => a + (parseFloat(s?.dbh) || 35), 0) / samples.length).toFixed(1)} cm`
+      : '35.0 cm';
+    const annualRev = Number(newPlotData?.farmerNetRevenue || 0);
+    const spec = newPlotData?.species || 'Pohon Agroforestri';
+    const totalTrees = Number(newPlotData?.totalTrees || 0);
+    const estAbsorption = Number(newPlotData?.estimatedAbsorption || 0);
+
     const newPlotEntry = {
-      id: `plot-${Date.now()}`,
-      name: newPlotData.name,
-      areaHa: newPlotData.areaHa,
-      areaM2: newPlotData.areaM2,
-      coordinates: '-7.3640, 109.9888',
+      id: newPlotData?.id || `plot-${Date.now()}`,
+      name: newPlotData?.name || 'Petak Baru',
+      areaHa: newPlotData?.areaHa || (newPlotData?.areaM2 ? (newPlotData.areaM2 / 10000).toFixed(2) : '0.50'),
+      areaM2: newPlotData?.areaM2 || 5000,
+      coordinates: newPlotData?.centroidCoords || '-7.3640, 109.9888',
       elevation: '920 mdpl',
       status: 'pending',
       statusLabel: '● Menunggu Verifikasi',
-      totalTrees: newPlotData.totalTrees,
-      totalCarbon: newPlotData.estimatedAbsorption,
-      annualRevenue: newPlotData.farmerNetRevenue,
+      totalTrees,
+      totalCarbon: estAbsorption,
+      annualRevenue: annualRev,
       satelliteImage: '/canopy-tree.jpg',
       blocks: [
         {
           key: `block-${Date.now()}`,
-          variety: `Blok ${newPlotData.species} (${newPlotData.totalTrees} Pohon)`,
-          species: newPlotData.species,
-          population: newPlotData.totalTrees,
-          avgAge: `${2026 - parseInt(newPlotData.plantYear || '2020')} Tahun`,
-          avgDbh: `${(newPlotData.samples.reduce((a, s) => a + (parseFloat(s.dbh) || 35), 0) / newPlotData.samples.length).toFixed(1)} cm`,
-          carbonContribution: `${newPlotData.estimatedAbsorption} tCO2e/thn`,
-          revenueContribution: `Rp ${newPlotData.farmerNetRevenue.toLocaleString('id-ID')}/thn`,
+          variety: `Blok ${spec} (${totalTrees} Pohon)`,
+          species: spec,
+          population: totalTrees,
+          avgAge: `${2026 - parseInt(newPlotData?.plantYear || '2020', 10)} Tahun`,
+          avgDbh: avgDbhStr,
+          carbonContribution: `${estAbsorption} tCO2e/thn`,
+          revenueContribution: `Rp ${annualRev.toLocaleString('id-ID')}/thn`,
           treeData: {
             id: `TK-NEW-${Date.now().toString().slice(-4)}`,
-            species: newPlotData.species,
-            age: 2026 - parseInt(newPlotData.plantYear || '2020'),
+            species: spec,
+            age: 2026 - parseInt(newPlotData?.plantYear || '2020', 10),
             dbh: 38,
-            co2PerYear: newPlotData.estimatedAbsorption,
-            samplePhoto: newPlotData.samples[0]?.photo || '/tree-dbh-sample.jpg'
+            co2PerYear: estAbsorption,
+            samplePhoto: samples[0]?.photo || '/tree-dbh-sample.jpg'
           }
         }
       ]
@@ -244,9 +361,9 @@ export default function FarmerWorkspace({
 
     setCustomPlots(prev => [newPlotEntry, ...prev]);
     setNewlySubmittedPlot(newPlotData);
-    showToast(`Lahan "${newPlotData.name}" berhasil diajukan untuk verifikasi satelit!`);
-    // Automatically transition to Halaman 4: Lacak Verifikasi
-    setActiveTab('timeline');
+    showToast(`Lahan "${newPlotData?.name || 'Baru'}" berhasil didaftarkan!`);
+    fetchFarmerData();
+    setActiveTab('land');
   };
 
   // Handle saving draft in wizard
@@ -255,33 +372,48 @@ export default function FarmerWorkspace({
   };
 
   return (
-    <div className="min-h-screen bg-[#F6F7F2] text-[#173829] flex flex-col">
-      {/* Global Topbar */}
-      <FarmerTopBar
-        sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
-        onNavigateRole={(target) => {
-          if (onNavigateRole) onNavigateRole(target);
-          else if (onBack) onBack();
+    <div className="min-h-screen bg-canvas text-stone-800 flex">
+      {/* FIXED LEFT SIDEBAR (single navigation surface — no top navbar) */}
+      <FarmerSidebar
+        currentUser={currentUser}
+        onLogout={onLogout}
+        currentTab={activeTab}
+        onSelectTab={(tabId) => {
+          setActiveTab(tabId);
+          setMobileOpen(false);
         }}
-        activeTabTitle={activeTab}
+        mobileOpen={mobileOpen}
+        onCloseMobile={() => setMobileOpen(false)}
+        onOpenProfile={() => setShowProfileModal(true)}
       />
 
-      <div className="flex-1 flex w-full">
-        {/* Desktop Collapsible Left Sidebar (>= 768px) */}
-        <FarmerSidebar
-          currentTab={activeTab}
-          onSelectTab={setActiveTab}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-          onOpenProfile={() => setShowProfileModal(true)}
-        />
+      {/* MAIN WORKSPACE */}
+      <main className="min-w-0 flex-1 lg:ml-64">
+        <div className="mx-auto max-w-7xl space-y-6 p-5 sm:p-6 lg:p-8">
+          {/* Mobile drawer trigger for non-dashboard tabs */}
+          {activeTab !== 'dashboard' && (
+            <div className="flex items-center justify-between pb-2 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Buka navigasi"
+                className="grid h-10 w-10 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:bg-stone-50 cursor-pointer"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 cursor-pointer"
+              >
+                &larr; Kembali ke Dashboard
+              </button>
+            </div>
+          )}
 
-        {/* Main Content Area */}
-        <main className="flex-1 max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-7 w-full overflow-x-hidden">
           {/* Toast Notification Banner */}
           {toastMessage && (
-            <div className="fixed top-16 right-4 z-50 bg-[#14382C] text-white px-4 py-3 rounded-2xl shadow-xl border border-emerald-400/40 flex items-center gap-2.5 text-xs animate-slide-up max-w-md">
+            <div className="fixed top-6 right-6 z-50 bg-[#0F291E] text-white px-4 py-3 rounded-2xl shadow-xl border border-emerald-400/40 flex items-center gap-2.5 text-xs animate-slide-up max-w-md">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span className="font-medium flex-1">{toastMessage}</span>
               <button 
@@ -296,8 +428,12 @@ export default function FarmerWorkspace({
           {/* VIEW ROUTING (5 HALAMAN UTAMA) */}
           {activeTab === 'dashboard' && (
             <FarmerDashboardView
+              farmerSummary={farmerSummary}
+              realLands={realLands}
               onNavigateTab={setActiveTab}
               onOpenSatelliteModal={() => setShowSatelliteModal(true)}
+              onOpenWithdrawal={() => setShowWithdrawalModal(true)}
+              onOpenMobileNav={() => setMobileOpen(true)}
               availableBalance={currentAvailableBalance}
               escrowBalance={escrowBalance}
             />
@@ -305,9 +441,13 @@ export default function FarmerWorkspace({
 
           {activeTab === 'land' && (
             <LandManagementView
+              realLands={realLands}
               customPlots={customPlots}
               onNavigateTab={setActiveTab}
               onOpenSamplePhoto={(tree) => setSelectedSampleTree(tree)}
+              onRefresh={fetchFarmerData}
+              onOpenMobileNav={() => setMobileOpen(true)}
+              onToast={showToast}
             />
           )}
 
@@ -319,6 +459,7 @@ export default function FarmerWorkspace({
                 setViewfinderConfig({ index: idx, photo, onSave });
               }}
               onToast={showToast}
+              onNavigateTab={setActiveTab}
             />
           )}
 
@@ -339,14 +480,8 @@ export default function FarmerWorkspace({
               onToast={showToast}
             />
           )}
-        </main>
-      </div>
-
-      {/* Mobile Floating Bottom Navigation Bar (< 768px) */}
-      <FarmerMobileNav
-        currentTab={activeTab}
-        onSelectTab={setActiveTab}
-      />
+        </div>
+      </main>
 
       {/* =========================================================================
           INTERACTIVE MODALS
@@ -390,6 +525,8 @@ export default function FarmerWorkspace({
       {/* 5. Farmer Profile Modal */}
       {showProfileModal && (
         <FarmerProfileModal
+          currentUser={currentUser}
+          farmerSummary={farmerSummary}
           onClose={() => setShowProfileModal(false)}
           onToast={showToast}
         />
@@ -405,3 +542,4 @@ export default function FarmerWorkspace({
     </div>
   );
 }
+

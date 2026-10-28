@@ -80,7 +80,7 @@ export default function FarmerWalletView({
     }
   ];
 
-  const allTransactions = [...transactions, ...initialTransactions];
+  const allTransactions = (transactions && transactions.length > 0) ? transactions : initialTransactions;
 
   return (
     <div className="space-y-6 animate-fade-in pb-20 md:pb-8">

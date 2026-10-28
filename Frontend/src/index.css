@@ -1,3 +1,5 @@
+@import "leaflet/dist/leaflet.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -157,3 +159,85 @@
     display: none !important;
   }
 }
+
+/* Scrollbar khusus untuk area daftar yang bisa di-scroll internal */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #c4c9be transparent;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c4c9be;
+  border-radius: 999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9ea396;
+}
+
+/* Numeric tabular alignment for mono metrics */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Slim scrollbar inside sidebar nav */
+.scroll-slim::-webkit-scrollbar {
+  width: 6px;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: #E7E5E4;
+  border-radius: 999px;
+}
+.scroll-slim::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Fallback blur token */
+.backdrop-blur-xs {
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* Pastikan kontrol Leaflet (zoom +/-, atribusi) tidak tertutup elemen Tailwind lain */
+.leaflet-control-container .leaflet-control {
+  z-index: 40 !important;
+}
+
+.leaflet-container {
+  z-index: 10;
+  background: #0b1d16;
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  outline: none;
+}
+
+/* Tombol zoom Leaflet lebih kontras & aman dari overlay floating panel */
+.leaflet-control-container .leaflet-control-zoom .leaflet-control-zoom-in,
+.leaflet-control-container .leaflet-control-zoom .leaflet-control-zoom-out {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.leaflet-control-container .leaflet-control-zoom .leaflet-control-zoom-in:hover,
+.leaflet-control-container .leaflet-control-zoom .leaflet-control-zoom-out:hover {
+  background-color: rgba(16, 185, 129, 0.9) !important;
+}
+
+/* Beri jarak tombol zoom dari tepi kanvas peta */
+.leaflet-bottom.leaflet-right .leaflet-control-zoom {
+  margin: 0 12px 12px 0;
+}
+
+/* Grid koordinat tipis kanvas peta PostGIS */
+.gis-grid {
+  background-image:
+    linear-gradient(to right, rgba(16,185,129,0.10) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(16,185,129,0.10) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+

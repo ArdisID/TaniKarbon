@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        canvas: '#F6F7F2',
+        canvas: '#F6F8F5',
         porcelain: '#F6F7F2',
         pine: {
           50: '#eef5f1',
@@ -17,10 +17,10 @@ export default {
           400: '#5f9d85',
           500: '#3d7e67',
           600: '#2b6350',
-          700: '#204d3d',
-          800: '#173829',
-          900: '#0e241a',
-          DEFAULT: '#173829',
+          700: '#1D4E3B',
+          800: '#173D2E',
+          900: '#123026',
+          DEFAULT: '#0F291E',
         },
         leaf: '#10B981',
         matcha: '#DCF0E2',
@@ -30,12 +30,13 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+        sans: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
         serif: ['"Newsreader"', 'Georgia', 'serif'],
       },
       boxShadow: {
-        'card': '0 8px 30px rgb(0 0 0 / 0.04)',
+        'card': '0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06)',
+        'lift': '0 8px 24px -12px rgb(15 41 30 / 0.18), 0 2px 6px -2px rgb(15 41 30 / 0.06)',
         'card-hover': '0 16px 36px rgb(23 56 41 / 0.08)',
         'float': '0 20px 45px rgb(23 56 41 / 0.12)',
         'soft-glow': '0 0 25px rgba(16, 185, 129, 0.15)',

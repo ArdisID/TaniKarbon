@@ -10,7 +10,12 @@ import OfflineSyncAndHistoryView from './surveyor/OfflineSyncAndHistoryView';
 import ScheduleVisitModal from './surveyor/ScheduleVisitModal';
 import { CheckCircle2 } from 'lucide-react';
 
-export default function SurveyorWorkspace({ onNavigateRole, onBack }) {
+export default function SurveyorWorkspace({ 
+  currentUser,
+  onLogout,
+  onNavigateRole, 
+  onBack 
+}) {
   // 1. Navigation state
   const [currentTab, setCurrentTab] = useState('tasks'); // 'tasks' | 'map' | 'inspection' | 'vintage' | 'sync'
 
@@ -309,6 +314,8 @@ export default function SurveyorWorkspace({ onNavigateRole, onBack }) {
 
       {/* 1. Left Sidebar Navigation (Desktop-Only, strictly no mobile hamburger) */}
       <SurveyorSidebar
+        currentUser={currentUser}
+        onLogout={onLogout}
         currentTab={currentTab}
         onSelectTab={(tabId) => setCurrentTab(tabId)}
         pendingCount={pendingTicketsCount}
@@ -320,6 +327,8 @@ export default function SurveyorWorkspace({ onNavigateRole, onBack }) {
         
         {/* 2. Topbar Kontekstual & Network Status Header */}
         <SurveyorTopBar
+          currentUser={currentUser}
+          onLogout={onLogout}
           isOnline={isOnline}
           onToggleOnline={handleToggleOnline}
           offlinePackDownloaded={offlinePackDownloaded}

@@ -11,32 +11,54 @@ import {
   Zap, 
   Leaf, 
   Eye, 
-  EyeOff 
+  EyeOff,
+  AlertCircle
 } from 'lucide-react';
+import { loginUser } from '../../api/auth';
 
 export default function SurveyorLoginView({ onLogin, onBack, onNavigate }) {
   const [surveyorId, setSurveyorId] = useState('SRV-BUDI-09');
   const [pin, setPin] = useState('847291');
   const [showPin, setShowPin] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
+    setErrorMessage('');
+    try {
+      const data = await loginUser({
+        identifier: surveyorId,
+        password: pin,
+        role: 'surveyor'
+      });
+      onLogin('surveyor', data);
+    } catch (err) {
+      setErrorMessage(err.message || 'Verifikasi petugas gagal.');
+    } finally {
       setLoading(false);
-      onLogin('surveyor');
-    }, 600);
+    }
   };
 
-  const handleQuickDemo = () => {
+  const handleQuickDemo = async () => {
     setSurveyorId('SRV-BUDI-09');
     setPin('847291');
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setErrorMessage('');
+    try {
+      const data = await loginUser({
+        identifier: 'surveyor@tanikarbon.com',
+        password: 'Password123!',
+        role: 'surveyor'
+      });
+      onLogin('surveyor', data);
+    } catch (err) {
+      console.warn('Demo fallback:', err);
       onLogin('surveyor');
-    }, 400);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -99,6 +121,14 @@ export default function SurveyorLoginView({ onLogin, onBack, onNavigate }) {
               <span>Siap Offline</span>
             </div>
           </div>
+
+          {/* Error Banner */}
+          {errorMessage && (
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 text-left font-sans animate-fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+              <span className="leading-tight font-medium">{errorMessage}</span>
+            </div>
+          )}
 
           {/* Form Login */}
           <form onSubmit={handleSubmit} className="space-y-3 text-left">

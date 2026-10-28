@@ -163,7 +163,11 @@ export default function AuditApprovalAndMintingModal({
 
               <button
                 type="button"
-                onClick={() => alert('Fitur simulasi: Dokumen PDF telah terpasang.')}
+                onClick={() => setUploadedFile({
+                  name: `BAP-AUDIT-${cluster.id || 'KLHK'}-FINAL.pdf`,
+                  size: '4.8 MB',
+                  uploadedAt: 'Baru saja'
+                })}
                 className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white rounded-lg border border-slate-200 shadow-2xs hover:bg-slate-50 transition cursor-pointer font-sans"
               >
                 Ganti File

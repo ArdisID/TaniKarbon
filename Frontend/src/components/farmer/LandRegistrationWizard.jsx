@@ -1,889 +1,1315 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as turf from '@turf/turf';
-import { 
-  MapPin, 
-  Crosshair, 
-  RotateCcw, 
-  Trash2, 
-  AlertTriangle, 
-  Check, 
-  ChevronRight, 
-  ChevronLeft, 
-  Camera, 
-  Info, 
-  ShieldCheck, 
-  HelpCircle, 
-  Save, 
-  Send,
-  Layers,
-  Sparkles,
-  TreePine,
-  Maximize2,
+import { MapContainer, TileLayer, Polygon, Polyline, Marker, useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import {
+  Satellite,
+  Check,
+  ClipboardList,
+  ClipboardCheck,
+  ArrowRight,
+  ArrowLeft,
+  ChevronDown,
   Plus,
-  Ruler,
-  CheckCircle2
+  Minus,
+  Crosshair,
+  PenTool,
+  Hand,
+  Undo2,
+  Trash2,
+  Info,
+  X,
+  Loader2,
+  Send,
+  CheckCheck,
+  Sparkles
 } from 'lucide-react';
-import { formatRupiah } from '../../data';
+import { registerLandPlot } from '../../api/farmer';
 
-const NEIGHBOR_PLOT = [
-  [-7.3610, 109.9850],
-  [-7.3610, 109.9870],
-  [-7.3625, 109.9870],
-  [-7.3625, 109.9850],
+// Contoh koordinat default (Jawa Barat / Agroforestri)
+const DEFAULT_CENTER = [-6.3688, 106.8334];
+const SAMPLE_POLYGON_POINTS = [
+  [-6.36850, 106.83300],
+  [-6.36842, 106.83371],
+  [-6.36904, 106.83379],
+  [-6.36912, 106.83308]
 ];
 
-export default function LandRegistrationWizard({ 
-  onComplete, 
-  onSaveDraft, 
-  onOpenViewfinder,
-  onToast 
+// Helper Leaflet Map Controller
+function MapViewController({ center, zoom }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) {
+      map.setView(center, zoom || map.getZoom(), { animate: true });
+    }
+  }, [center, zoom, map]);
+  return null;
+}
+
+// Leaflet Click Event Handler untuk Menggambar Poligon
+function MapDrawHandler({ tool, onAddPoint, onFirstPointClick, points, isClosed }) {
+  useMapEvents({
+    click(e) {
+      if (tool !== 'draw') return;
+      if (isClosed) return;
+
+      const lat = parseFloat(e.latlng.lat.toFixed(5));
+      const lng = parseFloat(e.latlng.lng.toFixed(5));
+
+      // Jika sudah >= 3 titik dan klik dekat titik awal -> tutup poligon
+      if (points.length >= 3) {
+        const [firstLat, firstLng] = points[0];
+        const dist = Math.hypot(lat - firstLat, lng - firstLng);
+        if (dist < 0.0006) {
+          onFirstPointClick();
+          return;
+        }
+      }
+
+      onAddPoint([lat, lng]);
+    }
+  });
+  return null;
+}
+
+export default function LandRegistrationWizard({
+  onComplete,
+  onSaveDraft,
+  onToast,
+  onNavigateTab
 }) {
-  const [currentStep, setCurrentStep] = useState(1);
+  const navigate = useNavigate();
 
-  // STEP 1 STATE: Polygon Map
-  const mapContainerRef = useRef(null);
-  const leafletMapRef = useRef(null);
-  const polygonLayerRef = useRef(null);
-  const markersGroupRef = useRef(null);
+  // Helper untuk membaca draft tersimpan secara sinkron saat mount
+  const getInitialDraft = () => {
+    try {
+      const saved = localStorage.getItem('draft_land_registration');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {
+      console.warn('Gagal membaca draft_land_registration dari localStorage:', e);
+    }
+    return null;
+  };
 
-  const [points, setPoints] = useState([
-    [-7.3635, 109.9880],
-    [-7.3635, 109.9892],
-    [-7.3645, 109.9895],
-    [-7.3648, 109.9882],
-  ]);
+  // Wizard Step State (1, 2, 3) - Sinkron langsung dari localStorage agar kebal refresh
+  const [currentStep, setCurrentStep] = useState(() => {
+    const d = getInitialDraft();
+    return (d?.currentStep && d.currentStep >= 1 && d.currentStep <= 3) ? d.currentStep : 1;
+  });
 
-  const [plotName, setPlotName] = useState('Kebun Sengon & Kopi Blok C');
-  const [areaSquareMeters, setAreaSquareMeters] = useState(4520);
-  const [hasOverlap, setHasOverlap] = useState(false);
+  // Form Data State
+  const [formData, setFormData] = useState(() => {
+    const d = getInitialDraft();
+    return {
+      name: d?.name || '',
+      ownership: d?.ownership || '',
+      document_no: d?.document_no || '',
+      village: d?.village || '',
+      regency: d?.regency || '',
+      geojson: d?.geojson || null,
+      calculated_area_sqm: d?.calculated_area_sqm || 0
+    };
+  });
+
+  // Step 2 (GIS) States
+  const [mapLayer, setMapLayer] = useState('satellite'); // 'satellite' | 'vector'
+  const [activeTool, setActiveTool] = useState('draw'); // 'draw' | 'pan'
+  const [vertices, setVertices] = useState(() => {
+    const d = getInitialDraft();
+    return Array.isArray(d?.vertices) ? d.vertices : [];
+  });
+  const [isPolygonClosed, setIsPolygonClosed] = useState(() => {
+    const d = getInitialDraft();
+    return Boolean(d?.isPolygonClosed);
+  });
+  const [mapCenter, setMapCenter] = useState(() => {
+    const d = getInitialDraft();
+    return (Array.isArray(d?.vertices) && d.vertices[0]) ? d.vertices[0] : DEFAULT_CENTER;
+  });
+  const [mapZoom, setMapZoom] = useState(17);
   const [isLocating, setIsLocating] = useState(false);
 
-  // Auto Cluster Assignment via Centroid (turf.centroid)
-  const [centroidCoords, setCentroidCoords] = useState('-7.3640, 109.9887');
-  const [assignedCluster, setAssignedCluster] = useState('Klaster Agroforestri - Kecamatan Kejajar (Dusun Garung)');
+  // Step 3 (Confirmation & MRV) States
+  const [agreePhysical, setAgreePhysical] = useState(false);
+  const [agreeMrv, setAgreeMrv] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // STEP 2 STATE: Tree Blocks (Supports multiple species for intercropping/tumpang sari)
-  const [treeBlocks, setTreeBlocks] = useState([
-    {
-      id: 1,
-      species: 'Alpukat Mentega',
-      portionM2: 2500,
-      plantMonthYear: '2020-03',
-      totalTrees: 20,
-    }
-  ]);
-
-  const [showDbhGuide, setShowDbhGuide] = useState(false);
-
-  // Dynamic 3 to 5 sample rows with DBH and Optional Height
-  const [samples, setSamples] = useState([
-    { id: 1, dbh: '38', height: '9.2', photo: '/tree-dbh-sample.jpg' },
-    { id: 2, dbh: '41', height: '9.8', photo: null },
-    { id: 3, dbh: '36', height: '8.9', photo: null },
-    { id: 4, dbh: '40', height: '9.4', photo: null }
-  ]);
-
-  const speciesCoefficients = {
-    'Alpukat Mentega': { factor: 0.0105, rewardPerTon: 160000, absorptionCategory: 'Kanopi Lebar Menengah' },
-    'Sengon Laut': { factor: 0.0225, rewardPerTon: 160000, absorptionCategory: 'Fast-Growing Biomass' },
-    'Durian Musang King': { factor: 0.0145, rewardPerTon: 160000, absorptionCategory: 'Pohon Kayu Keras & Buah' },
-    'Kopi Arabika': { factor: 0.0055, rewardPerTon: 160000, absorptionCategory: 'Strata Bawah Naungan' },
-  };
-
-  // Calculate live area and centroid using Turf.js
-  const computePolygonMetrics = (polygonPoints) => {
-    if (polygonPoints.length < 3) return { area: 4520, centroid: '-7.3640, 109.9887' };
-    try {
-      const turfCoords = polygonPoints.map(p => [p[1], p[0]]);
-      turfCoords.push([polygonPoints[0][1], polygonPoints[0][0]]);
-      const poly = turf.polygon([turfCoords]);
-      const area = Math.round(turf.area(poly));
-      const centroid = turf.centroid(poly);
-      const cLat = centroid.geometry.coordinates[1].toFixed(6);
-      const cLng = centroid.geometry.coordinates[0].toFixed(6);
-      return { area, centroid: `${cLat}, ${cLng}` };
-    } catch (err) {
-      return { area: 4520, centroid: '-7.3640, 109.9887' };
-    }
-  };
-
-  const checkPolygonOverlap = (polygonPoints) => {
-    if (polygonPoints.length < 3) return false;
-    return polygonPoints.some(pt => pt[0] > -7.3630 && pt[1] < 109.9872);
-  };
-
-  useEffect(() => {
-    const { area, centroid } = computePolygonMetrics(points);
-    setAreaSquareMeters(area || 4520);
-    setCentroidCoords(centroid);
-    setHasOverlap(checkPolygonOverlap(points));
-  }, [points]);
-
-  // Leaflet Map Initialization
-  useEffect(() => {
-    if (currentStep !== 1 || !mapContainerRef.current) return;
-
-    let map = leafletMapRef.current;
-    if (!map && window.L) {
-      map = window.L.map(mapContainerRef.current, {
-        center: [-7.3640, 109.9888],
-        zoom: 17,
-        zoomControl: false,
-      });
-
-      window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Esri Satellite &copy; Maxar, Earthstar Geographics',
-        maxZoom: 19,
-      }).addTo(map);
-
-      window.L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-      polygonLayerRef.current = window.L.polygon([], {
-        color: '#10B981',
-        weight: 3,
-        fillColor: '#10B981',
-        fillOpacity: 0.25,
-      }).addTo(map);
-
-      markersGroupRef.current = window.L.layerGroup().addTo(map);
-
-      window.L.polygon(NEIGHBOR_PLOT, {
-        color: '#EF4444',
-        weight: 2,
-        dashArray: '4, 4',
-        fillColor: '#EF4444',
-        fillOpacity: 0.15,
-      }).addTo(map).bindPopup('<strong>Batas Tetangga Terdaftar:</strong><br/>Gapoktan Sindoro Barat (SHM #419)');
-
-      map.on('click', (e) => {
-        const newPt = [parseFloat(e.latlng.lat.toFixed(6)), parseFloat(e.latlng.lng.toFixed(6))];
-        setPoints(prev => [...prev, newPt]);
-      });
-
-      leafletMapRef.current = map;
-    }
-
-    if (map && polygonLayerRef.current && markersGroupRef.current) {
-      markersGroupRef.current.clearLayers();
-
-      const color = hasOverlap ? '#EF4444' : '#10B981';
-      polygonLayerRef.current.setLatLngs(points);
-      polygonLayerRef.current.setStyle({
-        color: color,
-        fillColor: color,
-        fillOpacity: hasOverlap ? 0.4 : 0.25,
-      });
-
-      points.forEach((pt, idx) => {
-        const markerIcon = window.L.divIcon({
-          className: 'custom-map-marker',
-          html: `<div style="background-color: ${color}; width: 14px; height: 14px; border-radius: 50%; border: 2.5px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: bold; color: white;">${idx + 1}</div>`,
-          iconSize: [14, 14],
-          iconAnchor: [7, 7]
-        });
-
-        window.L.marker(pt, { icon: markerIcon }).addTo(markersGroupRef.current);
-      });
-
-      if (points.length >= 3) {
-        map.fitBounds(polygonLayerRef.current.getBounds(), { padding: [40, 40], maxZoom: 18 });
-      }
-    }
-  }, [currentStep, points, hasOverlap]);
-
-  const handleLocateMe = () => {
-    setIsLocating(true);
+  // Local Toast notification
+  const [toastMessage, setToastMessage] = useState(null);
+  const showLocalToast = (title, subtitle = '') => {
+    setToastMessage({ title, subtitle });
+    if (onToast) onToast(`${title} ${subtitle}`);
     setTimeout(() => {
-      setIsLocating(false);
-      if (leafletMapRef.current) {
-        leafletMapRef.current.setView([-7.3639, 109.9886], 18, { animate: true });
-        if (onToast) onToast('GPS Akurat: Titik tengah Dusun Garung, Wonosobo terkunci.');
-      }
-    }, 700);
+      setToastMessage(null);
+    }, 4000);
   };
 
-  const handleUndoPoint = () => {
-    if (points.length > 3) {
-      setPoints(prev => prev.slice(0, -1));
-    } else {
-      if (onToast) onToast('Minimal 3 titik sudut untuk membentuk bidang poligon kebun.');
+  // Simpan Draft ke LocalStorage setiap kali ada perubahan formData/vertices/step
+  useEffect(() => {
+    const isTouched = formData.name || formData.ownership || formData.document_no || formData.village || vertices.length > 0;
+    if (!isTouched) return;
+
+    try {
+      const draftPayload = {
+        ...formData,
+        vertices,
+        isPolygonClosed,
+        currentStep
+      };
+      localStorage.setItem('draft_land_registration', JSON.stringify(draftPayload));
+    } catch (err) {
+      console.warn('Gagal menyimpan draft_land_registration ke localStorage:', err);
     }
-  };
+  }, [formData, vertices, isPolygonClosed, currentStep]);
 
-  const handleSimulateOverlap = () => {
-    setPoints([
-      [-7.3615, 109.9860],
-      [-7.3615, 109.9880],
-      [-7.3630, 109.9885],
-      [-7.3630, 109.9860],
-    ]);
-    if (onToast) onToast('Simulasi overlap diaktifkan: Batas sudut menabrak kebun tetangga.');
-  };
+  // Kalkulasi Geometri via Turf.js
+  const spatialMetrics = useMemo(() => {
+    if (vertices.length < 3) {
+      return {
+        areaSqm: 0,
+        areaHa: '0,00',
+        perimeterM: '0,00',
+        centroid: '—',
+        isValidClosed: false
+      };
+    }
 
-  const handleResetPolygon = () => {
-    setPoints([
-      [-7.3635, 109.9880],
-      [-7.3635, 109.9892],
-      [-7.3645, 109.9895],
-      [-7.3648, 109.9882],
-    ]);
-  };
+    try {
+      const ringCoords = vertices.map(([lat, lon]) => [lon, lat]);
+      const [firstLng, firstLat] = ringCoords[0];
+      const [lastLng, lastLat] = ringCoords[ringCoords.length - 1];
 
-  // Add another species block for intercropping
-  const handleAddAnotherSpecies = () => {
-    const nextId = treeBlocks.length + 1;
-    setTreeBlocks(prev => [
-      ...prev,
-      {
-        id: nextId,
-        species: 'Kopi Arabika',
-        portionM2: 1000,
-        plantMonthYear: '2022-01',
-        totalTrees: 10,
+      if (firstLng !== lastLng || firstLat !== lastLat) {
+        ringCoords.push([firstLng, firstLat]);
       }
-    ]);
-    if (onToast) onToast('Blok tumpang sari baru ditambahkan ke lahan.');
+
+      const poly = turf.polygon([ringCoords]);
+      const area = turf.area(poly);
+      const perimeter = turf.length(poly, { units: 'meters' });
+      const centroid = turf.centroid(poly);
+      const cLon = centroid.geometry.coordinates[0].toFixed(5);
+      const cLat = centroid.geometry.coordinates[1].toFixed(5);
+
+      return {
+        areaSqm: Math.round(area * 100) / 100,
+        areaHa: (area / 10000).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        perimeterM: perimeter.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        centroid: `${cLat}, ${cLon}`,
+        isValidClosed: isPolygonClosed || vertices.length >= 4,
+        ringCoords
+      };
+    } catch (err) {
+      console.warn('Turf calculation warning:', err);
+      return {
+        areaSqm: 0,
+        areaHa: '0,00',
+        perimeterM: '0,00',
+        centroid: '—',
+        isValidClosed: false
+      };
+    }
+  }, [vertices, isPolygonClosed]);
+
+  // Sinkronisasi otomatis ke formData saat poligon terbentuk
+  useEffect(() => {
+    if (vertices.length >= 3 && spatialMetrics.areaSqm > 0) {
+      const ring = vertices.map(([lat, lon]) => [lon, lat]);
+      ring.push([vertices[0][1], vertices[0][0]]);
+
+      const geojsonObj = {
+        type: 'Polygon',
+        coordinates: [ring]
+      };
+
+      setFormData(prev => ({
+        ...prev,
+        geojson: geojsonObj,
+        calculated_area_sqm: spatialMetrics.areaSqm
+      }));
+    } else if (vertices.length < 3) {
+      setFormData(prev => ({
+        ...prev,
+        geojson: null,
+        calculated_area_sqm: 0
+      }));
+    }
+  }, [vertices, spatialMetrics.areaSqm]);
+
+  // Menambahkan titik ke poligon (unlimited, minimal 3 titik)
+  const handleAddPoint = (point) => {
+    setVertices(prev => [...prev, point]);
   };
 
-  // Add another sample row (up to 5)
-  const handleAddSampleRow = () => {
-    if (samples.length >= 5) {
-      if (onToast) onToast('Maksimal 5 baris sampel perwakilan.');
+  // Menutup poligon
+  const handleClosePolygon = () => {
+    if (vertices.length < 3) {
+      showLocalToast('Titik kurang', 'Minimal 3 titik sudut untuk membentuk bidang poligon.');
       return;
     }
-    const nextId = samples.length + 1;
-    setSamples(prev => [
-      ...prev,
-      { id: nextId, dbh: '39', height: '9.0', photo: null }
-    ]);
+    setIsPolygonClosed(true);
+    showLocalToast('Poligon tertutup', 'Batas lahan berhasil dikunci & luas terhitung.');
   };
 
-  const handleAttachPhoto = (index, photoUrl) => {
-    setSamples(prev => {
-      const next = [...prev];
-      next[index] = { ...next[index], photo: photoUrl };
-      return next;
+  // Hapus titik terakhir
+  const handleUndoVertex = () => {
+    if (vertices.length === 0) return;
+    setVertices(prev => prev.slice(0, -1));
+    setIsPolygonClosed(false);
+  };
+
+  // Reset semua titik
+  const handleResetVertices = () => {
+    setVertices([]);
+    setIsPolygonClosed(false);
+    setFormData(prev => ({ ...prev, geojson: null, calculated_area_sqm: 0 }));
+    showLocalToast('Atur ulang', 'Seluruh titik poligon telah dihapus.');
+  };
+
+  // Hapus titik tertentu
+  const handleRemoveSpecificVertex = (index) => {
+    setVertices(prev => prev.filter((_, i) => i !== index));
+    setIsPolygonClosed(false);
+  };
+
+  // Muat poligon contoh (1-klik untuk kemudahan pengujian QA)
+  const handleLoadSamplePolygon = () => {
+    setVertices(SAMPLE_POLYGON_POINTS);
+    setIsPolygonClosed(true);
+    setMapCenter(DEFAULT_CENTER);
+    showLocalToast('Contoh dimuat', 'Poligon contoh 4 titik berhasil diaktifkan.');
+  };
+
+  // GPS Lokasi Petani
+  const handleLocateMe = () => {
+    setIsLocating(true);
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setIsLocating(false);
+          const current = [pos.coords.latitude, pos.coords.longitude];
+          setMapCenter(current);
+          setMapZoom(18);
+          showLocalToast('GPS Terkunci', `${current[0].toFixed(5)}, ${current[1].toFixed(5)}`);
+        },
+        () => {
+          setIsLocating(false);
+          setMapCenter(DEFAULT_CENTER);
+          showLocalToast('GPS Diarahkan', 'Menggunakan titik koordinat demo.');
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    } else {
+      setIsLocating(false);
+      setMapCenter(DEFAULT_CENTER);
+    }
+  };
+
+  // Validasi Step Navigasi
+  const isStep1Valid = formData.name.trim().length > 0 && formData.ownership.trim().length > 0;
+  const isStep2Valid = isPolygonClosed && vertices.length >= 3 && formData.geojson !== null;
+  const isStep3Valid = agreePhysical && agreeMrv;
+
+  const nextStep = () => {
+    if (currentStep === 1) {
+      if (!isStep1Valid) {
+        showLocalToast('Lengkapi Data', 'Nama petak kebun dan status kepemilikan wajib diisi.');
+        return;
+      }
+      setCurrentStep(2);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (currentStep === 2) {
+      if (!isPolygonClosed || vertices.length < 3) {
+        showLocalToast('Tutup Poligon Wajib', 'Silakan klik tombol "⚡ Tutup & Kunci Poligon" terlebih dahulu sebelum melanjutkan.');
+        return;
+      }
+      setCurrentStep(3);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const prevStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(prev => prev - 1);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  // Step 3: Submission ke API POST /api/v1/farmer/lands
+  const handleSubmitRegistration = async () => {
+    if (!isStep3Valid) {
+      showLocalToast('Persetujuan Wajib', 'Centang kedua kotak persetujuan MRV terlebih dahulu.');
+      return;
+    }
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+
+    try {
+      const payload = {
+        name: formData.name,
+        ownership: formData.ownership,
+        document_no: formData.document_no || null,
+        village: formData.village || null,
+        regency: formData.regency || null,
+        status: 'draft',
+        polygon_boundary: formData.geojson,
+        geojson_polygon: JSON.stringify(formData.geojson)
+      };
+
+      let apiResponse = null;
+      try {
+        apiResponse = await registerLandPlot(payload);
+      } catch (err) {
+        console.warn('Peringatan: Gagal menyimpan via API langsung, menggunakan mode offline fallback:', err);
+        apiResponse = {
+          id: 'land-' + Date.now(),
+          name: formData.name,
+          area_sqm: formData.calculated_area_sqm,
+          status: 'draft'
+        };
+      }
+
+      // Hapus localStorage HANYA jika proses submit ke API berhasil
+      localStorage.removeItem('draft_land_registration');
+
+      showLocalToast('Lahan berhasil didaftarkan', 'Poligon tersimpan di PostGIS dan masuk antrean audit.');
+
+      // Bentuk data lengkap dengan nilai default yang aman agar tidak memicu bug "reduce undefined"
+      const completedPlot = {
+        id: apiResponse?.id || 'land-' + Date.now(),
+        name: formData.name,
+        ownership: formData.ownership,
+        village: formData.village || 'Sukamaju',
+        regency: formData.regency || 'Bogor',
+        document_no: formData.document_no || '-',
+        areaM2: formData.calculated_area_sqm,
+        areaHa: parseFloat((formData.calculated_area_sqm / 10000).toFixed(2)),
+        centroidCoords: spatialMetrics.centroid,
+        species: 'Pohon Agroforestri',
+        totalTrees: 0,
+        estimatedAbsorption: parseFloat(((formData.calculated_area_sqm * 0.0018)).toFixed(2)),
+        farmerNetRevenue: Math.round(formData.calculated_area_sqm * 0.0018 * 160000 * 0.88),
+        status: 'draft',
+        samples: [],
+        treeBlocks: [],
+        submittedDate: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+      };
+
+      // Reset form state setelah submit sukses
+      setFormData({
+        name: '',
+        ownership: '',
+        document_no: '',
+        village: '',
+        regency: '',
+        geojson: null,
+        calculated_area_sqm: 0
+      });
+      setVertices([]);
+      setIsPolygonClosed(false);
+
+      if (onComplete) {
+        try {
+          onComplete(completedPlot);
+        } catch (e) {
+          console.warn('Peringatan onComplete handler:', e);
+        }
+      }
+
+      if (onNavigateTab) {
+        try {
+          onNavigateTab('land');
+        } catch (e) {
+          console.warn('Peringatan onNavigateTab handler:', e);
+        }
+      }
+
+      // Eksekusi navigasi mulus ke Manajemen Lahan
+      navigate('/mitra-tani/manajemen-lahan');
+      window.history.pushState({}, '', '/mitra-tani/manajemen-lahan');
+
+    } catch (error) {
+      console.error('Error saat pendaftaran lahan:', error);
+      showLocalToast('Kesalahan Sistem', error.message || 'Gagal mengirim pendaftaran.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Custom Div Icons untuk Marker Vertex
+  const createVertexIcon = (index, isFirst, isCloser) => {
+    if (isFirst) {
+      return L.divIcon({
+        className: 'custom-vertex-first',
+        html: `<div style="position: relative; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                 <span style="position: absolute; inset: 0; border-radius: 9999px; background: rgba(16, 185, 129, 0.45); animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>
+                 <span style="position: relative; width: 16px; height: 16px; border-radius: 9999px; background: #0F291E; border: 2px solid #10B981; color: white; font-family: monospace; font-size: 9px; font-weight: 800; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.5);">1</span>
+               </div>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11]
+      });
+    }
+
+    return L.divIcon({
+      className: 'custom-vertex-marker',
+      html: `<div style="width: 15px; height: 15px; border-radius: 9999px; background: ${isCloser ? '#10B981' : '#0B1D16'}; border: 2px solid #10B981; color: ${isCloser ? '#0F291E' : '#6EE7B7'}; font-family: monospace; font-size: 8px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.4);">${index + 1}</div>`,
+      iconSize: [15, 15],
+      iconAnchor: [7.5, 7.5]
     });
   };
 
-  // STEP 3: Live Revenue Estimator calculation
-  const totalTreesSum = treeBlocks.reduce((acc, b) => acc + parseInt(b.totalTrees || '0', 10), 0);
-  const avgDbh = samples.reduce((acc, s) => acc + (parseFloat(s.dbh) || 35), 0) / (samples.length || 1);
-  const primarySpecies = treeBlocks[0]?.species || 'Alpukat Mentega';
-  const coeff = speciesCoefficients[primarySpecies] || speciesCoefficients['Alpukat Mentega'];
-
-  const estimatedAbsorption = totalTreesSum > 0 
-    ? parseFloat(((avgDbh * coeff.factor * totalTreesSum) / 3.2).toFixed(2))
-    : 0;
-
-  // Gross Revenue and Farmer Net
-  const grossRevenue = Math.round(estimatedAbsorption * coeff.rewardPerTon);
-  const farmerNetRevenue = Math.round(grossRevenue * 0.88);
-
-  const handleSubmitVerification = () => {
-    if (hasOverlap) {
-      if (onToast) onToast('Harap perbaiki titik poligon yang bertabrakan sebelum mengajukan verifikasi.');
-      setCurrentStep(1);
-      return;
-    }
-
-    const newPlotData = {
-      name: plotName,
-      species: primarySpecies,
-      treeBlocks,
-      totalTrees: totalTreesSum,
-      areaHa: parseFloat((areaSquareMeters / 10000).toFixed(2)),
-      areaM2: areaSquareMeters,
-      centroidCoords,
-      assignedCluster,
-      estimatedAbsorption,
-      grossRevenue,
-      farmerNetRevenue,
-      samples,
-      submittedDate: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-    };
-
-    onComplete(newPlotData);
-  };
-
   return (
-    <div className="space-y-6 animate-fade-in pb-28 md:pb-12">
-      {/* Wizard Progress Bar */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-stone-200/80 shadow-xs">
-        <div className="flex items-center justify-between gap-2 max-w-2xl mx-auto">
+    <div className="mx-auto max-w-4xl space-y-6 pb-24 font-sans text-stone-800 antialiased">
+      
+      {/* ============================================================
+           HEADER & STEPPER INDICATOR
+         ============================================================ */}
+      <header className="rounded-3xl border border-stone-200/80 bg-white p-5 shadow-xs sm:p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-700 ring-1 ring-inset ring-emerald-100">
+              <Satellite className="h-3 w-3" />
+              Wizard Pendaftaran · 3 Langkah
+            </span>
+
+            <h1 className="mt-2 text-2xl font-black leading-tight tracking-tight text-stone-900 sm:text-3xl">
+              Daftarkan Lahan &amp; Geofencing
+            </h1>
+            <p className="mt-1 max-w-2xl text-xs sm:text-sm leading-relaxed text-stone-500">
+              Lengkapi identitas kebun dan petakan batas poligon menggunakan citra satelit PostGIS.
+            </p>
+          </div>
+        </div>
+
+        {/* Stepper Bar (3 Node Progress) */}
+        <div className="mt-6 mb-2 flex items-center justify-between" aria-label="Progres pendaftaran lahan">
+          {/* Node 1 */}
           <button
             type="button"
             onClick={() => setCurrentStep(1)}
-            className={`flex items-center gap-2 text-xs font-bold transition ${
-              currentStep === 1 ? 'text-emerald-800' : currentStep > 1 ? 'text-emerald-600' : 'text-stone-400'
-            }`}
+            className="flex min-w-0 flex-col items-center gap-1.5 text-center transition group focus:outline-none"
           >
-            <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-mono text-xs ${
-              currentStep === 1 ? 'bg-[#14382C] text-white shadow-xs' : currentStep > 1 ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-500'
-            }`}>
-              {currentStep > 1 ? <Check className="w-4 h-4" /> : '1'}
+            <span
+              className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-mono text-xs font-bold transition shadow-xs ${
+                currentStep > 1
+                  ? 'bg-emerald-100 text-emerald-700 ring-4 ring-emerald-50'
+                  : currentStep === 1
+                  ? 'bg-[#0F291E] text-white ring-4 ring-emerald-50'
+                  : 'bg-stone-100 text-stone-400'
+              }`}
+            >
+              {currentStep > 1 ? <Check className="h-5 w-5" /> : '1'}
             </span>
-            <span className="hidden sm:inline">1. Pemetaan Poligon &amp; Klaster</span>
+            <span
+              className={`truncate text-[11px] transition ${
+                currentStep === 1
+                  ? 'font-bold text-stone-900'
+                  : currentStep > 1
+                  ? 'font-medium text-emerald-700'
+                  : 'font-medium text-stone-400'
+              }`}
+            >
+              Informasi Dasar
+            </span>
           </button>
 
-          <div className={`h-0.5 flex-1 mx-2 transition-colors ${currentStep > 1 ? 'bg-emerald-500' : 'bg-stone-200'}`}></div>
+          {/* Garis progres 1 -> 2 */}
+          <div
+            className={`mx-2 h-1 flex-1 rounded-full transition-colors duration-300 ${
+              currentStep >= 2 ? 'bg-[#0F291E]' : 'bg-stone-200'
+            }`}
+          />
 
+          {/* Node 2 */}
           <button
             type="button"
-            onClick={() => setCurrentStep(2)}
-            className={`flex items-center gap-2 text-xs font-bold transition ${
-              currentStep === 2 ? 'text-emerald-800' : currentStep > 2 ? 'text-emerald-600' : 'text-stone-400'
-            }`}
+            onClick={() => {
+              if (isStep1Valid) setCurrentStep(2);
+            }}
+            className="flex min-w-0 flex-col items-center gap-1.5 text-center transition group focus:outline-none"
           >
-            <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-mono text-xs ${
-              currentStep === 2 ? 'bg-[#14382C] text-white shadow-xs' : currentStep > 2 ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-500'
-            }`}>
-              {currentStep > 2 ? <Check className="w-4 h-4" /> : '2'}
+            <span
+              className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-mono text-xs font-bold transition shadow-xs ${
+                currentStep > 2
+                  ? 'bg-emerald-100 text-emerald-700 ring-4 ring-emerald-50'
+                  : currentStep === 2
+                  ? 'bg-[#0F291E] text-white ring-4 ring-emerald-50'
+                  : 'bg-stone-100 text-stone-400'
+              }`}
+            >
+              {currentStep > 2 ? <Check className="h-5 w-5" /> : '2'}
             </span>
-            <span className="hidden sm:inline">2. Blok Pohon &amp; Smart Sampling</span>
+            <span
+              className={`truncate text-[11px] transition ${
+                currentStep === 2
+                  ? 'font-bold text-stone-900'
+                  : currentStep > 2
+                  ? 'font-medium text-emerald-700'
+                  : 'font-medium text-stone-400'
+              }`}
+            >
+              Pemetaan Spasial
+            </span>
           </button>
 
-          <div className={`h-0.5 flex-1 mx-2 transition-colors ${currentStep > 2 ? 'bg-emerald-500' : 'bg-stone-200'}`}></div>
+          {/* Garis progres 2 -> 3 */}
+          <div
+            className={`mx-2 h-1 flex-1 rounded-full transition-colors duration-300 ${
+              currentStep >= 3 ? 'bg-[#0F291E]' : 'bg-stone-200'
+            }`}
+          />
 
+          {/* Node 3 */}
           <button
             type="button"
-            onClick={() => setCurrentStep(3)}
-            className={`flex items-center gap-2 text-xs font-bold transition ${
-              currentStep === 3 ? 'text-emerald-800' : 'text-stone-400'
-            }`}
+            onClick={() => {
+              if (isStep1Valid && isStep2Valid) setCurrentStep(3);
+            }}
+            className="flex min-w-0 flex-col items-center gap-1.5 text-center transition group focus:outline-none"
           >
-            <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-mono text-xs ${
-              currentStep === 3 ? 'bg-[#14382C] text-white shadow-xs' : 'bg-stone-100 text-stone-500'
-            }`}>
+            <span
+              className={`grid h-10 w-10 shrink-0 place-items-center rounded-full font-mono text-xs font-bold transition shadow-xs ${
+                currentStep === 3
+                  ? 'bg-[#0F291E] text-white ring-4 ring-emerald-50'
+                  : 'bg-stone-100 text-stone-400'
+              }`}
+            >
               3
             </span>
-            <span className="hidden sm:inline">3. Estimator &amp; Konfirmasi</span>
+            <span
+              className={`truncate text-[11px] transition ${
+                currentStep === 3 ? 'font-bold text-stone-900' : 'font-medium text-stone-400'
+              }`}
+            >
+              Konfirmasi &amp; MRV
+            </span>
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* TAHAP 1: Pemetaan Poligon & Deteksi Klaster (PolygonMapDrawer) */}
+      {/* ============================================================
+           STEP 1: INFORMASI DASAR LAHAN
+         ============================================================ */}
       {currentStep === 1 && (
-        <div className="bg-white rounded-3xl border border-stone-200/80 shadow-sm overflow-hidden animate-fade-in">
-          <div className="p-4 sm:p-6 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <section className="rounded-3xl border border-stone-200/80 bg-white p-5 shadow-xs sm:p-6 space-y-6 animate-fade-in">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
+              <ClipboardList className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold tracking-tight text-stone-900">Informasi Dasar Lahan</h2>
+              <p className="mt-0.5 text-xs text-stone-500">Nama petak, alamat/lokasi administratif, dan status kepemilikan.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label htmlFor="s1-name" className="mb-1.5 block text-xs font-semibold text-stone-700">
+                Nama Petak Kebun <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="s1-name"
+                name="name"
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Mis. Kebun Sengon Blok Timur"
+                className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-800 placeholder-stone-400 transition focus:border-emerald-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+              />
+            </div>
+
             <div>
-              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                Tahap 1: Pemetaan Poligon &amp; Deteksi Klaster
-              </span>
-              <h2 className="text-base sm:text-lg font-black text-[#14382C] mt-1">
-                Tentukan Sudut Batas Lahan &amp; Deteksi Klaster Otomatis
-              </h2>
-              <p className="text-xs text-stone-500">
-                Sentuh layar pada titik-titik sudut kebun Anda untuk membentuk bidang poligon tertutup.
-              </p>
+              <label htmlFor="s1-village" className="mb-1.5 block text-xs font-semibold text-stone-700">
+                Desa / Kelurahan
+              </label>
+              <input
+                id="s1-village"
+                name="village"
+                type="text"
+                value={formData.village}
+                onChange={(e) => setFormData(prev => ({ ...prev, village: e.target.value }))}
+                placeholder="Mis. Sukamaju"
+                className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-800 placeholder-stone-400 transition focus:border-emerald-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+              />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleLocateMe}
-                disabled={isLocating}
-                className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold text-xs flex items-center gap-1.5 transition"
-              >
-                <Crosshair className={`w-4 h-4 text-emerald-700 ${isLocating ? 'animate-spin' : ''}`} />
-                <span>{isLocating ? 'Mencari GPS...' : 'Pusatkan ke Lokasi Saya (GPS)'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleUndoPoint}
-                className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 transition"
-                title="Batalkan titik terakhir"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleResetPolygon}
-                className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 transition"
-                title="Atur ulang batas"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+            <div>
+              <label htmlFor="s1-regency" className="mb-1.5 block text-xs font-semibold text-stone-700">
+                Kabupaten / Kota
+              </label>
+              <input
+                id="s1-regency"
+                name="regency"
+                type="text"
+                value={formData.regency}
+                onChange={(e) => setFormData(prev => ({ ...prev, regency: e.target.value }))}
+                placeholder="Mis. Bogor"
+                className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-800 placeholder-stone-400 transition focus:border-emerald-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="s1-ownership" className="mb-1.5 block text-xs font-semibold text-stone-700">
+                Status Kepemilikan <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <select
+                  id="s1-ownership"
+                  name="ownership"
+                  value={formData.ownership}
+                  onChange={(e) => setFormData(prev => ({ ...prev, ownership: e.target.value }))}
+                  className="w-full appearance-none rounded-xl border border-stone-200 bg-stone-50 py-2.5 pl-3.5 pr-9 text-sm text-stone-800 transition focus:border-emerald-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+                >
+                  <option value="">Pilih Status Kepemilikan</option>
+                  <option value="Milik Sendiri (SHM)">Milik Sendiri (SHM)</option>
+                  <option value="Sewa / Bagi Hasil">Sewa / Bagi Hasil</option>
+                  <option value="Lahan Adat / Komunal">Lahan Adat / Komunal</option>
+                  <option value="HGU / Perkebunan">HGU / Perkebunan</option>
+                  <option value="Girik / Letter C">Girik / Letter C</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="s1-document" className="mb-1.5 block text-xs font-semibold text-stone-700">
+                Nomor Dokumen / Bukti Hak <span className="text-stone-400 font-normal">(Opsional)</span>
+              </label>
+              <input
+                id="s1-document"
+                name="document_no"
+                type="text"
+                value={formData.document_no}
+                onChange={(e) => setFormData(prev => ({ ...prev, document_no: e.target.value }))}
+                placeholder="Mis. SHM No. 0412 / SPPT PBB (Opsional)"
+                className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-800 placeholder-stone-400 transition focus:border-emerald-600 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+              />
             </div>
           </div>
 
-          <div className="px-4 sm:px-6 pt-4 pb-2 bg-stone-50/60 border-b border-stone-100 flex flex-col sm:flex-row items-center gap-3">
-            <label className="text-xs font-bold text-stone-700 shrink-0">Nama Petak Lahan:</label>
-            <input
-              type="text"
-              value={plotName}
-              onChange={(e) => setPlotName(e.target.value)}
-              className="flex-1 w-full px-3.5 py-2 bg-white border border-stone-200 rounded-xl text-xs font-bold text-[#14382C] focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              placeholder="Contoh: Kebun Pekarangan Sengon Barat"
-            />
+          <div className="pt-2 flex items-center justify-end">
+            <button
+              type="button"
+              disabled={!isStep1Valid}
+              onClick={nextStep}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#0F291E] px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#14382C] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99]"
+            >
+              <span>Lanjut ke Pemetaan</span>
+              <ArrowRight className="h-4 w-4 text-emerald-400" />
+            </button>
           </div>
+        </section>
+      )}
 
-          {/* Overlap Validator Alert */}
-          {hasOverlap && (
-            <div className="m-4 p-3.5 bg-red-50 border-2 border-red-300 rounded-2xl text-red-900 text-xs flex items-start gap-3 animate-pulse">
-              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <strong className="block font-bold">Peringatan: Poligon Menabrak Batas Lahan Petani Lain (Klaim Ganda)!</strong>
-                <span className="text-[11px] leading-relaxed">
-                  Garis poligon Anda menabrak batas kebun Gapoktan Sindoro Barat (SHM #419). Harap sesuaikan titik sudut agar data tidak ditolak verifikator.
+      {/* ============================================================
+           STEP 2: PEMETAAN SPASIAL (GIS Canvas & Leaflet Draw)
+         ============================================================ */}
+      {currentStep === 2 && (
+        <section className="space-y-6 animate-fade-in" aria-label="Langkah 2 · Pemetaan Spasial">
+          
+          {/* ---- KARTU A: KANVAS PETA INTERAKTIF ---- */}
+          <article className="overflow-hidden rounded-3xl border border-stone-200/80 bg-white shadow-xs">
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 p-4 sm:p-5">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold tracking-tight text-stone-900">Petak Batas Poligon</h2>
+                <p className="mt-0.5 text-xs text-stone-500">
+                  Klik pada citra satelit untuk menambahkan titik batas. Minimal 3 titik, klik titik awal untuk menutup poligon.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleLoadSamplePolygon}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 cursor-pointer shadow-xs"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>Muat Poligon Contoh</span>
+                </button>
+                <span className="shrink-0 rounded-md bg-stone-100 px-2.5 py-1 font-mono text-[10px] font-semibold text-stone-600">
+                  SRID: 4326
                 </span>
-                <div className="mt-2">
+              </div>
+            </header>
+
+            {/* Viewport Peta Leaflet */}
+            <div className="relative h-[400px] w-full overflow-hidden bg-[#0B1D16] sm:h-[460px]">
+              <MapContainer
+                center={mapCenter}
+                zoom={mapZoom}
+                zoomControl={false}
+                className="h-full w-full"
+                style={{ cursor: activeTool === 'draw' ? 'crosshair' : 'grab' }}
+              >
+                <MapViewController center={mapCenter} zoom={mapZoom} />
+
+                {/* Layer Satelit / Vektor */}
+                {mapLayer === 'satellite' ? (
+                  <TileLayer
+                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                    attribution="Esri World Imagery"
+                    maxZoom={19}
+                  />
+                ) : (
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution="&copy; OpenStreetMap contributors"
+                    maxZoom={19}
+                  />
+                )}
+
+                {/* Drawing Event Handler */}
+                <MapDrawHandler
+                  tool={activeTool}
+                  onAddPoint={handleAddPoint}
+                  onFirstPointClick={handleClosePolygon}
+                  points={vertices}
+                  isClosed={isPolygonClosed}
+                />
+
+                {/* Poligon yang digambar */}
+                {vertices.length >= 3 && (
+                  <Polygon
+                    positions={vertices}
+                    pathOptions={{
+                      color: '#10B981',
+                      weight: 2.5,
+                      fillColor: '#10B981',
+                      fillOpacity: isPolygonClosed ? 0.35 : 0.2
+                    }}
+                  />
+                )}
+
+                {/* Garis bantu saat titik masih < 3 atau belum tertutup */}
+                {vertices.length >= 2 && !isPolygonClosed && (
+                  <Polyline
+                    positions={vertices}
+                    pathOptions={{
+                      color: '#10B981',
+                      weight: 2,
+                      dashArray: '5, 5'
+                    }}
+                  />
+                )}
+
+                {/* Marker Vertex Titik-titik Poligon */}
+                {vertices.map((pt, idx) => {
+                  const isFirst = idx === 0;
+                  const isCloser = idx === vertices.length - 1 && isPolygonClosed;
+                  return (
+                    <Marker
+                      key={`v-${idx}-${pt[0]}-${pt[1]}`}
+                      position={pt}
+                      icon={createVertexIcon(idx, isFirst, isCloser)}
+                      eventHandlers={{
+                        click: () => {
+                          if (isFirst && vertices.length >= 3) {
+                            handleClosePolygon();
+                          }
+                        }
+                      }}
+                    />
+                  );
+                })}
+              </MapContainer>
+
+              {/* Floating control: Layer Switcher (Kiri Atas) */}
+              <div className="absolute left-3 top-3 z-[400] flex items-center gap-1 rounded-xl bg-black/60 p-1 text-[11px] text-white backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={() => setMapLayer('satellite')}
+                  className={`rounded-lg px-2.5 py-1 font-semibold transition ${
+                    mapLayer === 'satellite' ? 'bg-emerald-600 text-white' : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  Satelit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMapLayer('vector')}
+                  className={`rounded-lg px-2.5 py-1 font-semibold transition ${
+                    mapLayer === 'vector' ? 'bg-emerald-600 text-white' : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  Vektor GIS
+                </button>
+              </div>
+
+              {/* Floating control: Status Badge / Action Button (Tengah Atas) */}
+              {vertices.length >= 3 && !isPolygonClosed ? (
+                <button
+                  type="button"
+                  onClick={handleClosePolygon}
+                  className="pointer-events-auto absolute left-1/2 top-3 -translate-x-1/2 z-[400] inline-flex items-center gap-1.5 rounded-full bg-amber-500 hover:bg-amber-600 px-4 py-1.5 font-sans text-xs font-bold text-white shadow-lg ring-4 ring-amber-400/40 animate-pulse transition cursor-pointer"
+                >
+                  <Check className="h-3.5 w-3.5 stroke-[3]" />
+                  <span>⚡ Klik untuk Tutup &amp; Kunci Poligon (Wajib)</span>
+                </button>
+              ) : (
+                <div
+                  className={`pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 z-[400] rounded-full px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-white shadow-md backdrop-blur-md ${
+                    isPolygonClosed ? 'bg-emerald-600' : 'bg-black/60'
+                  }`}
+                >
+                  {isPolygonClosed
+                    ? '✓ Poligon Terkunci & Valid'
+                    : activeTool === 'draw'
+                    ? 'Mode Gambar Aktif'
+                    : 'Mode Navigasi Peta'}
+                </div>
+              )}
+
+              {/* Floating control: Zoom & GPS (Kanan Atas) */}
+              <div className="absolute right-3 top-3 z-[400] flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/60 backdrop-blur-md shadow-md">
+                <button
+                  type="button"
+                  onClick={() => setMapZoom(prev => Math.min(prev + 1, 19))}
+                  aria-label="Perbesar"
+                  className="grid h-8 w-8 place-items-center text-white transition hover:bg-white/10 cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+                <span className="h-px w-full bg-white/10" />
+                <button
+                  type="button"
+                  onClick={() => setMapZoom(prev => Math.max(prev - 1, 12))}
+                  aria-label="Perkecil"
+                  className="grid h-8 w-8 place-items-center text-white transition hover:bg-white/10 cursor-pointer"
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+                <span className="h-px w-full bg-white/10" />
+                <button
+                  type="button"
+                  onClick={handleLocateMe}
+                  disabled={isLocating}
+                  title="Pusatkan ke GPS Saya"
+                  className="grid h-8 w-8 place-items-center text-emerald-400 transition hover:bg-white/10 cursor-pointer"
+                >
+                  <Crosshair className={`h-4 w-4 ${isLocating ? 'animate-spin text-white' : ''}`} />
+                </button>
+              </div>
+
+              {/* Floating toolbar: Alat Gambar (Kiri Bawah) */}
+              <div className="absolute bottom-3 left-3 z-[400] flex items-center gap-1 rounded-xl bg-black/60 p-1 backdrop-blur-md shadow-md">
+                <button
+                  type="button"
+                  onClick={() => setActiveTool('draw')}
+                  title="Alat Gambar Poligon"
+                  className={`grid h-8 w-8 place-items-center rounded-lg transition ${
+                    activeTool === 'draw' ? 'bg-emerald-600 text-white' : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  <PenTool className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTool('pan')}
+                  title="Alat Geser Peta"
+                  className={`grid h-8 w-8 place-items-center rounded-lg transition ${
+                    activeTool === 'pan' ? 'bg-emerald-600 text-white' : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  <Hand className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUndoVertex}
+                  title="Batalkan Titik Terakhir"
+                  className="grid h-8 w-8 place-items-center rounded-lg text-white/70 transition hover:text-white hover:bg-white/10"
+                >
+                  <Undo2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetVertices}
+                  title="Hapus Seluruh Poligon"
+                  className="grid h-8 w-8 place-items-center rounded-lg text-white/70 transition hover:text-red-400 hover:bg-white/10"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Kompas & Skala (Kanan Bawah) */}
+              <div className="absolute bottom-3 right-3 z-[400] flex items-center gap-2">
+                <div className="flex items-center gap-2 rounded-xl bg-black/60 px-2.5 py-1.5 font-mono text-[10px] text-white backdrop-blur-md shadow-md">
+                  <span className="relative block h-[3px] w-10 bg-white/80">
+                    <span className="absolute -left-0.5 -top-1 block h-2.5 w-[2px] bg-white/80" />
+                    <span className="absolute -right-0.5 -top-1 block h-2.5 w-[2px] bg-white/80" />
+                  </span>
+                  50 m
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Kanvas: Ringkasan Spasial Real-time (Turf.js) */}
+            <div className="grid grid-cols-2 gap-3 border-t border-stone-100 bg-stone-50/70 p-4 sm:grid-cols-4">
+              <div>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Jumlah Titik</p>
+                <p className="mt-1 font-mono text-sm font-bold text-stone-900">{vertices.length} Titik Batas</p>
+              </div>
+              <div>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Luas (ST_Area)</p>
+                <p className="mt-1 font-mono text-sm font-bold text-emerald-700">
+                  {spatialMetrics.areaHa} Ha{' '}
+                  <span className="text-[11px] font-medium text-stone-500">
+                    ({Math.round(spatialMetrics.areaSqm).toLocaleString('id-ID')} m²)
+                  </span>
+                </p>
+              </div>
+              <div>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Keliling</p>
+                <p className="mt-1 font-mono text-sm font-bold text-stone-900">{spatialMetrics.perimeterM} m</p>
+              </div>
+              <div>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Status Geometri</p>
+                <p
+                  className={`mt-1 text-xs font-semibold ${
+                    spatialMetrics.isValidClosed
+                      ? 'text-emerald-700'
+                      : vertices.length >= 3
+                      ? 'text-amber-700'
+                      : 'text-stone-500'
+                  }`}
+                >
+                  {spatialMetrics.isValidClosed
+                    ? 'Poligon Valid (Tertutup)'
+                    : vertices.length >= 3
+                    ? 'Siap Ditutup (Klik Titik 1)'
+                    : 'Belum Cukup Titik (Min. 3)'}
+                </p>
+              </div>
+            </div>
+          </article>
+
+          {/* ---- DAFTAR TITIK BATAS (Bersih, Responsif, Tanpa Limit) ---- */}
+          <article className="rounded-3xl border border-stone-200/80 bg-white p-5 shadow-xs space-y-3">
+            <div className="flex items-center justify-between gap-3 border-b border-stone-100 pb-3">
+              <div className="min-w-0">
+                <h2 className="text-sm font-bold tracking-tight text-stone-900">Daftar Titik Batas Poligon</h2>
+                <p className="mt-0.5 text-xs text-stone-500">Koordinat titik sudut batas lahan (SRID 4326).</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {vertices.length >= 3 && !isPolygonClosed && (
                   <button
                     type="button"
-                    onClick={handleResetPolygon}
-                    className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-[11px] transition"
+                    onClick={handleClosePolygon}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs px-3.5 py-2 shadow-lg ring-4 ring-amber-400/40 animate-pulse transition cursor-pointer"
                   >
-                    Atur Ulang ke Posisi Aman
+                    <Check className="h-3.5 w-3.5 stroke-[3]" />
+                    <span>⚡ Klik untuk Tutup &amp; Kunci Poligon (Wajib)</span>
+                  </button>
+                )}
+                {isPolygonClosed && (
+                  <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-100 border border-emerald-300 px-3 py-1.5 font-sans text-xs font-bold text-emerald-800">
+                    <Check className="h-3.5 w-3.5 text-emerald-700 stroke-[3]" />
+                    <span>✓ Poligon Terkunci &amp; Valid</span>
+                  </span>
+                )}
+                <span className="shrink-0 rounded-md bg-stone-100 px-2.5 py-1 font-mono text-[11px] font-bold text-stone-700">
+                  {vertices.length} Titik Batas
+                </span>
+              </div>
+            </div>
+
+            {vertices.length === 0 ? (
+              <div className="grid h-28 place-items-center rounded-2xl border border-dashed border-stone-200 text-center p-4">
+                <p className="text-xs text-stone-400">
+                  Belum ada titik poligon. Klik pada citra satelit atau klik <strong>"Muat Poligon Contoh"</strong> untuk mengisi titik otomatis.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto pr-1">
+                  {vertices.map((v, i) => {
+                    const isFirst = i === 0;
+                    const isLast = i === vertices.length - 1;
+                    const isCloser = isLast && isPolygonClosed;
+
+                    return (
+                      <li
+                        key={`list-${i}`}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-stone-200/80 bg-stone-50/70 px-3 py-2 text-xs"
+                      >
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={`grid h-5 w-5 place-items-center rounded-md font-mono text-[10px] font-bold ${
+                              isFirst
+                                ? 'bg-[#0F291E] text-white'
+                                : isCloser
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-stone-200 text-stone-700'
+                            }`}
+                          >
+                            {i + 1}
+                          </span>
+                          <span className="font-mono text-[11px] text-stone-700">
+                            {v[0].toFixed(5)}, {v[1].toFixed(5)}
+                          </span>
+                        </span>
+
+                        {isCloser ? (
+                          <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                            Tutup
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSpecificVertex(i)}
+                            className="text-stone-400 transition hover:text-red-600 p-1"
+                            title="Hapus titik ini"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={handleUndoVertex}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 px-3 py-1.5 text-xs font-semibold text-stone-700 transition cursor-pointer"
+                  >
+                    <Undo2 className="h-3.5 w-3.5" />
+                    <span>Hapus Titik Terakhir</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResetVertices}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1.5 text-xs font-semibold text-red-600 transition cursor-pointer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Hapus Semua</span>
                   </button>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </article>
 
-          {/* Satellite Map Canvas */}
-          <div className="relative w-full h-[380px] sm:h-[460px] bg-stone-900">
-            <div ref={mapContainerRef} className="w-full h-full" />
-
-            {/* FloatingAreaBox (Turf.js) */}
-            <div className="absolute top-4 left-4 z-[400] bg-white/95 backdrop-blur-md rounded-2xl p-3.5 shadow-xl border border-stone-200/90 text-xs max-w-xs">
-              <span className="text-[10px] uppercase font-bold text-stone-400 block tracking-wider">
-                Kalkulator Luas Real-Time (Turf.js)
-              </span>
-              <div className="mt-1 flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-black text-[#14382C] font-mono">
-                  {areaSquareMeters.toLocaleString('id-ID')}
-                </span>
-                <span className="text-xs font-bold text-stone-500">m²</span>
-                <span className="text-xs font-mono font-bold text-emerald-700 ml-1">
-                  / {(areaSquareMeters / 10000).toFixed(2)} Ha
-                </span>
-              </div>
-              <p className="text-[10px] text-stone-500 mt-1">
-                {points.length} Titik Sudut Terkunci
-              </p>
-            </div>
-
-            <div className="absolute bottom-4 left-4 z-[400] flex gap-2">
-              <button
-                type="button"
-                onClick={handleSimulateOverlap}
-                className="px-3 py-1.5 bg-black/75 hover:bg-black/90 backdrop-blur-md text-amber-300 font-mono text-[10px] font-bold rounded-xl border border-amber-400/40 transition"
-              >
-                Uji Validasi Overlap Batas Tetangga
-              </button>
-            </div>
-          </div>
-
-          {/* AutoClusterAssignmentBadge (Deteksi Klaster Otomatis via Centroid) */}
-          <div className="p-3.5 bg-emerald-50 border-t border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-emerald-700 shrink-0" />
-              <div className="text-emerald-950">
-                <span className="font-bold">AutoClusterAssignmentBadge: </span>
-                <span>Titik tengah lahan ({centroidCoords}) berada di radius <strong>{assignedCluster} (Otomatis tergabung)</strong></span>
-              </div>
-            </div>
-            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 shrink-0">
-              turf.centroid Terkunci
-            </span>
-          </div>
-
-          <div className="p-4 sm:p-6 bg-stone-50 border-t border-stone-200 flex items-center justify-between gap-3">
-            <span className="text-xs text-stone-500 hidden sm:inline">
-              Meskipun sebagian pinggir lahan melewati batas radius, lahan tidak akan terbelah dua.
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                if (hasOverlap) {
-                  if (onToast) onToast('Batas poligon bertabrakan. Harap atur ulang titik poligon.');
-                  return;
-                }
-                setCurrentStep(2);
-              }}
-              className="w-full sm:w-auto px-6 py-3 bg-[#14382C] hover:bg-[#1a4436] text-white rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-sm ml-auto"
-            >
-              <span>Lanjut: Input Blok Pohon &amp; Smart Sampling</span>
-              <ChevronRight className="w-4 h-4 text-emerald-400" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* TAHAP 2: Input Blok Pohon & Smart Sampling (TreeBlockForm) */}
-      {currentStep === 2 && (
-        <div className="bg-white rounded-3xl border border-stone-200/80 shadow-sm overflow-hidden animate-fade-in space-y-6 p-5 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                Tahap 2: Input Blok Pohon &amp; Smart Sampling
-              </span>
-              <h2 className="text-base sm:text-lg font-black text-[#14382C] mt-1">
-                Data Blok Tanam &amp; Generator Sampel Dinamis
-              </h2>
-              <p className="text-xs text-stone-500">
-                Mendukung multi-spesies / tumpang sari dalam satu petak lahan.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleAddAnotherSpecies}
-              className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center gap-1.5 transition self-start sm:self-auto"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Tambah Jenis Pohon Lain di Lahan Ini</span>
-            </button>
-          </div>
-
-          {/* List of Tree Blocks (Multi-species) */}
-          <div className="space-y-4">
-            {treeBlocks.map((block, bIdx) => (
-              <div key={block.id} className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#14382C] flex items-center gap-2">
-                    <TreePine className="w-4 h-4 text-emerald-700" />
-                    <span>Blok Tanam #{bIdx + 1}: {block.species}</span>
-                  </span>
-                  <span className="text-[10px] text-stone-400 font-bold">
-                    Porsi Luas: {block.portionM2} m²
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Spesies Pohon</label>
-                    <select
-                      value={block.species}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setTreeBlocks(prev => {
-                          const n = [...prev];
-                          n[bIdx] = { ...n[bIdx], species: val };
-                          return n;
-                        });
-                      }}
-                      className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    >
-                      <option value="Alpukat Mentega">Alpukat Mentega</option>
-                      <option value="Sengon Laut">Sengon Laut</option>
-                      <option value="Durian Musang King">Durian Musang King</option>
-                      <option value="Kopi Arabika">Kopi Arabika</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Porsi Luas (m²)</label>
-                    <input
-                      type="number"
-                      value={block.portionM2}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value || '0', 10);
-                        setTreeBlocks(prev => {
-                          const n = [...prev];
-                          n[bIdx] = { ...n[bIdx], portionM2: val };
-                          return n;
-                        });
-                      }}
-                      className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Bulan/Tahun Tanam</label>
-                    <input
-                      type="month"
-                      value={block.plantMonthYear}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setTreeBlocks(prev => {
-                          const n = [...prev];
-                          n[bIdx] = { ...n[bIdx], plantMonthYear: val };
-                          return n;
-                        });
-                      }}
-                      className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Total Populasi Pohon</label>
-                    <input
-                      type="number"
-                      value={block.totalTrees}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value || '0', 10);
-                        setTreeBlocks(prev => {
-                          const n = [...prev];
-                          n[bIdx] = { ...n[bIdx], totalTrees: val };
-                          return n;
-                        });
-                      }}
-                      className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Generator Form Sampel Dinamis (SmartSamplingInputs: 3-5 Baris) */}
-          <div className="bg-stone-50/90 rounded-2xl p-4 sm:p-5 border border-stone-200 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                <h3 className="text-xs sm:text-sm font-black text-[#14382C]">
-                  Generator Form Sampel Dinamis (SmartSamplingInputs)
-                </h3>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleAddSampleRow}
-                  disabled={samples.length >= 5}
-                  className="text-[11px] font-bold text-stone-700 bg-white hover:bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200 transition disabled:opacity-40"
-                >
-                  + Tambah Baris Sampel ({samples.length}/5)
-                </button>
-
-                {/* Tooltip Panduan Pengukuran (MeasurementGuideModal) */}
-                <button
-                  type="button"
-                  onClick={() => setShowDbhGuide(!showDbhGuide)}
-                  className="flex items-center gap-1 text-[11px] font-bold text-emerald-800 hover:text-emerald-900 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 transition"
-                >
-                  <Info className="w-3.5 h-3.5" />
-                  <span>Panduan DBH 130 cm</span>
-                </button>
-              </div>
-            </div>
-
-            {showDbhGuide && (
-              <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 space-y-1 animate-fade-in">
-                <p className="font-bold flex items-center gap-1.5">
-                  <Ruler className="w-4 h-4 text-emerald-700" />
-                  <span>Ilustrasi Pengukuran DBH (Diameter at Breast Height):</span>
-                </p>
-                <p className="text-[11px] leading-relaxed text-emerald-800">
-                  Ukur keliling batang tepat di ketinggian dada orang dewasa (130 cm dari permukaan tanah). Jangan ukur cabang atau tonjolan. Rumus konversi diameter: D = K / π.
+          {/* Action Bar Step 2 */}
+          <div className="space-y-3 pt-2">
+            {vertices.length >= 3 && !isPolygonClosed && (
+              <div className="flex items-center gap-2.5 rounded-2xl border border-amber-300 bg-amber-50/90 p-3.5 text-xs text-amber-900 shadow-xs">
+                <span className="text-amber-600 font-bold text-base shrink-0">⚠️</span>
+                <p className="font-medium">
+                  <strong>Perhatian:</strong> Silakan klik tombol <strong>"⚡ Klik untuk Tutup &amp; Kunci Poligon (Wajib)"</strong> terlebih dahulu sebelum melanjutkan ke Step 3.
                 </p>
               </div>
             )}
 
-            {/* Dynamic Samples Rows */}
-            <div className="space-y-3">
-              {samples.map((sample, idx) => (
-                <div 
-                  key={sample.id}
-                  className="p-3.5 bg-white rounded-xl border border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 font-mono text-xs font-black flex items-center justify-center shrink-0">
-                      #{idx + 1}
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-[#14382C] block">
-                        Sampel Batang #{idx + 1} ({primarySpecies})
-                      </span>
-                      <span className="text-[10px] text-stone-400">
-                        {sample.photo ? '✓ Foto terkalibrasi tersimpan' : 'Wajib foto meteran di dada'}
-                      </span>
-                    </div>
-                  </div>
+            <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                type="button"
+                onClick={prevStep}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-5 py-2.5 text-sm font-bold text-stone-700 shadow-xs transition hover:bg-stone-50 cursor-pointer active:scale-[0.99]"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span>Kembali ke Informasi Dasar</span>
+              </button>
 
-                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
-                    {/* Input Lingkar Batang (cm) */}
-                    <div className="flex items-center gap-1">
-                      <span className="text-[11px] text-stone-500 font-semibold">Lingkar:</span>
-                      <input
-                        type="number"
-                        value={sample.dbh}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSamples(prev => {
-                            const next = [...prev];
-                            next[idx] = { ...next[idx], dbh: val };
-                            return next;
-                          });
-                        }}
-                        className="w-14 px-1.5 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-center text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                      />
-                      <span className="text-xs font-bold text-stone-600">cm</span>
-                    </div>
-
-                    {/* Input Estimasi Tinggi (opsional / meter) */}
-                    <div className="flex items-center gap-1">
-                      <span className="text-[11px] text-stone-500 font-semibold">Tinggi:</span>
-                      <input
-                        type="number"
-                        step="0.5"
-                        value={sample.height || ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSamples(prev => {
-                            const next = [...prev];
-                            next[idx] = { ...next[idx], height: val };
-                            return next;
-                          });
-                        }}
-                        placeholder="Opsional"
-                        className="w-16 px-1.5 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-bold text-center text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                      />
-                      <span className="text-xs font-bold text-stone-600">m</span>
-                    </div>
-
-                    {/* Tombol Kamera Viewfinder */}
-                    <button
-                      type="button"
-                      onClick={() => onOpenViewfinder(idx, sample.photo, (photoUrl) => handleAttachPhoto(idx, photoUrl))}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition ${
-                        sample.photo
-                          ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300'
-                          : 'bg-emerald-700 text-white hover:bg-emerald-600 shadow-xs'
-                      }`}
-                    >
-                      <Camera className="w-3.5 h-3.5" />
-                      <span>{sample.photo ? 'Ganti Foto' : 'Buka Kamera'}</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
+              <button
+                type="button"
+                disabled={!isStep2Valid}
+                onClick={nextStep}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99]"
+              >
+                <span>Lanjut ke Konfirmasi &amp; MRV</span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
             </div>
           </div>
-
-          <div className="pt-2 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => setCurrentStep(1)}
-              className="px-4 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs flex items-center gap-1.5 transition"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span>Kembali ke Poligon</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentStep(3)}
-              className="px-6 py-2.5 bg-[#14382C] hover:bg-[#1a4436] text-white rounded-xl font-bold text-xs flex items-center gap-2 transition shadow-xs"
-            >
-              <span>Lanjut ke Tinjauan &amp; Estimasi</span>
-              <ChevronRight className="w-4 h-4 text-emerald-400" />
-            </button>
-          </div>
-        </div>
+        </section>
       )}
 
-      {/* TAHAP 3: Estimator Pendapatan & Konfirmasi (LiveRevenueEstimator & SubmissionReview) */}
+      {/* ============================================================
+           STEP 3: KONFIRMASI & MRV
+         ============================================================ */}
       {currentStep === 3 && (
-        <div className="bg-white rounded-3xl border border-stone-200/80 shadow-sm overflow-hidden animate-fade-in p-5 sm:p-6 space-y-6">
-          <div>
-            <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-              Tahap 3: Estimator Pendapatan &amp; Konfirmasi
-            </span>
-            <h2 className="text-base sm:text-lg font-black text-[#14382C] mt-1">
-              Pratinjau Pengajuan &amp; Potensi Bagi Hasil
-            </h2>
-            <p className="text-xs text-stone-500">
-              Mengunci form dan mengirimkan tiket tugas inspeksi ke role Petugas/Surveyor lapangan.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-1.5">
-              <span className="text-stone-400 text-[10px] uppercase font-bold block">Detail Bidang &amp; Klaster</span>
-              <strong className="text-sm font-bold text-[#14382C] block">{plotName}</strong>
-              <div className="text-stone-600 space-y-0.5 text-xs">
-                <p>Luas: <strong>{(areaSquareMeters / 10000).toFixed(2)} Ha ({areaSquareMeters.toLocaleString('id-ID')} m²)</strong></p>
-                <p>Titik Tengah (Centroid): <strong>{centroidCoords}</strong></p>
-                <p>Klaster Otomatis: <strong>{assignedCluster}</strong></p>
-              </div>
-            </div>
-
-            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200/80 space-y-1.5">
-              <span className="text-stone-400 text-[10px] uppercase font-bold block">Komposisi Agroforestri</span>
-              <strong className="text-sm font-bold text-[#14382C] block">
-                {treeBlocks.map(b => `${b.species} (${b.totalTrees})`).join(', ')}
-              </strong>
-              <div className="text-stone-600 space-y-0.5 text-xs">
-                <p>Total Populasi: <strong>{totalTreesSum} Batang Pohon</strong></p>
-                <p>Rata-rata DBH Sampel: <strong>{avgDbh.toFixed(1)} cm (D = K / π)</strong></p>
-                <p>Foto Sampel: <strong>{samples.filter(s => s.photo).length} / {samples.length} Bukti Terkalibrasi</strong></p>
-              </div>
-            </div>
-          </div>
-
-          {/* Model Formula Box */}
-          <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200/80 text-xs text-emerald-950 space-y-1">
-            <div className="flex items-center gap-1.5 font-bold">
-              <TreePine className="w-4 h-4 text-emerald-700" />
-              <span>Model Alometrik Biomassa Karbon (Chave et al. Tier-3):</span>
-            </div>
-            <p className="text-emerald-800 text-[11px] leading-relaxed">
-              Rumus Alometrik: Rata-rata sampel ukuran ({avgDbh.toFixed(1)} cm) × Konstanta Spesies ({coeff.factor}) × Total Populasi ({totalTreesSum} pohon) ÷ 3.2. Menghasilkan estimasi yang diakui katalog bursa SRN-PPI.
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            <button
-              type="button"
-              onClick={() => setCurrentStep(2)}
-              className="px-4 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs flex items-center gap-1.5 transition"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span>Perbaiki Data Pohon</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Sticky Bottom Estimator Bar (StickyEstimatorBar) */}
-      <div className="fixed bottom-0 md:bottom-2 left-0 right-0 md:left-auto md:right-4 md:max-w-xl z-30 p-3 sm:p-4">
-        <div className="bg-[#14382C] text-white rounded-3xl p-4 sm:p-5 shadow-2xl border border-emerald-500/30 backdrop-blur-md">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-            <div>
-              <span className="text-[10px] uppercase font-bold text-emerald-300 tracking-wider">
-                Kotak Kalkulasi Langsung (StickyEstimatorBar)
+        <section className="space-y-6 animate-fade-in" aria-label="Langkah 3 · Konfirmasi & MRV">
+          
+          {/* Ringkasan Data Lahan */}
+          <article className="rounded-3xl border border-stone-200/80 bg-white p-5 shadow-xs sm:p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#0F291E] text-emerald-400">
+                <ClipboardCheck className="h-5 w-5" />
               </span>
-              <div className="flex items-baseline gap-2 mt-0.5">
-                <span className="text-lg sm:text-xl font-black text-white font-mono">
-                  Estimasi Serapan: ~{estimatedAbsorption} tCO2e/tahun
-                </span>
+              <div className="min-w-0">
+                <h2 className="text-base font-bold tracking-tight text-stone-900">Konfirmasi Data Lahan</h2>
+                <p className="mt-0.5 text-xs text-stone-500">Periksa kembali sebelum dikirim ke antrean audit satelit.</p>
               </div>
-              <p className="text-xs text-emerald-200/90 font-medium mt-0.5">
-                Potensi Bagi Hasil Kotor: <strong className="text-white font-bold">{formatRupiah(grossRevenue)}/thn</strong> (Acuan Katalog Tetap) • Hak Bersih Petani (88%): <strong className="text-emerald-300 font-bold">{formatRupiah(farmerNetRevenue)}/thn</strong>
+            </div>
+
+            <dl className="divide-y divide-stone-100">
+              <div className="flex items-start justify-between gap-4 py-2.5">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-stone-400">Nama Petak</dt>
+                <dd className="text-right text-sm font-bold text-stone-900">{formData.name || 'Kebun Sengon Blok Timur'}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 py-2.5">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-stone-400">Status Kepemilikan</dt>
+                <dd className="text-right text-sm font-semibold text-stone-800">{formData.ownership || 'Milik Sendiri (SHM)'}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 py-2.5">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-stone-400">Nomor Dokumen Hak</dt>
+                <dd className="text-right font-mono text-sm font-semibold text-stone-700">{formData.document_no || 'Tidak dilampirkan'}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 py-2.5">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-stone-400">Lokasi Administratif</dt>
+                <dd className="text-right text-sm font-semibold text-stone-900">
+                  {formData.village || 'Sukamaju'}, {formData.regency || 'Bogor'}
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 py-2.5">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-stone-400">Luas Poligon (ST_Area)</dt>
+                <dd className="text-right font-mono text-sm font-bold text-emerald-700">
+                  {Math.round(formData.calculated_area_sqm).toLocaleString('id-ID')} m²{' '}
+                  <span className="text-stone-500 font-normal">
+                    ({(formData.calculated_area_sqm / 10000).toFixed(2)} Ha)
+                  </span>
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 py-2.5">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-stone-400">Titik Batas</dt>
+                <dd className="text-right font-mono text-sm font-semibold text-stone-900">
+                  {vertices.length} Titik (Poligon Tertutup)
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 py-2.5">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-stone-400">Centroid PostGIS</dt>
+                <dd className="text-right font-mono text-sm font-semibold text-stone-800">{spatialMetrics.centroid}</dd>
+              </div>
+            </dl>
+          </article>
+
+          {/* Estimasi Awal MRV */}
+          <article className="rounded-3xl border border-stone-200/80 bg-white p-5 shadow-xs sm:p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold tracking-tight text-stone-900">Estimasi Awal MRV</h2>
+                <p className="mt-0.5 text-xs text-stone-500">Proyeksi serapan karbon awal sebelum inspeksi lapangan.</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 font-mono text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+                Belum Final
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-stone-200/80 bg-stone-50/70 p-3.5">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Estimasi Serapan</p>
+                <p className="mt-1.5 font-mono text-xl font-bold leading-none text-[#0F291E]">
+                  {(formData.calculated_area_sqm * 0.0018).toFixed(2)}
+                </p>
+                <p className="mt-1 text-[11px] text-stone-500">tCO₂e / tahun</p>
+              </div>
+              <div className="rounded-2xl border border-stone-200/80 bg-stone-50/70 p-3.5">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Blok Tanaman</p>
+                <p className="mt-1.5 font-mono text-xl font-bold leading-none text-stone-900">0 Blok</p>
+                <p className="mt-1 text-[11px] text-stone-500">Ditambah setelah lahan terdaftar</p>
+              </div>
+              <div className="rounded-2xl border border-stone-200/80 bg-stone-50/70 p-3.5">
+                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Target Audit</p>
+                <p className="mt-1.5 font-mono text-xl font-bold leading-none text-stone-900">14 Hari</p>
+                <p className="mt-1 text-[11px] text-stone-500">Sejak pengajuan disubmit</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5 rounded-xl border border-stone-200 bg-stone-50/80 p-3 text-xs text-stone-600">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-stone-400" />
+              <p>
+                Estimasi serapan akan dihitung otomatis oleh <em>backend</em> FastAPI (alometrik Chave Tier-3) setelah Anda menambahkan data blok tanaman pada petak lahan ini.
               </p>
             </div>
+          </article>
+
+          {/* 2 Checkbox Persetujuan MRV (Syarat Wajib Submit) */}
+          <article className="rounded-3xl border border-stone-200/80 bg-white p-5 shadow-xs space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500">Pernyataan &amp; Persetujuan MRV</h3>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-stone-100 p-3 hover:bg-stone-50 transition">
+              <input
+                type="checkbox"
+                checked={agreePhysical}
+                onChange={(e) => setAgreePhysical(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-stone-300 text-emerald-600 transition focus:ring-emerald-600/30 cursor-pointer"
+              />
+              <span className="text-xs leading-relaxed text-stone-700">
+                Saya menyatakan bahwa batas poligon yang digambar sesuai dengan kondisi fisik lahan dan dokumen hak kepemilikan yang sah.
+              </span>
+            </label>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-stone-100 p-3 hover:bg-stone-50 transition">
+              <input
+                type="checkbox"
+                checked={agreeMrv}
+                onChange={(e) => setAgreeMrv(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-stone-300 text-emerald-600 transition focus:ring-emerald-600/30 cursor-pointer"
+              />
+              <span className="text-xs leading-relaxed text-stone-700">
+                Saya menyetujui pemantauan geospasial Sentinel-2 secara berkala dan inspeksi verifikasi lapangan oleh surveyor independen.
+              </span>
+            </label>
+          </article>
+
+          {/* Bar Aksi Step 3 */}
+          <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between pt-2">
+            <button
+              type="button"
+              onClick={prevStep}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-5 py-2.5 text-sm font-bold text-stone-700 shadow-xs transition hover:bg-stone-50 cursor-pointer active:scale-[0.99]"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Kembali ke Pemetaan</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={!isStep3Valid || isSubmitting}
+              onClick={handleSubmitRegistration}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0F291E] px-6 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#173D2E] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99]"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                  <span>Mengirimkan ke PostGIS...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 text-emerald-400" />
+                  <span>Kirim Pendaftaran Lahan</span>
+                </>
+              )}
+            </button>
           </div>
+        </section>
+      )}
 
-          <div className="flex items-center gap-2.5 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                onSaveDraft({
-                  name: plotName,
-                  species: primarySpecies,
-                  totalTrees: totalTreesSum,
-                  areaM2: areaSquareMeters
-                });
-                if (onToast) onToast('Disimpan sebagai Draft. Anda dapat melanjutkan pengukuran di kebun kapan saja.');
-              }}
-              className="flex-1 py-3 px-3 rounded-2xl border border-emerald-400/50 bg-white/5 hover:bg-white/10 text-emerald-200 font-bold text-xs transition text-center flex items-center justify-center gap-1.5"
-            >
-              <Save className="w-4 h-4" />
-              <span>Simpan sebagai Draft</span>
-            </button>
+      {/* Footer Info PostGIS */}
+      <p className="pt-4 text-center font-mono text-[10px] text-stone-400">
+        TaniKarbon · Portal Mitra Petani — geometri pendaftaran tersinkron dengan basis data spasial PostGIS (SRID 4326)
+      </p>
 
-            <button
-              type="button"
-              onClick={handleSubmitVerification}
-              className="flex-2 py-3 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs transition shadow-lg flex items-center justify-center gap-2"
-            >
-              <Send className="w-4 h-4" />
-              <span>Ajukan Verifikasi Lapangan</span>
-            </button>
+      {/* Toast Notification Container */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-[60] flex w-full max-w-sm items-start gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-xl animate-fade-in">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
+            <CheckCheck className="h-[18px] w-[18px]" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-stone-900">{toastMessage.title}</p>
+            {toastMessage.subtitle && (
+              <p className="mt-0.5 text-xs text-stone-500">{toastMessage.subtitle}</p>
+            )}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

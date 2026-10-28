@@ -3,25 +3,23 @@ import {
   Wifi, 
   WifiOff, 
   Download, 
-  ArrowLeftRight, 
-  ChevronDown, 
-  ExternalLink, 
   CheckCircle2, 
   Compass, 
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  LogOut
 } from 'lucide-react';
 
 export default function SurveyorTopBar({ 
+  currentUser,
+  onLogout,
   isOnline = true, 
   onToggleOnline,
   offlinePackDownloaded = false,
   onDownloadOfflinePack,
   isDownloadingPack = false,
-  downloadProgress = 0,
-  onNavigateRole
+  downloadProgress = 0
 }) {
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-2.5 transition-all font-sans">
@@ -106,80 +104,30 @@ export default function SurveyorTopBar({
             )}
           </button>
 
-          {/* Role Switcher Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowRoleMenu(!showRoleMenu)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold font-sans transition border border-slate-200 cursor-pointer"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5 text-slate-500" />
-              <span className="hidden sm:inline">Role Switcher</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {showRoleMenu && (
-              <>
-                <div 
-                  className="fixed inset-0 z-40" 
-                  onClick={() => setShowRoleMenu(false)}
-                />
-                <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 animate-fade-in text-xs font-sans">
-                  <div className="px-3 py-2 border-b border-slate-100 mb-1">
-                    <span className="text-[10px] uppercase font-semibold text-slate-400 block tracking-wider">
-                      Navigasi Demo Penjurian
-                    </span>
-                    <strong className="text-[#14382C] font-bold block mt-0.5">
-                      Role Aktif: Surveyor Lapangan
-                    </strong>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setShowRoleMenu(false);
-                      onNavigateRole('farmer');
-                    }}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium transition cursor-pointer"
-                  >
-                    <span>Masuk Portal Mitra Petani</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setShowRoleMenu(false);
-                      onNavigateRole('corporate');
-                    }}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium transition cursor-pointer"
-                  >
-                    <span>Masuk Portal Korporat (B2B ESG)</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setShowRoleMenu(false);
-                      onNavigateRole('admin');
-                    }}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center justify-between text-purple-900 font-semibold transition cursor-pointer"
-                  >
-                    <span>Masuk Admin Platform (Authority)</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-purple-600" />
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setShowRoleMenu(false);
-                      onNavigateRole('landing');
-                    }}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium transition cursor-pointer"
-                  >
-                    <span>Halaman Beranda Utama</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                  </button>
-                </div>
-              </>
-            )}
+          {/* User Profile Info */}
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="w-6 h-6 rounded-lg bg-[#14382C] text-emerald-300 flex items-center justify-center text-xs font-bold font-mono">
+              {(currentUser?.full_name || 'Surveyor')[0].toUpperCase()}
+            </div>
+            <div className="text-left font-sans">
+              <div className="text-xs font-bold text-slate-900 leading-none truncate max-w-[140px]">
+                {currentUser?.full_name || 'Budi Santoso, S.Hut'}
+              </div>
+              <div className="text-[10px] text-slate-400 font-medium leading-none mt-0.5 truncate max-w-[140px]">
+                {currentUser?.email || 'surveyor@tanikarbon.com'}
+              </div>
+            </div>
           </div>
+
+          {/* Logout Button */}
+          <button
+            onClick={onLogout}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs font-sans"
+            title="Keluar dari akun"
+          >
+            <LogOut className="w-3.5 h-3.5 text-rose-600" />
+            <span className="hidden sm:inline">Keluar</span>
+          </button>
 
         </div>
       </div>

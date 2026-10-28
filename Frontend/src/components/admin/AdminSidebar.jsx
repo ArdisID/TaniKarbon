@@ -12,10 +12,13 @@ import {
   ChevronRight, 
   Building2,
   Cpu,
-  BadgeAlert
+  BadgeAlert,
+  LogOut
 } from 'lucide-react';
 
 export default function AdminSidebar({ 
+  currentUser,
+  onLogout,
   currentTab, 
   onSelectTab,
   actionRequiredCount = 8
@@ -130,28 +133,40 @@ export default function AdminSidebar({
         })}
       </nav>
 
-      {/* Profil Admin Platform (Rangga Aditya, M.Sc) */}
-      <div className="p-3 border-t border-slate-100 bg-slate-50/70">
+      {/* Profil Admin Platform & Tombol Logout */}
+      <div className="p-3 border-t border-slate-100 bg-slate-50/70 font-sans">
         <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-[#14382C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs font-mono">
-              RA
+              {(currentUser?.full_name || 'Admin').substring(0, 2).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
               <h4 className="text-xs font-semibold text-stone-900 leading-snug truncate font-sans">
-                Rangga Aditya, M.Sc.
+                {currentUser?.full_name || 'Rangga Aditya, M.Sc.'}
               </h4>
               <div className="flex items-center gap-1 mt-0.5">
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold bg-purple-50 text-purple-900 border border-purple-200 truncate">
-                  ID: <span className="font-mono">ADM-ROOT-01</span>
+                  Role: <span className="font-mono">Administrator</span>
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 font-sans mt-0.5 truncate">
-                Head of Registry &amp; Systems
+                {currentUser?.email || 'admin@tanikarbon.com'}
               </p>
             </div>
           </div>
         </div>
+
+        {onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs font-sans"
+            title="Keluar dari akun"
+          >
+            <LogOut className="w-3.5 h-3.5 text-rose-600" />
+            <span>Keluar Akun</span>
+          </button>
+        )}
       </div>
     </aside>
   );

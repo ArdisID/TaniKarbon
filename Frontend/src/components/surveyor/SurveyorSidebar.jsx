@@ -9,10 +9,13 @@ import {
   UserCheck, 
   Layers,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  LogOut
 } from 'lucide-react';
 
 export default function SurveyorSidebar({ 
+  currentUser,
+  onLogout,
   currentTab, 
   onSelectTab,
   pendingCount = 6,
@@ -113,8 +116,8 @@ export default function SurveyorSidebar({
         })}
       </nav>
 
-      {/* Profil Petugas Lapangan (Budi Santoso) */}
-      <div className="p-3 border-t border-slate-100 bg-slate-50/70">
+      {/* Profil Petugas Lapangan & Tombol Logout */}
+      <div className="p-3 border-t border-slate-100 bg-slate-50/70 font-sans">
         <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-[#14382C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
@@ -122,19 +125,31 @@ export default function SurveyorSidebar({
             </div>
             <div className="min-w-0 flex-1">
               <h4 className="text-xs font-semibold text-stone-900 leading-snug truncate font-sans">
-                Budi Santoso, S.Hut
+                {currentUser?.full_name || 'Budi Santoso, S.Hut'}
               </h4>
               <div className="flex items-center gap-1 mt-0.5">
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 truncate">
-                  ID: <span className="font-mono">SRV-WNSB-09</span>
+                  Role: <span className="font-mono">Surveyor Lapangan</span>
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 font-sans mt-0.5 truncate">
-                Wilayah Wonosobo &amp; Sindoro
+                {currentUser?.email || 'surveyor@tanikarbon.com'}
               </p>
             </div>
           </div>
         </div>
+
+        {onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs font-sans"
+            title="Keluar dari akun"
+          >
+            <LogOut className="w-3.5 h-3.5 text-rose-600" />
+            <span>Keluar Akun</span>
+          </button>
+        )}
       </div>
     </aside>
   );
