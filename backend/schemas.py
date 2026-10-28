@@ -310,3 +310,11 @@ class BankAccountResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SurveyorAuditRequest(BaseModel):
+    decision: str = Field(..., description="'approved' | 'revision' | 'rejected'")
+    notes: str = Field(..., min_length=3, description="Catatan hasil inspeksi lapangan")
+    category: Optional[str] = Field(None, description="Kategori revisi jika ada")
+    block_adjustments: Optional[List[Dict[str, Any]]] = Field(None, description="Penyesuaian blok pohon jika ada")
+

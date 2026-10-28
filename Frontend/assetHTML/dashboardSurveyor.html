@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="id" class="scroll-smooth">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>TaniKarbon · Dashboard Surveyor Lapangan</title>
+<meta name="description" content="Portal Surveyor TaniKarbon — antrean inspeksi lapangan, smart routing rute GPS, dan sinkronisasi data audit MRV." />
+
+<!-- ============================================================
+     FONTS: Plus Jakarta Sans (UI) + JetBrains Mono (ID tiket/koordinat)
+============================================================ -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<!-- ============================================================
+     TAILWIND CSS (CDN) + KONFIGURASI DESIGN SYSTEM TANIKARBON
+============================================================ -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        },
+        colors: {
+          /* Pine Forest — identitas utama header/sidebar */
+          pine: { DEFAULT: '#0F291E', 900: '#0B1F16', 800: '#123026', 700: '#173D2E' },
+          /* Sky Blue — aksen tugas / aksi surveyor */
+          sky: { 600: '#0284C7' },
+          canvas: '#F8FAFC',
+        },
+        spacing: { 4.5: '1.125rem' }, // 18px — ukuran ikon aksi surveyor (ramah sentuhan jari)
+        boxShadow: {
+          card: '0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06)',
+          lift: '0 10px 28px -14px rgb(15 41 30 / 0.22), 0 2px 8px -3px rgb(15 41 30 / 0.08)',
+          float: '0 -8px 28px -12px rgb(15 41 30 / 0.18)',
+          pin: '0 6px 14px -4px rgb(2 8 23 / 0.35)',
+        },
+      },
+    },
+  };
+</script>
+
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@0.462.0/dist/umd/lucide.min.js"></script>
+
+<style>
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: 2px solid #0284C7; outline-offset: 2px; border-radius: 10px; }
+  [data-lucide] { stroke-width: 1.75; }
+
+  /* --- Scrollbar ramping --- */
+  .scroll-slim::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scroll-slim::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 999px; }
+  .scroll-slim::-webkit-scrollbar-track { background: transparent; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* --- Animasi: cincin denyut GPS (surveyor) --- */
+  @keyframes pulse-ring {
+    0%   { transform: scale(.85); opacity: .75; }
+    70%  { transform: scale(2.1); opacity: 0; }
+    100% { transform: scale(2.1); opacity: 0; }
+  }
+  .pulse-ring { animation: pulse-ring 2.2s cubic-bezier(0, 0, .2, 1) infinite; }
+
+  /* --- Animasi: marching ants pada garis rute putus-putus --- */
+  @keyframes dash-flow { to { stroke-dashoffset: -240; } }
+  .dash-flow { animation: dash-flow 9s linear infinite; }
+
+  /* --- Animasi masuk --- */
+  @keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .fade-up { animation: fade-up .34s cubic-bezier(0.22, 1, .36, 1) both; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+  .toast-in { animation: toast-in .26s cubic-bezier(0.22, 1, .36, 1) both; }
+
+  /* --- Peta: grid koordinat tipis + ilusi ketinggian --- */
+  .gis-grid {
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,.07) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse-ring, .dash-flow, .fade-up, .toast-in { animation: none !important; }
+  }
+</style>
+</head>
+
+<body class="min-h-screen bg-canvas font-sans text-slate-800 antialiased">
+<div class="flex min-h-screen">
+
+  <!-- ============================================================
+       SCRIM (overlay drawer sidebar di tablet/mobile)
+  ============================================================= -->
+  <div id="scrim" class="fixed inset-0 z-40 hidden bg-pine/50 backdrop-blur-sm lg:hidden" aria-hidden="true"></div>
+
+  <!-- ============================================================
+       SIDEBAR KIRI · Navigasi Portal Surveyor
+  ============================================================= -->
+  <aside id="sidebar"
+    class="fixed inset-y-0 left-0 z-50 flex h-screen w-[264px] shrink-0 -translate-x-full flex-col justify-between border-r border-white/10 bg-pine p-4 transition-transform duration-300 ease-out select-none lg:translate-x-0"
+    aria-label="Navigasi utama surveyor">
+
+    <div class="flex min-h-0 flex-col gap-6">
+
+      <!-- 1 · BRAND + BADGE ROLE -->
+      <div class="space-y-3">
+        <a href="#" class="group flex items-center gap-3 rounded-xl px-1 py-1 transition hover:bg-white/5">
+          <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-500/15 text-emerald-400 ring-1 ring-inset ring-emerald-400/30 transition group-hover:bg-emerald-500/25">
+            <i data-lucide="leaf" class="h-5 w-5"></i>
+          </span>
+          <span class="min-w-0">
+            <span class="block truncate text-[16px] font-extrabold tracking-tight text-white">TaniKarbon</span>
+            <!-- Badge peran: SURVEYOR -->
+            <span class="mt-1 inline-flex items-center gap-1 rounded-md bg-sky-500/20 px-1.5 py-[2px] font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-sky-300 ring-1 ring-inset ring-sky-400/30">
+              <i data-lucide="compass" class="h-2.5 w-2.5"></i> Surveyor
+            </span>
+          </span>
+        </a>
+
+        <!-- Status koneksi field -->
+        <div class="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+          <span class="relative flex h-2 w-2 shrink-0">
+            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
+          </span>
+          <span class="truncate font-mono text-[10px] font-medium tracking-tight text-emerald-200">GPS Aktif · PPGN ±4 m</span>
+        </div>
+      </div>
+
+      <!-- 2 · MENU UTAMA -->
+      <nav class="scroll-slim -mx-1 min-h-0 flex-1 overflow-y-auto px-1">
+        <p class="mb-2 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-emerald-200/50">Menu Utama</p>
+        <ul class="space-y-1.5">
+
+          <!-- 1 · Dashboard (AKTIF) -->
+          <li>
+            <a href="dashboardSurveyor.html" aria-current="page"
+               class="group flex items-start gap-3 rounded-xl bg-white/10 px-3 py-2.5 text-white ring-1 ring-inset ring-white/10 transition">
+              <i data-lucide="layout-dashboard" class="mt-0.5 h-4 w-4 shrink-0 text-sky-300"></i>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-semibold leading-tight">Dashboard</span>
+                <span class="mt-0.5 block truncate text-[11px] leading-tight text-emerald-100/60">Antrean &amp; Rute Hari Ini</span>
+              </span>
+              <!-- Penanda menu aktif -->
+              <span class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400"></span>
+            </a>
+          </li>
+
+          <!-- 2 · Riwayat Inspeksi -->
+          <li>
+            <a href="#"
+               class="group flex items-start gap-3 rounded-xl px-3 py-2.5 text-emerald-50/70 transition hover:bg-white/5 hover:text-white">
+              <i data-lucide="history" class="mt-0.5 h-4 w-4 shrink-0 text-emerald-200/50 transition group-hover:text-emerald-300"></i>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-semibold leading-tight">Riwayat Inspeksi</span>
+                <span class="mt-0.5 block truncate text-[11px] leading-tight text-emerald-100/40">Audit Selesai &amp; Draf</span>
+              </span>
+            </a>
+          </li>
+
+          <!-- 3 · Peta Wilayah -->
+          <li>
+            <a href="#"
+               class="group flex items-start gap-3 rounded-xl px-3 py-2.5 text-emerald-50/70 transition hover:bg-white/5 hover:text-white">
+              <i data-lucide="map" class="mt-0.5 h-4 w-4 shrink-0 text-emerald-200/50 transition group-hover:text-emerald-300"></i>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-semibold leading-tight">Peta Wilayah</span>
+                <span class="mt-0.5 block truncate text-[11px] leading-tight text-emerald-100/40">Klaster Desa Binaan</span>
+              </span>
+              <span class="mt-0.5 rounded-md bg-white/10 px-1.5 py-[1px] font-mono text-[9px] font-semibold text-emerald-100/70">3</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+
+    <!-- 3 · PROFIL FOOTER + TOMBOL KELUAR -->
+    <div class="space-y-2 border-t border-white/10 pt-4">
+      <div class="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-2.5">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-sky-500 font-mono text-sm font-bold text-white">BS</span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-[13px] font-semibold leading-tight text-white">Budi Surveyor</span>
+          <span class="block truncate font-mono text-[10px] leading-tight text-emerald-100/60">SRV-09 · Wonosobo</span>
+        </span>
+      </div>
+
+      <button type="button"
+        class="flex w-full items-center justify-center gap-2 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2.5 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 hover:text-red-200 active:scale-[.98]">
+        <i data-lucide="log-out" class="h-4 w-4"></i>
+        Keluar
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============================================================
+       WORKSPACE UTAMA
+  ============================================================= -->
+  <main class="min-w-0 flex-1 lg:ml-[264px]">
+    <div class="mx-auto max-w-[1400px] space-y-6 p-4 pb-28 sm:p-6 sm:pb-10 lg:p-8">
+
+      <!-- ========================================================
+           A · TOP HEADER · Salam, indikator sinyal & sinkronisasi
+      ========================================================= -->
+      <header class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+
+        <!-- Kiri: tombol drawer (mobile) + salam -->
+        <div class="flex items-start gap-3">
+          <button id="btnDrawer" type="button" aria-label="Buka menu"
+            class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-pine shadow-card transition hover:bg-slate-50 active:scale-95 lg:hidden">
+            <i data-lucide="menu" class="h-5 w-5"></i>
+          </button>
+
+          <div class="min-w-0">
+            <h1 class="truncate text-xl font-extrabold tracking-tight text-pine sm:text-[26px]">
+              Halo, Budi Surveyor (SRV-09) 👋
+            </h1>
+            <p class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-500">
+              <span>Selasa, 24 Juni 2026</span>
+              <span class="text-slate-300">•</span>
+              <span class="inline-flex items-center gap-1 font-medium text-sky-700">
+                <i data-lucide="cloud-sun" class="h-3.5 w-3.5"></i> Cerah berawan · 27°C
+              </span>
+              <span class="text-slate-300">•</span>
+              <span>Wilayah kerja: <span class="font-mono font-medium text-slate-600">WNSB-DESA-04</span></span>
+            </p>
+          </div>
+        </div>
+
+        <!-- Kanan: indikator online + tombol sinkronisasi -->
+        <div class="flex flex-wrap items-center gap-2.5">
+          <!-- Indikator mode sinkronisasi -->
+          <span class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <span class="relative flex h-2.5 w-2.5 shrink-0">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-70"></span>
+              <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+            </span>
+            <span class="whitespace-nowrap font-mono text-[11px] font-semibold tracking-tight text-emerald-700">
+              🟢 Online - Mode Sinkronisasi
+            </span>
+          </span>
+
+          <!-- Tombol sinkronkan data -->
+          <button id="btnSync" type="button"
+            class="group inline-flex items-center gap-2 rounded-xl bg-pine px-4 py-2.5 text-sm font-semibold text-white shadow-card transition hover:bg-pine-800 hover:shadow-lift active:scale-[.98]">
+            <i data-lucide="refresh-cw" id="icSync" class="h-4 w-4 transition-transform duration-500 group-hover:rotate-90"></i>
+            <span class="whitespace-nowrap">Sinkronkan Data</span>
+            <span class="hidden font-mono text-[10px] font-medium text-emerald-200/80 sm:inline">(Terakhir: <span id="syncTime">08:00</span>)</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- ========================================================
+           B · GRID 4 KARTU KPI OPERASIONAL (Bento UI)
+      ========================================================= -->
+      <section aria-label="KPI Operasional" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+        <!-- KPI 1 · TUGAS HARI INI (aksen Sky Blue) -->
+        <article class="fade-up group relative overflow-hidden rounded-2xl border border-sky-200/70 bg-white p-5 shadow-card transition duration-300 hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-lift">
+          <span class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-sky-500/10 transition group-hover:scale-125"></span>
+          <div class="relative flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">Tugas Hari Ini</p>
+              <p class="mt-3 flex items-baseline gap-1.5">
+                <span class="tnum text-[42px] font-extrabold leading-none tracking-tight text-pine">4</span>
+                <span class="text-sm font-semibold text-slate-400">Lahan</span>
+              </p>
+              <p class="mt-2 text-[12.5px] text-slate-500">Harus diinspeksi hari ini</p>
+            </div>
+            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-100 transition group-hover:bg-sky-500 group-hover:text-white">
+              <i data-lucide="clipboard-check" class="h-6 w-6"></i>
+            </span>
+          </div>
+          <!-- Progress mini: 1 dari 4 selesai -->
+          <div class="relative mt-4">
+            <div class="h-1.5 w-full overflow-hidden rounded-full bg-sky-100">
+              <div class="h-full w-1/4 rounded-full bg-sky-500 transition-all duration-500"></div>
+            </div>
+            <p class="mt-1.5 font-mono text-[10px] text-slate-400">1/4 rampung · Mulai 08:30 WIB</p>
+          </div>
+        </article>
+
+        <!-- KPI 2 · ANTREAN BACKLOG (aksen Slate) -->
+        <article class="fade-up group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-card transition duration-300 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lift" style="animation-delay:.05s">
+          <span class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-slate-500/10 transition group-hover:scale-125"></span>
+          <div class="relative flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Antrean Backlog</p>
+              <p class="mt-3 flex items-baseline gap-1.5">
+                <span class="tnum text-[42px] font-extrabold leading-none tracking-tight text-pine">12</span>
+                <span class="text-sm font-semibold text-slate-400">Lahan</span>
+              </p>
+              <p class="mt-2 text-[12.5px] text-slate-500">Belum dijadwalkan</p>
+            </div>
+            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-200 transition group-hover:bg-slate-700 group-hover:text-white">
+              <i data-lucide="inbox" class="h-6 w-6"></i>
+            </span>
+          </div>
+          <div class="relative mt-4 flex items-center gap-2">
+            <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 font-mono text-[10px] font-medium text-slate-500">
+              <i data-lucide="calendar-clock" class="h-3 w-3"></i> Tertua: 12 hari
+            </span>
+            <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 font-mono text-[10px] font-medium text-slate-500">
+              <i data-lucide="users" class="h-3 w-3"></i> 9 petani
+            </span>
+          </div>
+        </article>
+
+        <!-- KPI 3 · MENUNGGU REVISI (aksen Amber) -->
+        <article class="fade-up group relative overflow-hidden rounded-2xl border border-amber-200 bg-white p-5 shadow-card transition duration-300 hover:-translate-y-0.5 hover:border-amber-300 hover:shadow-lift" style="animation-delay:.1s">
+          <span class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-amber-500/10 transition group-hover:scale-125"></span>
+          <div class="relative flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">Menunggu Revisi</p>
+              <p class="mt-3 flex items-baseline gap-1.5">
+                <span class="tnum text-[42px] font-extrabold leading-none tracking-tight text-pine">2</span>
+                <span class="text-sm font-semibold text-slate-400">Lahan</span>
+              </p>
+              <p class="mt-2 text-[12.5px] text-slate-500">Dikembalikan ke petani</p>
+            </div>
+            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-100 transition group-hover:bg-amber-500 group-hover:text-white">
+              <i data-lucide="pencil-ruler" class="h-6 w-6"></i>
+            </span>
+          </div>
+          <div class="relative mt-4">
+            <span class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 font-mono text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-100">
+              <i data-lucide="hourglass" class="h-3 w-3"></i> SLA balasan: 3 hari
+            </span>
+          </div>
+        </article>
+
+        <!-- KPI 4 · SELESAI MINGGU INI (aksen Emerald) -->
+        <article class="fade-up group relative overflow-hidden rounded-2xl border border-emerald-200 bg-white p-5 shadow-card transition duration-300 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-lift" style="animation-delay:.15s">
+          <span class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-500/10 transition group-hover:scale-125"></span>
+          <div class="relative flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">Selesai Minggu Ini</p>
+              <p class="mt-3 flex items-baseline gap-1.5">
+                <span class="tnum text-[42px] font-extrabold leading-none tracking-tight text-pine">8</span>
+                <span class="text-sm font-semibold text-slate-400">Lahan</span>
+              </p>
+              <p class="mt-2 text-[12.5px] text-slate-500">Terverifikasi &amp; tersinkron</p>
+            </div>
+            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-100 transition group-hover:bg-emerald-500 group-hover:text-white">
+              <i data-lucide="circle-check-big" class="h-6 w-6"></i>
+            </span>
+          </div>
+          <div class="relative mt-4 flex items-center gap-2">
+            <span class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 font-mono text-[10px] font-medium text-emerald-700">
+              <i data-lucide="trending-up" class="h-3 w-3"></i> +3 dari minggu lalu
+            </span>
+            <span class="truncate font-mono text-[10px] text-slate-400">18,4 ha teraudit</span>
+          </div>
+        </article>
+      </section>
+
+      <!-- ========================================================
+           C · PETA RUTE NAVIGASI (Smart Routing)
+      ========================================================= -->
+      <section aria-label="Peta Rute Inspeksi" class="fade-up overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card" style="animation-delay:.2s">
+
+        <!-- Header peta -->
+        <header class="flex flex-col gap-3 border-b border-slate-200/80 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div class="min-w-0">
+            <h2 class="flex items-center gap-2 text-[15px] font-bold tracking-tight text-pine">
+              <i data-lucide="route" class="h-4.5 w-4.5 text-sky-600"></i>
+              Peta Rute Inspeksi Hari Ini
+            </h2>
+            <p class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-slate-500">
+              <span class="inline-flex items-center gap-1 font-semibold text-sky-700">
+                <i data-lucide="ruler" class="h-3.5 w-3.5"></i> Estimasi Jarak Total: 12.5 km
+              </span>
+              <span class="text-slate-300">|</span>
+              <span class="inline-flex items-center gap-1"><i data-lucide="timer" class="h-3.5 w-3.5"></i> ETA 1 jam 48 menit</span>
+              <span class="text-slate-300">|</span>
+              <span class="inline-flex items-center gap-1"><i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 4 titik lahan</span>
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="btnLegend"
+              class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[.98]">
+              <i data-lucide="layers" class="h-4 w-4"></i> Citra Satelit
+            </button>
+            <button type="button" id="btnNav" data-toast="Rute dibuka di aplikasi navigasi (Google Maps)."
+              class="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2 text-[13px] font-semibold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98]">
+              <i data-lucide="navigation" class="h-4 w-4"></i> Mulai Navigasi
+            </button>
+          </div>
+        </header>
+
+        <!-- Kanvas peta (dummy container citra satelit) -->
+        <div id="map-route" class="relative h-[300px] w-full overflow-hidden bg-[#0b1f16] sm:h-[380px]">
+
+          <!-- Layer 1: Citra satelit dummy (SVG, buram/blur supaya overlay terbaca) -->
+          <svg class="absolute inset-0 h-full w-full blur-[1.5px] saturate-[.85]" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <defs>
+              <!-- Gradasi tanah sawah / hutan -->
+              <linearGradient id="rtBase" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#3f5e34" />
+                <stop offset="45%" stop-color="#51743a" />
+                <stop offset="100%" stop-color="#6b7a3c" />
+              </linearGradient>
+              <!-- Tekstur noise menyerupai piksel citra satelit -->
+              <filter id="rtGrain">
+                <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="4" stitchTiles="stitch" />
+                <feColorMatrix type="saturate" values="0" />
+              </filter>
+              <!-- Filter organik untuk bentuk petak lahan -->
+              <filter id="rtOrganic">
+                <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="3" seed="9" result="nz" />
+                <feDisplacementMap in="SourceGraphic" in2="nz" scale="55" xChannelSelector="R" yChannelSelector="G" />
+              </filter>
+              <filter id="rtSoft"><feGaussianBlur stdDeviation="26" /></filter>
+            </defs>
+
+            <rect width="1200" height="600" fill="url(#rtBase)" />
+
+            <!-- Petak lahan organik -->
+            <g filter="url(#rtOrganic)" opacity=".95">
+              <path d="M-40,90 L260,60 L300,220 L60,250 Z" fill="#4a6b33" />
+              <path d="M280,40 L620,20 L660,180 L330,210 Z" fill="#5c7f3b" />
+              <path d="M600,-20 L940,40 L900,210 L620,170 Z" fill="#3d5a2e" />
+              <path d="M880,60 L1240,20 L1240,240 L920,250 Z" fill="#6d8a42" />
+              <path d="M-40,300 L320,280 L360,470 L20,500 Z" fill="#56753a" />
+              <path d="M340,270 L700,300 L680,470 L360,450 Z" fill="#43632f" />
+              <path d="M700,320 L1060,290 L1100,480 L720,500 Z" fill="#5f8139" />
+              <path d="M1040,300 L1250,330 L1250,540 L1060,520 Z" fill="#48662f" />
+              <path d="M-40,540 L420,520 L440,620 L-40,620 Z" fill="#3a5729" />
+              <path d="M460,530 L900,510 L920,620 L470,620 Z" fill="#54803a" />
+            </g>
+
+            <!-- Blok pemukiman -->
+            <g opacity=".8">
+              <rect x="70" y="470" width="150" height="70" rx="6" fill="#8b8378" />
+              <rect x="200" y="500" width="90" height="46" rx="6" fill="#9a9184" />
+              <rect x="960" y="60" width="130" height="80" rx="6" fill="#8f8878" />
+            </g>
+
+            <!-- Sungai -->
+            <path d="M-20,560 C160,520 260,575 420,540 C580,505 720,560 900,520 C1050,485 1150,540 1220,505"
+              fill="none" stroke="#2563a8" stroke-width="16" opacity=".55" />
+            <!-- Jalan utama -->
+            <path d="M0,275 C220,255 380,300 600,268 C820,236 1020,290 1200,258" fill="none" stroke="#c8c2b4" stroke-width="7" opacity=".5" />
+            <path d="M470,0 C455,160 520,330 480,600" fill="none" stroke="#c8c2b4" stroke-width="5" opacity=".4" />
+
+            <!-- Bayangan relief lembut -->
+            <ellipse cx="300" cy="200" rx="220" ry="90" fill="#2d4522" opacity=".22" filter="url(#rtSoft)" />
+            <ellipse cx="860" cy="420" rx="240" ry="100" fill="#2d4522" opacity=".2" filter="url(#rtSoft)" />
+
+            <!-- Grain + grid koordinat -->
+            <rect width="1200" height="600" filter="url(#rtGrain)" opacity=".16" style="mix-blend-mode:multiply" />
+            <rect class="gis-grid" width="1200" height="600" />
+          </svg>
+
+          <!-- Layer 2: Gradasi gelap agar pin kontras -->
+          <div class="absolute inset-0 bg-gradient-to-tr from-pine/70 via-pine/10 to-transparent"></div>
+
+          <!-- Layer 3: Garis rute putus-putus (viewBox normalisasi 0-100 agar sejajar dengan pin berbasis %) -->
+          <svg class="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="routeGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#38BDF8" />
+                <stop offset="100%" stop-color="#0284C7" />
+              </linearGradient>
+            </defs>
+            <polyline points="12,62 30,40 52,24 68,58 84,34" fill="none" stroke="#0F291E" stroke-opacity=".55"
+              stroke-width="7" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+            <polyline class="dash-flow" points="12,62 30,40 52,24 68,58 84,34" fill="none" stroke="url(#routeGrad)"
+              stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="16 12" vector-effect="non-scaling-stroke" />
+          </svg>
+
+          <!-- Layer 4: Titik GPS Surveyor (biru berdenyut) -->
+          <div class="absolute left-[12%] top-[62%] -translate-x-1/2 -translate-y-1/2">
+            <span class="absolute inset-0 grid place-items-center">
+              <span class="pulse-ring block h-9 w-9 rounded-full bg-sky-400/70"></span>
+            </span>
+            <span class="relative grid h-9 w-9 place-items-center rounded-full bg-sky-500 ring-4 ring-white/80 shadow-pin">
+              <i data-lucide="navigation" class="h-4 w-4 text-white"></i>
+            </span>
+            <span class="absolute left-1/2 top-11 -translate-x-1/2 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 font-mono text-[10px] font-semibold text-sky-700 shadow-card">
+              Anda · ±4 m
+            </span>
+          </div>
+
+          <!-- Layer 5: Pin lokasi lahan target (4 titik) -->
+          <!-- Stop 1 -->
+          <div class="absolute left-[30%] top-[40%] -translate-x-1/2 -translate-y-full">
+            <button type="button" data-toast="TKT-WNSB-842 · Pekarangan Garung dipilih pada peta."
+              class="group relative grid h-9 w-9 place-items-center rounded-t-xl rounded-br-xl rounded-bl-sm bg-white text-sky-700 shadow-pin ring-2 ring-sky-500 transition hover:-translate-y-0.5 hover:bg-sky-500 hover:text-white">
+              <span class="font-mono text-[12px] font-bold">1</span>
+            </button>
+            <p class="pointer-events-none absolute left-1/2 top-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 font-mono text-[10px] font-semibold text-pine shadow-card">
+              TKT-WNSB-842 · 1,2 km
+            </p>
+          </div>
+          <!-- Stop 2 -->
+          <div class="absolute left-[52%] top-[24%] -translate-x-1/2 -translate-y-full">
+            <button type="button" data-toast="TKT-WNSB-845 · Kebun Kopi Lereng dipilih pada peta."
+              class="group relative grid h-9 w-9 place-items-center rounded-t-xl rounded-br-xl rounded-bl-sm bg-white text-sky-700 shadow-pin ring-2 ring-sky-500 transition hover:-translate-y-0.5 hover:bg-sky-500 hover:text-white">
+              <span class="font-mono text-[12px] font-bold">2</span>
+            </button>
+            <p class="pointer-events-none absolute left-1/2 top-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 font-mono text-[10px] font-semibold text-pine shadow-card">
+              TKT-WNSB-845 · 3,4 km
+            </p>
+          </div>
+          <!-- Stop 3 -->
+          <div class="absolute left-[68%] top-[58%] -translate-x-1/2 -translate-y-full">
+            <button type="button" data-toast="TKT-KRNG-118 · Agroforest Sengon dipilih pada peta."
+              class="group relative grid h-9 w-9 place-items-center rounded-t-xl rounded-br-xl rounded-bl-sm bg-white text-sky-700 shadow-pin ring-2 ring-sky-500 transition hover:-translate-y-0.5 hover:bg-sky-500 hover:text-white">
+              <span class="font-mono text-[12px] font-bold">3</span>
+            </button>
+            <p class="pointer-events-none absolute left-1/2 top-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 font-mono text-[10px] font-semibold text-pine shadow-card">
+              TKT-KRNG-118 · 5,7 km
+            </p>
+          </div>
+          <!-- Stop 4 -->
+          <div class="absolute left-[84%] top-[34%] -translate-x-1/2 -translate-y-full">
+            <button type="button" data-toast="TKT-WNSB-849 · Tegalan Bambu dipilih pada peta."
+              class="group relative grid h-9 w-9 place-items-center rounded-t-xl rounded-br-xl rounded-bl-sm bg-white text-sky-700 shadow-pin ring-2 ring-sky-500 transition hover:-translate-y-0.5 hover:bg-sky-500 hover:text-white">
+              <span class="font-mono text-[12px] font-bold">4</span>
+            </button>
+            <p class="pointer-events-none absolute left-1/2 top-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 font-mono text-[10px] font-semibold text-pine shadow-card">
+              TKT-WNSB-849 · 8,1 km
+            </p>
+          </div>
+
+          <!-- Legend kiri bawah -->
+          <div class="absolute bottom-3 left-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl bg-white/90 px-3 py-2 backdrop-blur-sm">
+            <span class="inline-flex items-center gap-1.5 font-mono text-[10px] font-semibold text-slate-600">
+              <span class="h-2.5 w-2.5 rounded-full bg-sky-500"></span> Posisi Anda
+            </span>
+            <span class="inline-flex items-center gap-1.5 font-mono text-[10px] font-semibold text-slate-600">
+              <span class="h-2.5 w-2.5 rounded-sm bg-white ring-2 ring-sky-500"></span> Lahan target
+            </span>
+            <span class="inline-flex items-center gap-1.5 font-mono text-[10px] font-semibold text-slate-600">
+              <span class="h-0.5 w-6 rounded-full bg-gradient-to-r from-sky-400 to-sky-600"></span> Rute optimal
+            </span>
+          </div>
+
+          <!-- Scale bar kanan bawah -->
+          <div class="absolute bottom-3 right-3 hidden rounded-xl bg-white/90 px-3 py-2 backdrop-blur-sm sm:block">
+            <p class="font-mono text-[10px] font-semibold text-slate-600">
+              <span class="inline-block h-2 w-16 border-x-2 border-b-2 border-slate-600"></span> 2 km
+            </p>
+          </div>
+        </div>
+
+        <!-- Footer: urutan kunjungan -->
+        <footer class="scroll-slim flex gap-2 overflow-x-auto border-t border-slate-200/80 bg-slate-50/60 p-3 no-scrollbar">
+          <span class="shrink-0 self-center px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Urutan kunjungan</span>
+
+          <span class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 py-2">
+            <span class="grid h-6 w-6 place-items-center rounded-md bg-sky-600 font-mono text-[11px] font-bold text-white">1</span>
+            <span class="whitespace-nowrap text-[12.5px] font-semibold text-pine">Pekarangan Garung</span>
+            <span class="whitespace-nowrap font-mono text-[10px] text-slate-400">09:00 · 1,2 km</span>
+          </span>
+          <span class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <span class="grid h-6 w-6 place-items-center rounded-md bg-slate-200 font-mono text-[11px] font-bold text-slate-600">2</span>
+            <span class="whitespace-nowrap text-[12.5px] font-semibold text-pine">Kebun Kopi Lereng</span>
+            <span class="whitespace-nowrap font-mono text-[10px] text-slate-400">10:15 · 3,4 km</span>
+          </span>
+          <span class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <span class="grid h-6 w-6 place-items-center rounded-md bg-slate-200 font-mono text-[11px] font-bold text-slate-600">3</span>
+            <span class="whitespace-nowrap text-[12.5px] font-semibold text-pine">Agroforest Sengon</span>
+            <span class="whitespace-nowrap font-mono text-[10px] text-slate-400">13:00 · 5,7 km</span>
+          </span>
+          <span class="shrink-0 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <span class="grid h-6 w-6 place-items-center rounded-md bg-slate-200 font-mono text-[11px] font-bold text-slate-600">4</span>
+            <span class="whitespace-nowrap text-[12.5px] font-semibold text-pine">Tegalan Bambu</span>
+            <span class="whitespace-nowrap font-mono text-[10px] text-slate-400">14:45 · 8,1 km</span>
+          </span>
+        </footer>
+      </section>
+
+      <!-- ========================================================
+           D · DAFTAR ANTREAN TIKET CERDAS (Task List)
+      ========================================================= -->
+      <section aria-label="Antrean Tiket Inspeksi" class="fade-up overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card" style="animation-delay:.25s">
+
+        <!-- Header + Filter Tabs -->
+        <header class="border-b border-slate-200/80 p-4 sm:p-5">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="min-w-0">
+              <h2 class="flex items-center gap-2 text-[15px] font-bold tracking-tight text-pine">
+                <i data-lucide="list-todo" class="h-4.5 w-4.5 text-sky-600"></i>
+                Antrean Tiket Inspeksi
+              </h2>
+              <p class="mt-1 text-[12.5px] text-slate-500">Diurutkan oleh <span class="font-semibold text-slate-600">Smart Routing</span> — prioritas jadwal &amp; kedekatan GPS.</p>
+            </div>
+
+            <!-- Tabs filter: Jadwal Hari Ini | Terdekat dari GPS | Semua Antrean -->
+            <div id="taskTabs" role="tablist" aria-label="Filter antrean"
+              class="no-scrollbar -mx-1 flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:mx-0">
+              <button type="button" role="tab" data-filter="today" aria-selected="true"
+                class="tab-btn shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-semibold transition">
+                Jadwal Hari Ini (<span data-count="today">4</span>)
+              </button>
+              <button type="button" role="tab" data-filter="near" aria-selected="false"
+                class="tab-btn shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-semibold transition">
+                Terdekat dari GPS
+              </button>
+              <button type="button" role="tab" data-filter="all" aria-selected="false"
+                class="tab-btn shrink-0 rounded-lg px-3 py-2 text-[12.5px] font-semibold transition">
+                Semua Antrean (<span data-count="all">14</span>)
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <!-- Daftar kartu tiket -->
+        <div id="taskList" class="divide-y divide-slate-100">
+
+          <!-- ===== TIKET 1 · JADWAL HARI INI ===== -->
+          <article data-group="today" data-distance="1.2"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <!-- Info tiket -->
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-sky-700">TKT-WNSB-842</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-[1px] text-[10px] font-semibold text-sky-700 ring-1 ring-inset ring-sky-100">
+                  <i data-lucide="clock" class="h-2.5 w-2.5"></i> 09:00 WIB
+                </span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-[1px] text-[10px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-100">
+                  <i data-lucide="badge-check" class="h-2.5 w-2.5"></i> Siap inspeksi
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Pak Joko Widodo</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Pekarangan Garung</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">4.520 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 1.2 km dari Anda
+                </span>
+              </p>
+            </div>
+
+            <!-- Aksi -->
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <!-- Aksi sekunder: telepon / WhatsApp -->
+                <a href="tel:+6281234567890" aria-label="Telepon Pak Joko Widodo"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Pak Joko Widodo…" aria-label="WhatsApp Pak Joko Widodo"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <!-- Aksi sekunder: buka rute Google Maps -->
+                <button type="button" data-toast="Rute ke Pekarangan Garung dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <!-- Aksi primer -->
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <!-- ===== TIKET 2 · JADWAL HARI INI ===== -->
+          <article data-group="today" data-distance="3.4"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-sky-700">TKT-WNSB-845</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-[1px] text-[10px] font-semibold text-sky-700 ring-1 ring-inset ring-sky-100">
+                  <i data-lucide="clock" class="h-2.5 w-2.5"></i> 10:15 WIB
+                </span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-[1px] text-[10px] font-semibold text-red-700 ring-1 ring-inset ring-red-100">
+                  <i data-lucide="flame" class="h-2.5 w-2.5"></i> Prioritas tinggi
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Ibu Siti Aminah</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Kebun Kopi Lereng</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">6.100 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 3.4 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281299887766" aria-label="Telepon Ibu Siti Aminah"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Ibu Siti Aminah…" aria-label="WhatsApp Ibu Siti Aminah"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Kebun Kopi Lereng dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <!-- ===== TIKET 3 · JADWAL HARI INI ===== -->
+          <article data-group="today" data-distance="5.7"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-sky-700">TKT-KRNG-118</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-[1px] text-[10px] font-semibold text-sky-700 ring-1 ring-inset ring-sky-100">
+                  <i data-lucide="clock" class="h-2.5 w-2.5"></i> 13:00 WIB
+                </span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="sprout" class="h-2.5 w-2.5"></i> Agroforest
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Bpk. Slamet Riyadi</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Agroforest Sengon Blok C</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">12.800 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 5.7 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281556677889" aria-label="Telepon Bpk. Slamet Riyadi"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Bpk. Slamet Riyadi…" aria-label="WhatsApp Bpk. Slamet Riyadi"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Agroforest Sengon Blok C dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <!-- ===== TIKET 4 · JADWAL HARI INI ===== -->
+          <article data-group="today" data-distance="8.1"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-sky-700">TKT-WNSB-849</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-[1px] text-[10px] font-semibold text-sky-700 ring-1 ring-inset ring-sky-100">
+                  <i data-lucide="clock" class="h-2.5 w-2.5"></i> 14:45 WIB
+                </span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-[1px] text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-100">
+                  <i data-lucide="repeat" class="h-2.5 w-2.5"></i> Inspeksi ulang
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Pak Karto Wiyono</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Tegalan Bambu Timur</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">2.350 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 8.1 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281778899001" aria-label="Telepon Pak Karto Wiyono"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Pak Karto Wiyono…" aria-label="WhatsApp Pak Karto Wiyono"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Tegalan Bambu Timur dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <!-- ===== TIKET 5-14 · BACKLOG / BELUM DIJADWALKAN ===== -->
+          <article data-group="backlog" data-distance="10.4"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-WNSB-851</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Ibu Rahayu Ningsih</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Pekarangan Krajan</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">3.180 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 10.4 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281333444555" aria-label="Telepon Ibu Rahayu Ningsih"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Ibu Rahayu Ningsih…" aria-label="WhatsApp Ibu Rahayu Ningsih"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Pekarangan Krajan dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <article data-group="backlog" data-distance="11.8"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-WNSB-856</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Pak Warto Sudibyo</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Kebun Alpukat Gunung</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">8.240 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 11.8 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281555010101" aria-label="Telepon Pak Warto Sudibyo"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Pak Warto Sudibyo…" aria-label="WhatsApp Pak Warto Sudibyo"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Kebun Alpukat Gunung dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <article data-group="backlog" data-distance="13.2"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-KRNG-121</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Kelompok Tani Makmur</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Hutan Rakyat Blok A</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">21.500 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 13.2 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281999222333" aria-label="Telepon Kelompok Tani Makmur"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Kelompok Tani Makmur…" aria-label="WhatsApp Kelompok Tani Makmur"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Hutan Rakyat Blok A dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <article data-group="backlog" data-distance="14.6"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-KRNG-125</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Pak Sarno Pawiro</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Tegal Durian Kidul</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">5.760 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 14.6 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281444555666" aria-label="Telepon Pak Sarno Pawiro"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Pak Sarno Pawiro…" aria-label="WhatsApp Pak Sarno Pawiro"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Tegal Durian Kidul dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <article data-group="backlog" data-distance="15.9"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-WNSB-861</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Ibu Tumini Sulastri</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Pekarangan Coklat</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">1.940 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 15.9 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281222333444" aria-label="Telepon Ibu Tumini Sulastri"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Ibu Tumini Sulastri…" aria-label="WhatsApp Ibu Tumini Sulastri"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Pekarangan Coklat dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <article data-group="backlog" data-distance="17.3"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-KRNG-128</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Pak Dul Kadir</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Empang Randu</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">9.310 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 17.3 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281776655443" aria-label="Telepon Pak Dul Kadir"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Pak Dul Kadir…" aria-label="WhatsApp Pak Dul Kadir"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Empang Randu dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <article data-group="backlog" data-distance="19.1"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-WNSB-864</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Pak Ngadi Sutrisno</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Kebun Cengkeh Sari</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">4.870 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 19.1 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281667788990" aria-label="Telepon Pak Ngadi Sutrisno"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Pak Ngadi Sutrisno…" aria-label="WhatsApp Pak Ngadi Sutrisno"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Kebun Cengkeh Sari dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <article data-group="backlog" data-distance="21.5"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-KRNG-133</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Pak Tugiman Rejo</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Wana Agung Blok B</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">16.220 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 21.5 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281554433221" aria-label="Telepon Pak Tugiman Rejo"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Pak Tugiman Rejo…" aria-label="WhatsApp Pak Tugiman Rejo"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Wana Agung Blok B dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <article data-group="backlog" data-distance="23.8"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-WNSB-870</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Ibu Sumiati Wardani</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Pekarangan Melati</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">2.610 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 23.8 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281333221100" aria-label="Telepon Ibu Sumiati Wardani"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Ibu Sumiati Wardani…" aria-label="WhatsApp Ibu Sumiati Wardani"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Pekarangan Melati dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <article data-group="backlog" data-distance="26.4"
+            class="group grid grid-cols-1 gap-4 p-4 transition hover:bg-sky-50/40 sm:p-5 lg:grid-cols-12 lg:items-center lg:gap-5">
+            <div class="min-w-0 lg:col-span-7">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[11px] font-semibold text-slate-500">TKT-KRNG-140</span>
+                <span class="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-[1px] text-[10px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                  <i data-lucide="calendar-x" class="h-2.5 w-2.5"></i> Belum dijadwalkan
+                </span>
+              </div>
+              <h3 class="mt-1.5 truncate text-[15px] font-bold tracking-tight text-pine">Pak Marjuki Santoso</h3>
+              <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-slate-500">
+                <span class="inline-flex items-center gap-1"><i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-600"></i> Gesing Rumbia</span>
+                <span class="text-slate-300">•</span>
+                <span class="tnum font-mono text-[11.5px] font-medium text-slate-600">11.050 m²</span>
+                <span class="text-slate-300">•</span>
+                <span class="inline-flex items-center gap-1 font-mono text-[11.5px] font-medium text-sky-700">
+                  <i data-lucide="map-pin" class="h-3.5 w-3.5"></i> 26.4 km dari Anda
+                </span>
+              </p>
+            </div>
+            <div class="lg:col-span-5">
+              <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                <a href="tel:+6281887766554" aria-label="Telepon Pak Marjuki Santoso"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="phone" class="h-4.5 w-4.5"></i>
+                </a>
+                <button type="button" data-toast="Membuka WhatsApp Pak Marjuki Santoso…" aria-label="WhatsApp Pak Marjuki Santoso"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95">
+                  <i data-lucide="message-circle" class="h-4.5 w-4.5"></i>
+                </button>
+                <button type="button" data-toast="Rute ke Gesing Rumbia dibuka di Google Maps." aria-label="Petunjuk arah Google Maps"
+                  class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-600 active:scale-95">
+                  <i data-lucide="map" class="h-4.5 w-4.5"></i>
+                </button>
+                <a href="inspeksiLahan.html"
+                  class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3 text-[14px] font-bold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98] sm:flex-none">
+                  Mulai Inspeksi <i data-lucide="arrow-right" class="h-4.5 w-4.5 transition group-hover:translate-x-1"></i>
+                </a>
+              </div>
+            </div>
+          </article>
+
+          <!-- Empty state (disembunyikan saat daftar tidak kosong) -->
+          <div id="taskEmpty" class="hidden p-10 text-center">
+            <span class="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-slate-100 text-slate-400">
+              <i data-lucide="search-x" class="h-6 w-6"></i>
+            </span>
+            <p class="mt-3 text-sm font-semibold text-slate-600">Tidak ada antrean pada filter ini</p>
+            <p class="mt-1 text-[12.5px] text-slate-400">Coba ganti filter atau sinkronkan data terlebih dahulu.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Catatan kaki -->
+      <p class="pb-2 text-center font-mono text-[10.5px] text-slate-400">
+        TaniKarbon · Portal Surveyor SRV-09 · v2.4.1 (offline-ready) · Data dummy untuk keperluan prototipe
+      </p>
+    </div>
+  </main>
+</div>
+
+<!-- ============================================================
+     TOAST CONTAINER (notifikasi ringan aksi sekunder)
+============================================================ -->
+<div id="toastHost" class="pointer-events-none fixed inset-x-0 bottom-24 z-[70] flex flex-col items-center gap-2 px-4 sm:bottom-6"></div>
+
+<!-- ============================================================
+     JAVASCRIPT · interaksi ringan (Vanilla JS)
+     1. Drawer sidebar (tablet/mobile)
+     2. Filter & pengurutan tiket
+     3. Tombol sinkronisasi
+     4. Toast untuk aksi dummy
+============================================================ -->
+<script>
+  /* ---------- 0. Render ikon Lucide ---------- */
+  if (window.lucide) lucide.createIcons();
+
+  /* ---------- 1. Drawer sidebar untuk tablet/mobile ---------- */
+  const sidebar = document.getElementById('sidebar');
+  const scrim   = document.getElementById('scrim');
+
+  function openDrawer()  { sidebar.classList.remove('-translate-x-full'); scrim.classList.remove('hidden'); }
+  function closeDrawer() { sidebar.classList.add('-translate-x-full');    scrim.classList.add('hidden'); }
+
+  document.getElementById('btnDrawer').addEventListener('click', openDrawer);
+  scrim.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+
+  /* ---------- 2. Toast sederhana ---------- */
+  const toastHost = document.getElementById('toastHost');
+  function toast(message, tone = 'pine') {
+    const tones = {
+      pine:    'border-pine/20 bg-pine text-white',
+      sky:     'border-sky-200 bg-white text-sky-800',
+      emerald: 'border-emerald-200 bg-white text-emerald-800',
+    };
+    const el = document.createElement('div');
+    el.className = `toast-in pointer-events-auto flex max-w-md items-start gap-2.5 rounded-xl border px-4 py-3 text-[13px] font-semibold shadow-lift ${tones[tone] || tones.pine}`;
+    el.innerHTML = `<i data-lucide="info" class="mt-0.5 h-4 w-4 shrink-0 opacity-70"></i><span class="min-w-0">${message}</span>`;
+    toastHost.appendChild(el);
+    if (window.lucide) lucide.createIcons({ nameAttr: 'data-lucide' });
+    setTimeout(() => { el.style.transition = 'opacity .25s, transform .25s'; el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; }, 3200);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  // Semua elemen bertipe data-toast memicu notifikasi ringan
+  document.querySelectorAll('[data-toast]').forEach((btn) => {
+    btn.addEventListener('click', () => toast(btn.dataset.toast, 'sky'));
+  });
+
+  /* ---------- 3. Filter tab antrean + hitung jumlah ---------- */
+  const list   = document.getElementById('taskList');
+  const empty  = document.getElementById('taskEmpty');
+  const cards  = Array.from(list.querySelectorAll('article[data-group]'));
+  const tabs   = Array.from(document.querySelectorAll('#taskTabs .tab-btn'));
+
+  const ACTIVE_CLS   = ['bg-white', 'text-pine', 'shadow-card', 'ring-1', 'ring-slate-200'];
+  const INACTIVE_CLS = ['text-slate-500', 'hover:text-pine', 'hover:bg-white/60'];
+
+  function paintTab(activeBtn) {
+    tabs.forEach((btn) => {
+      const isActive = btn === activeBtn;
+      btn.setAttribute('aria-selected', String(isActive));
+      btn.classList.remove(...ACTIVE_CLS, ...INACTIVE_CLS);
+      btn.classList.add(...(isActive ? ACTIVE_CLS : INACTIVE_CLS));
+    });
+  }
+
+  function applyFilter(filter, animate = true) {
+    let visible = cards.filter((card) => {
+      const group = card.dataset.group;
+      if (filter === 'today') return group === 'today';
+      if (filter === 'near')  return true;                 // terdekat: semua, diurutkan ulang
+      return true;                                          // semua antrean
+    });
+
+    // Sembunyikan yang tidak lolos filter
+    cards.forEach((card) => card.classList.toggle('hidden', !visible.includes(card)));
+
+    // Urutkan: 'near' berdasarkan jarak GPS; selain itu urutan asli dokumen
+    if (filter === 'near') {
+      visible = visible.slice().sort((a, b) => parseFloat(a.dataset.distance) - parseFloat(b.dataset.distance));
+    }
+    visible.forEach((card, i) => {
+      // Re-append untuk menerapkan urutan baru
+      card.parentNode.insertBefore(card, empty);
+      if (animate) {
+        card.style.animation = 'none';
+        void card.offsetWidth; // reflow supaya animasi berulang
+        card.style.animation = `fade-up .3s cubic-bezier(0.22,1,.36,1) ${Math.min(i * 40, 320)}ms both`;
+      }
+    });
+
+    empty.classList.toggle('hidden', visible.length > 0);
+  }
+
+  tabs.forEach((btn) => {
+    btn.addEventListener('click', () => { paintTab(btn); applyFilter(btn.dataset.filter); });
+  });
+
+  // Hitung ulang label jumlah tiket dari DOM (tetap benar bila data dummy diubah)
+  document.querySelector('[data-count="today"]').textContent = cards.filter((c) => c.dataset.group === 'today').length;
+  document.querySelector('[data-count="all"]').textContent   = cards.length;
+
+  paintTab(tabs[0]);
+  applyFilter('today', false);
+
+  /* ---------- 4. Sinkronisasi data (dummy) ---------- */
+  const btnSync = document.getElementById('btnSync');
+  const icSync  = document.getElementById('icSync');
+  const syncOut = document.getElementById('syncTime');
+
+  btnSync.addEventListener('click', () => {
+    icSync.style.transition = 'transform .8s cubic-bezier(.22,1,.36,1)';
+    icSync.style.transform  = 'rotate(360deg)';
+    btnSync.disabled = true;
+    btnSync.classList.add('opacity-80');
+    toast('Mengunggah 3 paket inspeksi ke server MRV…', 'emerald');
+    setTimeout(() => {
+      icSync.style.transform = 'rotate(0deg)';
+      btnSync.disabled = false;
+      btnSync.classList.remove('opacity-80');
+      const now = new Date();
+      syncOut.textContent = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      toast('Sinkronisasi selesai · 0 konflik data ✔', 'emerald');
+    }, 1400);
+  });
+
+  /* ---------- 5. Toggle layer citra satelit (dummy) ---------- */
+  document.getElementById('btnLegend')
+    .addEventListener('click', () => toast('Layer citra satelit Sentinel-2 (tanggal 18-06-2026) ditampilkan.', 'sky'));
+</script>
+</body>
+</html>

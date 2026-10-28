@@ -20,7 +20,7 @@ const PROTECTED_ROLES = {
 const ROLE_PRIMARY_PATHS = {
   farmer: '/mitra-tani/dashboard',
   corporate: '/korporat',
-  surveyor: '/surveyor',
+  surveyor: '/surveyor/tugas',
   admin: '/admin',
 };
 
@@ -74,6 +74,9 @@ export default function App() {
         return userRole;
       }
       if (targetRole === userRole) {
+        if (userRole === 'surveyor' && (path === '/surveyor' || path === '/surveyor/')) {
+          window.history.replaceState({ view: userRole }, '', '/surveyor/tugas');
+        }
         return userRole;
       }
     }
@@ -130,6 +133,8 @@ export default function App() {
             const userPath = ROLE_PRIMARY_PATHS[normalizedRole] || '/mitra-tani/dashboard';
             window.history.replaceState({ view: normalizedRole }, '', userPath);
             setView(normalizedRole);
+          } else if (normalizedRole === 'surveyor' && (path === '/surveyor' || path === '/surveyor/')) {
+            window.history.replaceState({ view: 'surveyor' }, '', '/surveyor/tugas');
           }
         }
       } catch (err) {
@@ -173,7 +178,12 @@ export default function App() {
       targetPath = matchesRolePath(cur, PROTECTED_ROLES.farmer) ? window.location.pathname : '/mitra-tani/dashboard';
     }
     else if (resolvedView === 'corporate') targetPath = '/korporat';
-    else if (resolvedView === 'surveyor') targetPath = '/surveyor';
+    else if (resolvedView === 'surveyor') {
+      const cur = window.location.pathname.toLowerCase();
+      targetPath = matchesRolePath(cur, PROTECTED_ROLES.surveyor) && cur !== '/surveyor'
+        ? `${window.location.pathname}${window.location.search}`
+        : '/surveyor/tugas';
+    }
     else if (resolvedView === 'surveyor_login') targetPath = '/surveyor/login';
     else if (resolvedView === 'admin') targetPath = '/admin';
     else if (resolvedView === 'admin_login') targetPath = '/admin/login';

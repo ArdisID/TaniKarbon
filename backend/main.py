@@ -33,7 +33,7 @@ from schemas import (
     PolygonValidationResponse, SpatialConflictItem, SpatialOverlayItem,
     AdminScheduleSurveyRequest,
     FarmerProfileUpdateRequest, FarmerProfileResponse, ProfileUpdateRequest, ProfileResponse,
-    BankAccountCreateRequest, BankAccountResponse
+    BankAccountCreateRequest, BankAccountResponse, SurveyorAuditRequest
 )
 from security import (
     limiter, hash_password, verify_password,
@@ -115,6 +115,7 @@ async def on_startup():
         try:
             await conn.execute(text("ALTER TABLE survey_logs ALTER COLUMN surveyor_id DROP NOT NULL;"))
             await conn.execute(text("ALTER TABLE land_plots ADD COLUMN IF NOT EXISTS scheduled_survey_date TIMESTAMP WITHOUT TIME ZONE;"))
+            await conn.execute(text("ALTER TYPE land_status ADD VALUE IF NOT EXISTS 'rejected';"))
         except Exception:
             pass
 
@@ -1743,6 +1744,267 @@ async def admin_schedule_land_survey(
         "scheduled_survey_date": payload.scheduled_survey_date.isoformat(),
         "scheduled_date": formatted_date
     }
+
+
+@app.get("/api/v1/surveyor/tasks")
+async def get_surveyor_tasks(
+    current_user: User = Depends(require_roles(["surveyor", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mengambil seluruh land_plots di database PostgreSQL di mana
+    surveyor_id == current_user.id ATAU surveyor_id IS NULL.
+    Sertakan data lengkap: id, name, farmer_name, area_sqm, area_ha, status,
+    scheduled_survey_date, polygon_boundary, centroid, tree_blocks, dan survey_logs.
+    """
+    query = text("""
+        SELECT lp.id, lp.name, lp.total_area_sqm, CAST(lp.status AS TEXT) as status,
+               ST_AsGeoJSON(lp.polygon_boundary) as geojson_polygon,
+               ST_Y(lp.centroid) as lat,
+               ST_X(lp.centroid) as lng,
+               lp.created_at, lp.surveyor_id, lp.scheduled_survey_date,
+               u_farmer.id as farmer_id,
+               u_farmer.full_name as farmer_name,
+               u_farmer.email as farmer_email,
+               fp.phone_number as farmer_phone,
+               u_surveyor.full_name as surveyor_name
+        FROM land_plots lp
+        JOIN users u_farmer ON lp.farmer_id = u_farmer.id
+        LEFT JOIN farmer_profiles fp ON u_farmer.id = fp.user_id
+        LEFT JOIN users u_surveyor ON lp.surveyor_id = u_surveyor.id
+        WHERE (lp.surveyor_id = :surveyor_id OR lp.surveyor_id IS NULL)
+        ORDER BY 
+            CASE WHEN lp.scheduled_survey_date IS NOT NULL THEN 0 ELSE 1 END,
+            lp.scheduled_survey_date ASC,
+            lp.created_at DESC
+    """)
+    res = await db.execute(query, {"surveyor_id": current_user.id})
+    rows = res.fetchall()
+
+    tasks = []
+    month_names_id = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+    today_date = datetime.utcnow().date()
+
+    for row in rows:
+        tb_query = text("""
+            SELECT tb.id, tb.species_name, tb.planting_year, tb.total_population,
+                   tb.estimated_tco2e_per_year,
+                   (
+                       SELECT ROUND(AVG(ts.circumference_cm / 3.14159265)::numeric, 1)
+                       FROM tree_samples ts
+                       WHERE ts.tree_block_id = tb.id
+                   ) as avg_dbh_cm,
+                   (
+                       SELECT ROUND(AVG(ts.height_m)::numeric, 1)
+                       FROM tree_samples ts
+                       WHERE ts.tree_block_id = tb.id
+                   ) as avg_height_m
+            FROM tree_blocks tb
+            WHERE tb.land_plot_id = :plot_id
+            ORDER BY tb.created_at ASC
+        """)
+        tb_res = await db.execute(tb_query, {"plot_id": row.id})
+        tbs = tb_res.fetchall()
+        
+        tree_blocks_list = []
+        total_trees = 0
+        species_list = []
+        for tb in tbs:
+            total_trees += (tb.total_population or 0)
+            species_list.append(tb.species_name)
+            tree_blocks_list.append({
+                "id": str(tb.id),
+                "species_name": tb.species_name,
+                "planting_year": tb.planting_year,
+                "total_population": tb.total_population,
+                "avg_dbh_cm": float(tb.avg_dbh_cm) if tb.avg_dbh_cm is not None else 25.0,
+                "avg_height_m": float(tb.avg_height_m) if tb.avg_height_m is not None else 12.0,
+                "estimated_tco2e_per_year": float(tb.estimated_tco2e_per_year) if tb.estimated_tco2e_per_year is not None else 0.0
+            })
+
+        species_summary = " & ".join(species_list[:2]) if species_list else "Pohon Agroforestri"
+
+        sl_query = text("""
+            SELECT sl.id, sl.notes, sl.created_at, u.full_name as surveyor_name
+            FROM survey_logs sl
+            LEFT JOIN users u ON sl.surveyor_id = u.id
+            WHERE sl.land_plot_id = :plot_id
+            ORDER BY sl.created_at DESC
+        """)
+        sl_res = await db.execute(sl_query, {"plot_id": row.id})
+        sl_rows = sl_res.fetchall()
+        survey_logs_list = [
+            {
+                "id": str(sl.id),
+                "notes": sl.notes,
+                "created_at": sl.created_at.isoformat() if sl.created_at else None,
+                "surveyor_name": sl.surveyor_name
+            }
+            for sl in sl_rows
+        ]
+        latest_notes = sl_rows[0].notes if sl_rows else "Menunggu verifikasi fisik & sampel DBH."
+
+        polygon_rings = []
+        if row.geojson_polygon:
+            try:
+                geom = json.loads(row.geojson_polygon)
+                if geom.get("type") == "Polygon" and geom.get("coordinates"):
+                    polygon_rings = [[pt[1], pt[0]] for pt in geom["coordinates"][0]]
+                elif geom.get("type") == "MultiPolygon" and geom.get("coordinates"):
+                    polygon_rings = [[pt[1], pt[0]] for pt in geom["coordinates"][0][0]]
+            except Exception:
+                polygon_rings = []
+
+        is_today = False
+        formatted_sched_date = None
+        formatted_sched_time = None
+        if row.scheduled_survey_date:
+            s_dt = row.scheduled_survey_date
+            is_today = (s_dt.date() == today_date)
+            formatted_sched_date = f"{s_dt.day} {month_names_id[s_dt.month - 1]} {s_dt.year}"
+            formatted_sched_time = f"{s_dt.strftime('%H:%M')} WIB"
+
+        raw_uuid = str(row.id).replace("-", "")
+        ticket_code = f"TKT-{raw_uuid[:4].upper()}"
+
+        area_sqm = float(row.total_area_sqm) if row.total_area_sqm else 0.0
+        area_ha = round(area_sqm / 10000, 2)
+
+        # Default fallback koordinat jika centroid null: area Depok/Jakarta (-6.3686, 106.8331)
+        plot_lat = float(row.lat) if row.lat is not None else -6.3686
+        plot_lng = float(row.lng) if row.lng is not None else 106.8331
+
+        tasks.append({
+            "id": str(row.id),
+            "plot_id": str(row.id),
+            "land_plot_id": str(row.id),
+            "ticket_code": ticket_code,
+            "code": ticket_code,
+            "name": row.name,
+            "landName": row.name,
+            "farmer_id": str(row.farmer_id),
+            "farmer_name": row.farmer_name or "Petani TaniKarbon",
+            "farmerName": row.farmer_name or "Petani TaniKarbon",
+            "farmer_phone": row.farmer_phone or "0812-3456-7890",
+            "farmerPhone": row.farmer_phone or "0812-3456-7890",
+            "farmer_email": row.farmer_email,
+            "area_sqm": area_sqm,
+            "areaM2": area_sqm,
+            "area_ha": area_ha,
+            "status": row.status,
+            "tree_blocks": tree_blocks_list,
+            "treeCount": total_trees,
+            "species": species_summary,
+            "survey_logs": survey_logs_list,
+            "scheduledDate": formatted_sched_date,
+            "scheduledTime": formatted_sched_time or "09:00 WIB",
+            "scheduled_survey_date": row.scheduled_survey_date.isoformat() if row.scheduled_survey_date else None,
+            "isToday": is_today,
+            "is_today": is_today,
+            "isScheduled": bool(row.scheduled_survey_date),
+            "is_scheduled": bool(row.scheduled_survey_date),
+            "notes": latest_notes,
+            "lat": plot_lat,
+            "lng": plot_lng,
+            "centroid": [plot_lat, plot_lng],
+            "polygon": polygon_rings,
+            "polygon_boundary": polygon_rings,
+            "geojson": row.geojson_polygon,
+            "geojson_polygon": row.geojson_polygon
+        })
+
+    return tasks
+
+
+@app.post("/api/v1/surveyor/lands/{land_id}/audit")
+async def audit_land_plot(
+    land_id: uuid.UUID,
+    payload: SurveyorAuditRequest,
+    current_user: User = Depends(require_roles(["surveyor", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mencatat keputusan audit lapangan dari surveyor:
+    - approved: Ubah status menjadi 'verified', catat berita acara.
+    - revision: Kembalikan status menjadi 'draft', catat kategori & catatan revisi di survey_logs.
+    - rejected: Ubah status menjadi 'rejected', catat alasan penolakan di survey_logs.
+    """
+    decision = payload.decision.lower().strip()
+    if decision not in ["approved", "revision", "rejected"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Keputusan audit tidak valid. Pilihan: 'approved', 'revision', 'rejected'"
+        )
+
+    check_query = text("SELECT id, name, CAST(status AS TEXT) as status, farmer_id FROM land_plots WHERE id = :land_id")
+    check_res = await db.execute(check_query, {"land_id": land_id})
+    plot = check_res.fetchone()
+    if not plot:
+        raise HTTPException(status_code=404, detail="Petak lahan tidak ditemukan")
+
+    ticket_code = f"AUD-{uuid.uuid4().hex[:6].upper()}"
+
+    if decision == "approved":
+        new_status = "verified"
+        log_content = f"[{ticket_code} - BERITA ACARA VERIFIKASI SURVEYOR] Disetujui oleh {current_user.full_name}: {payload.notes}"
+        
+        # Jika ada penyesuaian blok pohon aktual dari surveyor
+        if payload.block_adjustments:
+            for adj in payload.block_adjustments:
+                block_id = adj.get("block_id") or adj.get("id")
+                act_pop = adj.get("actual_population")
+                if block_id and act_pop is not None:
+                    try:
+                        b_uuid = uuid.UUID(str(block_id))
+                        await db.execute(
+                            text("UPDATE tree_blocks SET total_population = :pop WHERE id = :bid AND land_plot_id = :lid"),
+                            {"pop": int(act_pop), "bid": b_uuid, "lid": land_id}
+                        )
+                    except Exception:
+                        pass
+    elif decision == "revision":
+        new_status = "draft"
+        category = payload.category or "Revisi Batas / Data Lapangan"
+        log_content = f"[{ticket_code} - REVISI LAPANGAN: {category}] {payload.notes}"
+    else:  # rejected
+        new_status = "rejected"
+        log_content = f"[{ticket_code} - PENOLAKAN INSPEKSI LAPANGAN] Ditolak oleh {current_user.full_name}: {payload.notes}"
+
+    # Update status lahan dan surveyor_id penanggung jawab
+    update_query = text("""
+        UPDATE land_plots
+        SET status = CAST(:status AS land_status),
+            surveyor_id = :surveyor_id
+        WHERE id = :land_id
+    """)
+    await db.execute(update_query, {
+        "status": new_status,
+        "surveyor_id": current_user.id,
+        "land_id": land_id
+    })
+
+    # Catat ke survey_logs
+    insert_log = text("""
+        INSERT INTO survey_logs (id, land_plot_id, surveyor_id, notes, created_at)
+        VALUES (gen_random_uuid(), :land_id, :surveyor_id, :notes, CURRENT_TIMESTAMP)
+    """)
+    await db.execute(insert_log, {
+        "land_id": land_id,
+        "surveyor_id": current_user.id,
+        "notes": log_content
+    })
+
+    await db.commit()
+
+    return {
+        "status": "success",
+        "ticket": ticket_code,
+        "land_id": str(land_id),
+        "decision": decision,
+        "new_status": new_status,
+        "message": f"Keputusan audit ({decision}) untuk petak '{plot.name}' berhasil dicatat."
+    }
+
 
 
 @app.get("/api/v1/farmer/dashboard/summary", response_model=FarmerDashboardSummary)

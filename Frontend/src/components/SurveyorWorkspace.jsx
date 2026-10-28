@@ -1,14 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import SurveyorTopBar from './surveyor/SurveyorTopBar';
+import React, { useState, useEffect, useCallback } from 'react';
 import SurveyorSidebar from './surveyor/SurveyorSidebar';
-import SurveyorMobileNav from './surveyor/SurveyorMobileNav';
 import SurveyorDashboardView from './surveyor/SurveyorDashboardView';
-import FieldMapNavigationView from './surveyor/FieldMapNavigationView';
-import FieldInspectionWorksheetView from './surveyor/FieldInspectionWorksheetView';
-import AnnualReverificationView from './surveyor/AnnualReverificationView';
+import SurveyorInspectionView from './surveyor/SurveyorInspectionView';
 import OfflineSyncAndHistoryView from './surveyor/OfflineSyncAndHistoryView';
-import ScheduleVisitModal from './surveyor/ScheduleVisitModal';
-import { CheckCircle2 } from 'lucide-react';
+import { getSurveyorTasks } from '../api/surveyor';
+import { CheckCircle2, Menu } from 'lucide-react';
 
 export default function SurveyorWorkspace({ 
   currentUser,
@@ -16,175 +12,46 @@ export default function SurveyorWorkspace({
   onNavigateRole, 
   onBack 
 }) {
-  // 1. Navigation state
-  const [currentTab, setCurrentTab] = useState('tasks'); // 'tasks' | 'map' | 'inspection' | 'vintage' | 'sync'
+  // Parse initial route from URL
+  const parseCurrentRoute = useCallback(() => {
+    const path = window.location.pathname.toLowerCase();
+    const searchParams = new URLSearchParams(window.location.search);
+    const queryPlotId = searchParams.get('plotId');
 
-  // 2. Interactive Network / PWA State (BISA DIKLIK SAAT DEMO)
-  const [isOnline, setIsOnline] = useState(true);
-  const [offlinePackDownloaded, setOfflinePackDownloaded] = useState(false);
-  const [isDownloadingPack, setIsDownloadingPack] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-
-  // 3. Survey Tickets State
-  const [tickets, setTickets] = useState([
-    {
-      id: 'TKT-WNSB-042',
-      farmerName: 'Pak Joko Widodo',
-      farmerPhone: '0812-3456-7890',
-      landName: 'Lahan 1 - Pekarangan Garung',
-      areaM2: 4520,
-      treeCount: 100,
-      species: 'Mangga Harumanis & Alpukat Mentega',
-      distanceKm: 2.4,
-      status: 'Menunggu Survei',
-      scheduledDate: '27 Okt 2026',
-      scheduledTime: '10:00 WIB',
-      isToday: false,
-      isScheduled: true,
-      notes: 'Batas patok sudah ditandai bambu putih.',
-      lat: -7.3639,
-      lng: 109.9886
-    },
-    {
-      id: 'TKT-WNSB-043',
-      farmerName: 'Pak Hendra Wijaya',
-      farmerPhone: '0813-8821-4921',
-      landName: 'Lahan 2 - Lereng Sindoro Utara',
-      areaM2: 6800,
-      treeCount: 140,
-      species: 'Alpukat Mentega & Kopi Arabika',
-      distanceKm: 1.2,
-      status: 'Menunggu Survei',
-      scheduledDate: '26 Okt 2026',
-      scheduledTime: '13:30 WIB',
-      isToday: true,
-      isScheduled: true,
-      notes: 'Jadwal survei fisik hari ini pukul 13:30.',
-      lat: -7.3580,
-      lng: 109.9920
-    },
-    {
-      id: 'TKT-WNSB-044',
-      farmerName: 'Pak Slamet Riyadi',
-      farmerPhone: '0857-9912-3341',
-      landName: 'Kebun Sengon Blok Kidul',
-      areaM2: 3200,
-      treeCount: 80,
-      species: 'Sengon Soloman',
-      distanceKm: 3.5,
-      status: 'Menunggu Survei',
-      scheduledDate: '26 Okt 2026',
-      scheduledTime: '09:00 WIB',
-      isToday: true,
-      isScheduled: true,
-      notes: 'Akses masuk lewat jalan setapak dusun.',
-      lat: -7.3695,
-      lng: 109.9840
-    },
-    {
-      id: 'TKT-WNSB-045',
-      farmerName: 'Bu Siti Aminah',
-      farmerPhone: '0821-4455-6677',
-      landName: 'Lahan Agroforestri Bawah',
-      areaM2: 5100,
-      treeCount: 110,
-      species: 'Durian Montong & Alpukat',
-      distanceKm: 4.8,
-      status: 'Menunggu Survei',
-      scheduledDate: null,
-      scheduledTime: null,
-      isToday: false,
-      isScheduled: false,
-      notes: 'Belum dijadwalkan kunjungan.',
-      lat: -7.3710,
-      lng: 109.9950
-    },
-    {
-      id: 'TKT-WNSB-046',
-      farmerName: 'Pak Agus Santoso',
-      farmerPhone: '0819-2233-4455',
-      landName: 'Kebun Buah Puncak Dieng',
-      areaM2: 3900,
-      treeCount: 90,
-      species: 'Alpukat & Mangga',
-      distanceKm: 5.6,
-      status: 'Menunggu Revisi Petani',
-      scheduledDate: null,
-      scheduledTime: null,
-      isToday: false,
-      isScheduled: false,
-      notes: 'Foto pita ukur pohon #3 buram, diminta foto ulang.',
-      lat: -7.3520,
-      lng: 109.9810
-    },
-    {
-      id: 'TKT-WNSB-047',
-      farmerName: 'Pak Mulyono',
-      farmerPhone: '0878-1122-3344',
-      landName: 'Lahan Konservasi Mata Air',
-      areaM2: 7400,
-      treeCount: 160,
-      species: 'Beringin & Alpukat Mentega',
-      distanceKm: 6.2,
-      status: 'Menunggu Survei',
-      scheduledDate: null,
-      scheduledTime: null,
-      isToday: false,
-      isScheduled: false,
-      notes: 'Belum dijadwalkan kunjungan.',
-      lat: -7.3750,
-      lng: 109.9790
+    if (path.includes('/peta-rute')) {
+      return { tab: 'map', plotId: null };
     }
-  ]);
-
-  // 4. Inspection & Modal State
-  const [activeInspectionTicket, setActiveInspectionTicket] = useState(tickets[0]);
-  const [selectedTicketForSchedule, setSelectedTicketForSchedule] = useState(null);
-
-  // 5. Offline Queue & History
-  const [offlineQueue, setOfflineQueue] = useState([
-    {
-      id: 'OFF-01',
-      ticketId: 'TKT-WNSB-042',
-      farmerName: 'Pak Joko Widodo',
-      landName: 'Lahan 1 - Pekarangan Garung',
-      filesCount: 4,
-      totalSizeMb: 8.4,
-      status: 'Tersimpan Lokal (IndexedDB)',
-      createdAt: '26 Okt 2026, 10:20 WIB'
+    if (path.includes('/inspeksi')) {
+      return { tab: 'inspection', plotId: queryPlotId };
     }
-  ]);
-
-  const [history, setHistory] = useState([
-    {
-      id: 'HIS-0941',
-      ticketId: 'TKT-WNSB-038',
-      farmerName: 'Pak Supardi',
-      landName: 'Lahan Durian Karanganyar',
-      decision: 'Disahkan ke Pre-Verified',
-      validatedCarbon: '+2.10 tCO2e',
-      checkInTime: '24 Okt 2026, 09:15 WIB',
-      gpsCoord: '-7.3621, 109.9870',
-      clusterStatus: 'Lulus Audit Eksternal (Verified)'
-    },
-    {
-      id: 'HIS-0940',
-      ticketId: 'TKT-WNSB-035',
-      farmerName: 'Pak Wahyudi',
-      landName: 'Kebun Alpukat Lembah Sindoro',
-      decision: 'Disahkan ke Pre-Verified',
-      validatedCarbon: '+1.85 tCO2e',
-      checkInTime: '23 Okt 2026, 14:30 WIB',
-      gpsCoord: '-7.3640, 109.9895',
-      clusterStatus: 'Lulus Audit Eksternal (Verified)'
+    if (path.includes('/riwayat')) {
+      return { tab: 'sync', plotId: null };
     }
-  ]);
+    // Default: /surveyor/tugas
+    return { tab: 'tasks', plotId: null };
+  }, []);
 
-  // Toast Notification
+  const initialRoute = parseCurrentRoute();
+  const [currentTab, setCurrentTab] = useState(initialRoute.tab);
+  const [activePlotId, setActivePlotId] = useState(initialRoute.plotId);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Network State
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  // Real Database Tasks
+  const [tasks, setTasks] = useState([]);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(true);
+
+  // History & Offline Queue
+  const [offlineQueue, setOfflineQueue] = useState([]);
+  const [history, setHistory] = useState([]);
+
+  // Toast State
   const [toastMessage, setToastMessage] = useState(null);
-  const showToast = (msg) => {
-    setToastMessage(msg);
-  };
+  const showToast = useCallback((msg, tone = 'emerald') => {
+    setToastMessage({ msg, tone });
+  }, []);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -192,223 +59,197 @@ export default function SurveyorWorkspace({
     return () => clearTimeout(t);
   }, [toastMessage]);
 
-  // Handlers
-  const handleToggleOnline = () => {
-    setIsOnline(prev => {
-      const next = !prev;
-      showToast(next ? 'Perangkat Online: Terhubung ke Server Pusat TaniKarbon.' : 'Mode Offline Aktif: Data survei akan disimpan di memori IndexedDB.');
-      return next;
-    });
-  };
-
-  const handleDownloadOfflinePack = () => {
-    setIsDownloadingPack(true);
-    setDownloadProgress(15);
-    const interval = setInterval(() => {
-      setDownloadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsDownloadingPack(false);
-          setOfflinePackDownloaded(true);
-          showToast('Paket Wilayah Kerja (14.2 MB) berhasil diunduh. Siap dipakai tanpa sinyal internet!');
-          return 100;
-        }
-        return prev + 25;
-      });
-    }, 350);
-  };
-
-  const handleScheduleSuccess = (ticketId, date, time, notes) => {
-    setTickets(prev => prev.map(t => {
-      if (t.id === ticketId) {
-        return {
-          ...t,
-          isScheduled: true,
-          scheduledDate: date,
-          scheduledTime: `${time} WIB`,
-          notes: notes || t.notes
-        };
-      }
-      return t;
-    }));
-  };
-
-  const handleStartInspectionFromTicket = (ticket) => {
-    setActiveInspectionTicket(ticket);
-    setCurrentTab('map');
-  };
-
-  const handleCheckInSuccess = (ticket) => {
-    setActiveInspectionTicket(ticket);
-    setCurrentTab('inspection');
-  };
-
-  const handleCompleteVerification = (resultData) => {
-    const isApproved = resultData.decision === 'approved';
-    const isRevision = resultData.decision === 'revision';
-
-    // Update tickets status
-    setTickets(prev => prev.map(t => {
-      if (t.id === resultData.ticketId) {
-        return {
-          ...t,
-          status: isApproved ? 'Pre-Verified (Antrean Klaster)' : isRevision ? 'Menunggu Revisi Petani' : 'Ditolak'
-        };
-      }
-      return t;
-    }));
-
-    // Record history
-    const historyItem = {
-      id: `HIS-${Math.floor(1000 + Math.random() * 9000)}`,
-      ticketId: resultData.ticketId,
-      farmerName: resultData.farmerName,
-      landName: activeInspectionTicket?.landName || 'Lahan Pertanian',
-      decision: isApproved ? 'Disahkan ke Pre-Verified' : isRevision ? 'Diminta Revisi' : 'Ditolak',
-      validatedCarbon: isApproved ? `+${resultData.validatedCarbon} tCO2e` : '0.00 tCO2e',
-      checkInTime: resultData.timestamp,
-      gpsCoord: '-7.3639, 109.9886',
-      clusterStatus: isApproved ? 'Menunggu Batch Audit Eksternal' : 'Tidak Memenuhi Syarat'
+  // Online/Offline Listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('Koneksi internet pulih · Mode Sinkronisasi Aktif', 'emerald');
     };
-    setHistory(prev => [historyItem, ...prev]);
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Sinyal offline · Data disimpan lokal di IndexedDB', 'amber');
+    };
 
-    // If offline, add to offline queue
-    if (!isOnline) {
-      const queueItem = {
-        id: `OFF-${Date.now().toString().slice(-4)}`,
-        ticketId: resultData.ticketId,
-        farmerName: resultData.farmerName,
-        landName: activeInspectionTicket?.landName || 'Lahan Pertanian',
-        filesCount: 4,
-        totalSizeMb: 7.8,
-        status: 'Tersimpan Lokal (IndexedDB)',
-        createdAt: resultData.timestamp
-      };
-      setOfflineQueue(prev => [queueItem, ...prev]);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [showToast]);
+
+  // Fetch Real Tasks from PostgreSQL
+  const fetchTasks = useCallback(async () => {
+    try {
+      setIsLoadingTasks(true);
+      const data = await getSurveyorTasks();
+      if (Array.isArray(data)) {
+        setTasks(data);
+        // If we are on inspection tab and activePlotId is not set, set to first plot
+        if (!activePlotId && data.length > 0) {
+          const searchParams = new URLSearchParams(window.location.search);
+          const qId = searchParams.get('plotId');
+          if (qId) {
+            setActivePlotId(qId);
+          } else {
+            setActivePlotId(data[0].id);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch surveyor tasks from backend:', err.message);
+    } finally {
+      setIsLoadingTasks(false);
+    }
+  }, [activePlotId]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  // Two-way URL routing binding
+  const handleSelectTab = useCallback((tabId, params = {}) => {
+    let targetPath = '/surveyor/tugas';
+    let targetPlotId = params.plotId || activePlotId;
+
+    if (tabId === 'map') {
+      targetPath = '/surveyor/peta-rute';
+    } else if (tabId === 'inspection') {
+      if (!targetPlotId && tasks.length > 0) {
+        targetPlotId = tasks[0].id;
+      }
+      targetPath = targetPlotId ? `/surveyor/inspeksi?plotId=${targetPlotId}` : '/surveyor/inspeksi';
+    } else if (tabId === 'sync') {
+      targetPath = '/surveyor/riwayat';
     }
 
-    // Switch tab to sync view to see result
-    setTimeout(() => {
-      setCurrentTab('sync');
-    }, 400);
-  };
+    if (window.location.pathname + window.location.search !== targetPath) {
+      window.history.pushState(null, '', targetPath);
+    }
 
-  const handleSyncAll = () => {
-    setOfflineQueue([]);
-  };
+    setCurrentTab(tabId);
+    if (params.plotId) {
+      setActivePlotId(params.plotId);
+    } else if (targetPlotId && tabId === 'inspection') {
+      setActivePlotId(targetPlotId);
+    }
+  }, [activePlotId, tasks]);
 
-  const pendingTicketsCount = tickets.filter(t => t.status === 'Menunggu Survei').length;
+  // Listen to popstate (browser Back / Forward)
+  useEffect(() => {
+    const handlePopState = () => {
+      const route = parseCurrentRoute();
+      setCurrentTab(route.tab);
+      if (route.plotId) {
+        setActivePlotId(route.plotId);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [parseCurrentRoute]);
+
+  // Sync / Audit Complete Callback
+  const handleAuditComplete = useCallback((decision) => {
+    fetchTasks();
+    handleSelectTab('tasks');
+  }, [fetchTasks, handleSelectTab]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 flex font-sans antialiased">
-      
+    <div className="flex min-h-screen bg-[#F8FAFC] text-slate-800 font-sans antialiased">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-16 lg:bottom-6 right-6 z-50 bg-[#14382C] text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-emerald-400/30 flex items-center gap-3 animate-slide-in-right max-w-md font-sans">
+        <div className="fixed bottom-6 right-6 z-50 bg-[#0F291E] text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-emerald-400/30 flex items-center gap-3 animate-slide-in-right max-w-md font-sans">
           <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-5 h-5" />
           </div>
-          <p className="text-xs font-semibold leading-relaxed">{toastMessage}</p>
+          <p className="text-xs font-semibold leading-relaxed">{toastMessage.msg}</p>
         </div>
       )}
 
-      {/* 1. Left Sidebar Navigation (Desktop-Only, strictly no mobile hamburger) */}
+      {/* 1. Strict Sidebar-Only Navigation (No duplicate top navbar) */}
       <SurveyorSidebar
         currentUser={currentUser}
         onLogout={onLogout}
         currentTab={currentTab}
-        onSelectTab={(tabId) => setCurrentTab(tabId)}
-        pendingCount={pendingTicketsCount}
+        onSelectTab={handleSelectTab}
+        pendingCount={tasks.filter(t => t.status === 'draft' || t.status === 'pending_survey').length}
         syncQueueCount={offlineQueue.length}
+        isOnline={isOnline}
+        mobileOpen={mobileOpen}
+        onCloseMobile={() => setMobileOpen(false)}
       />
 
-      {/* Main Container */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-x-hidden">
-        
-        {/* 2. Topbar Kontekstual & Network Status Header */}
-        <SurveyorTopBar
-          currentUser={currentUser}
-          onLogout={onLogout}
-          isOnline={isOnline}
-          onToggleOnline={handleToggleOnline}
-          offlinePackDownloaded={offlinePackDownloaded}
-          onDownloadOfflinePack={handleDownloadOfflinePack}
-          isDownloadingPack={isDownloadingPack}
-          downloadProgress={downloadProgress}
-          onNavigateRole={onNavigateRole}
-        />
+      {/* Main Content Area (Offset for lg:ml-64 sidebar-only layout) */}
+      <main className="min-w-0 flex-1 lg:ml-64">
+        {/* Mobile Header Bar (Mobile-only trigger for drawer) */}
+        <div className="lg:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 sticky top-0 z-30">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition"
+            aria-label="Buka menu navigasi"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="flex items-center gap-2">
+            <h2 className="font-extrabold text-[#0F291E] text-sm font-sans tracking-tight">TaniKarbon</h2>
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+              FIELD
+            </span>
+          </div>
+          <div className="w-8" />
+        </div>
 
-        {/* 3. Dynamic Page View */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full pb-24 lg:pb-8">
-          
-          {/* HALAMAN 1: Dashboard & Antrean Tiket Survei */}
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+          {/* TAB 1: Tugas & Antrean (Dashboard) -> /surveyor/tugas */}
           {currentTab === 'tasks' && (
             <SurveyorDashboardView
-              tickets={tickets}
-              onOpenScheduleModal={(ticket) => setSelectedTicketForSchedule(ticket)}
-              onStartInspection={handleStartInspectionFromTicket}
-              onNavigateTab={(tab) => setCurrentTab(tab)}
+              currentUser={currentUser}
+              tasks={tasks}
+              onStartInspection={(task) => handleSelectTab('inspection', { plotId: task.id })}
+              onNavigateTab={handleSelectTab}
               onToast={showToast}
             />
           )}
 
-          {/* HALAMAN 2: Peta Navigasi & Geofencing Lapangan */}
+          {/* TAB 2: Peta & Rute Kebun -> /surveyor/peta-rute */}
           {currentTab === 'map' && (
-            <FieldMapNavigationView
-              selectedTicket={activeInspectionTicket}
-              allTickets={tickets}
-              onTicketChange={(ticket) => setActiveInspectionTicket(ticket)}
-              onCheckInSuccess={handleCheckInSuccess}
+            <SurveyorDashboardView
+              currentUser={currentUser}
+              tasks={tasks}
+              onStartInspection={(task) => handleSelectTab('inspection', { plotId: task.id })}
+              onNavigateTab={handleSelectTab}
               onToast={showToast}
             />
           )}
 
-          {/* HALAMAN 3: Lembar Kerja Inspeksi Lapangan */}
+          {/* TAB 3: Form Eksekusi Inspeksi Lahan -> /surveyor/inspeksi?plotId=... */}
           {currentTab === 'inspection' && (
-            <FieldInspectionWorksheetView
-              ticket={activeInspectionTicket}
-              onCompleteVerification={handleCompleteVerification}
-              onBackToMap={() => setCurrentTab('map')}
+            <SurveyorInspectionView
+              plotId={activePlotId}
+              tasks={tasks}
+              currentUser={currentUser}
+              onBack={() => handleSelectTab('tasks')}
+              onNavigateTab={handleSelectTab}
               onToast={showToast}
+              onAuditComplete={handleAuditComplete}
             />
           )}
 
-          {/* HALAMAN 4: Siklus Tahunan / Perpanjangan Vintage */}
-          {currentTab === 'vintage' && (
-            <AnnualReverificationView onToast={showToast} />
-          )}
-
-          {/* HALAMAN 5: Manajer Sinkronisasi Offline & Riwayat */}
+          {/* TAB 4: Riwayat & Sinkronisasi -> /surveyor/riwayat */}
           {currentTab === 'sync' && (
             <OfflineSyncAndHistoryView
               isOnline={isOnline}
               offlineQueue={offlineQueue}
-              onSyncAll={handleSyncAll}
+              onSyncAll={() => setOfflineQueue([])}
               history={history}
               onToast={showToast}
             />
           )}
-        </main>
-      </div>
-
-      {/* 4. Mobile Bottom Navigation Bar (Mobile-Only, lg:hidden) */}
-      <SurveyorMobileNav
-        currentTab={currentTab}
-        onSelectTab={(tabId) => setCurrentTab(tabId)}
-        pendingCount={pendingTicketsCount}
-        syncQueueCount={offlineQueue.length}
-      />
-
-      {/* Modal Penjadwalan Lapangan */}
-      {selectedTicketForSchedule && (
-        <ScheduleVisitModal
-          ticket={selectedTicketForSchedule}
-          onClose={() => setSelectedTicketForSchedule(null)}
-          onScheduleSuccess={handleScheduleSuccess}
-          onToast={showToast}
-        />
-      )}
-
+        </div>
+      </main>
     </div>
   );
 }

@@ -21,9 +21,9 @@ export default function AnnualReverificationView({ onToast }) {
   const renewalTickets = [
     {
       id: 'VIN-2027-TK-001',
-      farmerName: 'Pak Joko Widodo',
-      landName: 'Lahan 1 - Pekarangan Garung',
-      species: 'Mangga Harumanis',
+      farmerName: 'Petani Mitra Mandiri',
+      landName: 'Kebun Sengon Pertama',
+      species: 'Sengon Laut',
       treeCount: 95,
       oldVintage: '2026',
       newVintage: '2027',
@@ -36,9 +36,9 @@ export default function AnnualReverificationView({ onToast }) {
     },
     {
       id: 'VIN-2027-TK-002',
-      farmerName: 'Pak Hendra Wijaya',
-      landName: 'Lahan 2 - Lereng Sindoro',
-      species: 'Alpukat Mentega',
+      farmerName: 'Kelompok Tani Lestari',
+      landName: 'Lahan Pohon Mangrove',
+      species: 'Rhizophora mucronata',
       treeCount: 140,
       oldVintage: '2026',
       newVintage: '2027',
@@ -51,9 +51,9 @@ export default function AnnualReverificationView({ onToast }) {
     },
     {
       id: 'VIN-2027-TK-003',
-      farmerName: 'Pak Slamet Riyadi',
-      landName: 'Kebun Sengon Blok Kidul',
-      species: 'Sengon Soloman',
+      farmerName: 'Karno Sudiro',
+      landName: 'Lahan 4 Karno',
+      species: 'Sengon Solomon',
       treeCount: 80,
       oldVintage: '2026',
       newVintage: '2027',

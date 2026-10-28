@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="id" class="scroll-smooth">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>TaniKarbon · Form Inspeksi & Audit Lapangan</title>
+<meta name="description" content="Portal Surveyor TaniKarbon — validasi geofencing, sampling alometrik, dokumentasi lapangan, dan keputusan audit lahan." />
+
+<!-- ============================================================
+     FONTS: Plus Jakarta Sans (UI) + JetBrains Mono (ID tiket/koordinat)
+============================================================ -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<!-- ============================================================
+     TAILWIND CSS (CDN) + KONFIGURASI DESIGN SYSTEM TANIKARBON
+============================================================ -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['"Plus Jakarta Sans"', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        },
+        colors: {
+          /* Pine Forest — identitas utama header */
+          pine: { DEFAULT: '#0F291E', 900: '#0B1F16', 800: '#123026', 700: '#173D2E' },
+          /* Sky Blue — aksen tugas / aksi surveyor */
+          sky: { 600: '#0284C7' },
+          canvas: '#F8FAFC',
+        },
+        spacing: { 4.5: '1.125rem' }, // 18px — ukuran ikon aksi surveyor (ramah sentuhan jari)
+        boxShadow: {
+          card: '0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06)',
+          lift: '0 10px 28px -14px rgb(15 41 30 / 0.22), 0 2px 8px -3px rgb(15 41 30 / 0.08)',
+          float: '0 -10px 30px -14px rgb(15 41 30 / 0.22)',
+          pin: '0 6px 14px -4px rgb(2 8 23 / 0.35)',
+        },
+      },
+    },
+  };
+</script>
+
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@0.462.0/dist/umd/lucide.min.js"></script>
+
+<style>
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: 2px solid #0284C7; outline-offset: 2px; border-radius: 10px; }
+  [data-lucide] { stroke-width: 1.75; }
+
+  /* --- Scrollbar ramping --- */
+  .scroll-slim::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scroll-slim::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 999px; }
+  .scroll-slim::-webkit-scrollbar-track { background: transparent; }
+
+  /* --- Denyut titik GPS surveyor (merah) --- */
+  @keyframes pulse-ring {
+    0%   { transform: scale(.85); opacity: .8; }
+    70%  { transform: scale(2.2); opacity: 0; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+  .pulse-ring      { animation: pulse-ring 2.1s cubic-bezier(0, 0, .2, 1) infinite; }
+  .pulse-ring-warn { animation: pulse-ring 1.7s cubic-bezier(0, 0, .2, 1) infinite; }
+
+  /* --- Poligon batas lahan berdenyut halus --- */
+  @keyframes poly-breathe {
+    0%, 100% { opacity: .28; }
+    50%      { opacity: .42; }
+  }
+  .poly-breathe { animation: poly-breathe 3.6s ease-in-out infinite; }
+
+  /* --- Animasi masuk --- */
+  @keyframes fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .fade-up { animation: fade-up .34s cubic-bezier(0.22, 1, .36, 1) both; }
+  @keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: none; } }
+  .modal-in { animation: modal-in .24s cubic-bezier(0.22, 1, .36, 1) both; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+  .toast-in { animation: toast-in .26s cubic-bezier(0.22, 1, .36, 1) both; }
+
+  /* --- Peta: grid koordinat + watermark geotag --- */
+  .gis-grid {
+    background-image:
+      linear-gradient(to right, rgba(16,185,129,.10) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(16,185,129,.10) 1px, transparent 1px);
+    background-size: 36px 36px;
+  }
+  .geo-tag {
+    text-shadow: 0 1px 2px rgb(2 8 23 / .85);
+    letter-spacing: .01em;
+  }
+  /* Drag & drop aktif pada area unggah */
+  .drop-active { border-color: #0284C7 !important; background-color: #F0F9FF !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pulse-ring, .pulse-ring-warn, .poly-breathe, .fade-up, .modal-in, .toast-in { animation: none !important; }
+  }
+</style>
+</head>
+
+<body class="min-h-screen bg-canvas font-sans text-slate-800 antialiased">
+
+<!-- ============================================================
+     A · HEADER NAVIGASI EKSEKUSI (sticky, mode fokus penuh)
+============================================================ -->
+<header class="sticky top-0 z-40 border-b border-white/10 bg-pine/95 backdrop-blur-md">
+  <div class="mx-auto max-w-[1200px] px-4 py-3 sm:px-6">
+
+    <!-- Baris 1: Kembali · Identitas · Timer -->
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
+
+      <!-- Tombol kembali ke dashboard -->
+      <a href="dashboardSurveyor.html"
+        class="group inline-flex shrink-0 items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5 text-[13px] font-semibold text-white transition hover:border-white/30 hover:bg-white/10 active:scale-[.98]">
+        <i data-lucide="arrow-left" class="h-4 w-4 transition group-hover:-translate-x-0.5"></i>
+        <span class="hidden sm:inline">Kembali ke Dashboard</span>
+        <span class="sm:hidden">Kembali</span>
+      </a>
+
+      <!-- Informasi tiket -->
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span class="inline-flex items-center gap-1.5 rounded-md bg-sky-500/20 px-2 py-[3px] font-mono text-[11px] font-bold tracking-tight text-sky-200 ring-1 ring-inset ring-sky-400/30">
+            <i data-lucide="ticket" class="h-3 w-3"></i> TKT-WNSB-842
+          </span>
+          <span class="text-white/30">|</span>
+          <span class="inline-flex items-center gap-1.5 truncate text-[13.5px] font-bold text-white">
+            <i data-lucide="user" class="h-3.5 w-3.5 text-emerald-300"></i> Pak Joko Widodo
+          </span>
+          <span class="text-white/30">|</span>
+          <span class="inline-flex items-center gap-1.5 truncate text-[13.5px] font-semibold text-emerald-100/90">
+            <i data-lucide="trees" class="h-3.5 w-3.5 text-emerald-300"></i> Pekarangan Garung
+          </span>
+        </div>
+        <p class="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[10.5px] text-emerald-100/55">
+          <span>Wonosobo, Jawa Tengah</span>
+          <span>·</span>
+          <span>4.520 m²</span>
+          <span>·</span>
+          <span>SRV-09 · Budi Surveyor</span>
+        </p>
+      </div>
+
+      <!-- Timer inspeksi -->
+      <div class="flex shrink-0 items-center gap-2">
+        <span class="hidden items-center gap-1.5 rounded-lg bg-emerald-500/15 px-2.5 py-1.5 font-mono text-[10px] font-semibold text-emerald-200 ring-1 ring-inset ring-emerald-400/25 sm:inline-flex">
+          <span class="relative flex h-1.5 w-1.5">
+            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+          </span>
+          Tersimpan lokal
+        </span>
+        <div class="rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+          <p class="font-mono text-[9px] font-semibold uppercase tracking-[0.1em] text-emerald-100/50">Durasi Audit</p>
+          <p id="auditTimer" class="tnum font-mono text-[16px] font-bold leading-tight text-white">00:15:20</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Baris 2: Indikator langkah (Stepper) -->
+    <nav aria-label="Tahapan inspeksi" class="no-scrollbar -mx-1 mt-3 flex items-center gap-1.5 overflow-x-auto px-1">
+      <a href="#step-1" class="shrink-0 inline-flex items-center gap-2 rounded-lg bg-white/10 px-2.5 py-1.5 text-[11.5px] font-semibold text-white ring-1 ring-inset ring-white/10 transition hover:bg-white/15">
+        <span class="grid h-5 w-5 place-items-center rounded-md bg-emerald-500 font-mono text-[10px] font-bold text-white">1</span>
+        Validasi Spasial
+      </a>
+      <span class="h-px w-4 shrink-0 bg-white/20"></span>
+      <a href="#step-2" class="shrink-0 inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold text-emerald-100/60 transition hover:bg-white/10 hover:text-white">
+        <span class="grid h-5 w-5 place-items-center rounded-md bg-white/10 font-mono text-[10px] font-bold text-emerald-100/80">2</span>
+        Sampling Alometrik
+      </a>
+      <span class="h-px w-4 shrink-0 bg-white/20"></span>
+      <a href="#step-3" class="shrink-0 inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold text-emerald-100/60 transition hover:bg-white/10 hover:text-white">
+        <span class="grid h-5 w-5 place-items-center rounded-md bg-white/10 font-mono text-[10px] font-bold text-emerald-100/80">3</span>
+        Dokumentasi
+      </a>
+      <span class="ml-auto hidden shrink-0 items-center gap-1.5 rounded-lg bg-amber-500/15 px-2.5 py-1.5 font-mono text-[10px] font-semibold text-amber-200 ring-1 ring-inset ring-amber-400/25 md:inline-flex">
+        <i data-lucide="wifi-off" class="h-3 w-3"></i> Mode Lapangan · Antrian sinkron: 2
+      </span>
+    </nav>
+  </div>
+</header>
+
+<!-- ============================================================
+     KONTEN FORM INSPEKSI
+============================================================ -->
+<main class="mx-auto max-w-[1200px] space-y-5 px-4 pb-40 pt-5 sm:px-6 sm:pb-32 sm:pt-6">
+
+  <!-- ========================================================
+       B · STEP 1 · VALIDASI SPASIAL & GEOFENCING (Kartu 1)
+  ========================================================= -->
+  <section id="step-1" class="fade-up overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
+
+    <!-- Header kartu -->
+    <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 p-4 sm:p-5">
+      <div class="flex items-start gap-3">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-100">
+          <i data-lucide="map-pinned" class="h-4.5 w-4.5"></i>
+        </span>
+        <div class="min-w-0">
+          <h2 class="text-[15px] font-bold tracking-tight text-pine">Step 1 · Validasi Spasial &amp; Geofencing</h2>
+          <p class="mt-0.5 text-[12.5px] text-slate-500">Cocokkan posisi GPS Anda dengan poligon klaim batas lahan petani.</p>
+        </div>
+      </div>
+      <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-[10.5px] font-semibold text-slate-500">
+        <i data-lucide="satellite-dish" class="h-3.5 w-3.5"></i> GNSS · 14 satelit
+      </span>
+    </header>
+
+    <!-- Peta inspeksi -->
+    <div class="grid grid-cols-1 lg:grid-cols-5">
+
+      <!-- Kanvas peta -->
+      <div class="relative h-[300px] w-full overflow-hidden bg-[#0b1f16] lg:col-span-3 lg:h-[420px]">
+
+        <!-- Layer 1: Citra satelit blur sebagai latar -->
+        <svg class="absolute inset-0 h-full w-full blur-[1.5px]" viewBox="0 0 800 700" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs>
+            <linearGradient id="insBase" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#3f5e34" />
+              <stop offset="50%" stop-color="#54763c" />
+              <stop offset="100%" stop-color="#6f8039" />
+            </linearGradient>
+            <filter id="insGrain">
+              <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch" />
+              <feColorMatrix type="saturate" values="0" />
+            </filter>
+            <filter id="insOrganic">
+              <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="4" result="nz" />
+              <feDisplacementMap in="SourceGraphic" in2="nz" scale="45" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+            <filter id="insSoft"><feGaussianBlur stdDeviation="30" /></filter>
+          </defs>
+          <rect width="800" height="700" fill="url(#insBase)" />
+          <g filter="url(#insOrganic)" opacity=".9">
+            <path d="M-30,40 L300,10 L340,200 L20,230 Z" fill="#47682f" />
+            <path d="M320,-20 L700,30 L660,220 L340,190 Z" fill="#5b7c39" />
+            <path d="M-30,260 L280,240 L320,430 L-10,460 Z" fill="#3d5a2c" />
+            <path d="M300,250 L680,220 L700,420 L330,440 Z" fill="#66823d" />
+            <path d="M-30,500 L360,480 L380,700 L-30,700 Z" fill="#49692e" />
+            <path d="M400,470 L830,440 L830,700 L420,700 Z" fill="#567a37" />
+          </g>
+          <!-- Jalan desa & sungai kecil -->
+          <path d="M-20,470 C160,440 300,500 480,455 C640,415 760,470 830,440" fill="none" stroke="#c9c3b5" stroke-width="8" opacity=".45" />
+          <path d="M700,0 C680,180 740,360 700,700" fill="none" stroke="#2f6fb0" stroke-width="10" opacity=".4" />
+          <ellipse cx="200" cy="180" rx="180" ry="80" fill="#2d4522" opacity=".2" filter="url(#insSoft)" />
+          <rect width="800" height="700" filter="url(#insGrain)" opacity=".15" style="mix-blend-mode:multiply" />
+          <rect class="gis-grid" width="800" height="700" />
+        </svg>
+
+        <!-- Layer 2: Gradasi penggelap -->
+        <div class="absolute inset-0 bg-gradient-to-tr from-pine/65 via-pine/10 to-transparent"></div>
+
+        <!-- Layer 3: Poligon klaim batas lahan (garis hijau) -->
+        <svg class="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <polygon class="poly-breathe" points="18,22 78,14 88,62 46,84 14,58"
+            fill="rgba(16,185,129,.32)" stroke="#10B981" stroke-width="3" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          <g fill="#10B981" stroke="#ECFDF5" stroke-width="2" vector-effect="non-scaling-stroke">
+            <circle cx="18" cy="22" r="2.2" /><circle cx="78" cy="14" r="2.2" /><circle cx="88" cy="62" r="2.2" />
+            <circle cx="46" cy="84" r="2.2" /><circle cx="14" cy="58" r="2.2" />
+          </g>
+        </svg>
+
+        <!-- Layer 4: Titik GPS surveyor (merah berdenyut) di dalam poligon -->
+        <div class="absolute left-[48%] top-[46%] -translate-x-1/2 -translate-y-1/2">
+          <span class="absolute inset-0 grid place-items-center">
+            <span class="pulse-ring block h-10 w-10 rounded-full bg-rose-500/70"></span>
+          </span>
+          <span class="relative grid h-10 w-10 place-items-center rounded-full bg-rose-500 ring-4 ring-white/85 shadow-pin">
+            <i data-lucide="crosshair" class="h-5 w-5 text-white"></i>
+          </span>
+          <span class="absolute left-1/2 top-12 -translate-x-1/2 whitespace-nowrap rounded-md bg-white/95 px-2 py-1 font-mono text-[10px] font-bold text-rose-600 shadow-card">
+            GPS ANDA
+          </span>
+        </div>
+
+        <!-- Layer 5: Label vertex patok -->
+        <span class="absolute left-[18%] top-[22%] -translate-x-1/2 -translate-y-1/2 rounded bg-emerald-500 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white shadow-card">P1</span>
+        <span class="absolute left-[78%] top-[14%] -translate-x-1/2 -translate-y-1/2 rounded bg-emerald-500 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white shadow-card">P2</span>
+        <span class="absolute left-[88%] top-[62%] -translate-x-1/2 -translate-y-1/2 rounded bg-emerald-500 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white shadow-card">P3</span>
+        <span class="absolute left-[46%] top-[84%] -translate-x-1/2 -translate-y-1/2 rounded bg-emerald-500 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white shadow-card">P4</span>
+        <span class="absolute left-[14%] top-[58%] -translate-x-1/2 -translate-y-1/2 rounded bg-emerald-500 px-1.5 py-0.5 font-mono text-[9px] font-bold text-white shadow-card">P5</span>
+
+        <!-- Legend -->
+        <div class="absolute bottom-3 left-3 rounded-xl bg-white/92 px-3 py-2 backdrop-blur-sm">
+          <p class="flex items-center gap-1.5 font-mono text-[10px] font-semibold text-slate-600">
+            <span class="inline-block h-0.5 w-5 rounded bg-emerald-500"></span> Poligon klaim petani (5 titik)
+          </p>
+          <p class="mt-1 flex items-center gap-1.5 font-mono text-[10px] font-semibold text-slate-600">
+            <span class="inline-block h-2.5 w-2.5 rounded-full bg-rose-500"></span> Posisi GPS surveyor
+          </p>
+        </div>
+
+        <!-- Kontrol zoom dummy -->
+        <div class="absolute right-3 top-3 flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-card backdrop-blur-sm">
+          <button type="button" aria-label="Perbesar peta" class="grid h-9 w-9 place-items-center text-slate-600 transition hover:bg-slate-100 hover:text-pine">
+            <i data-lucide="plus" class="h-4 w-4"></i>
+          </button>
+          <span class="h-px w-full bg-slate-200"></span>
+          <button type="button" aria-label="Perkecil peta" class="grid h-9 w-9 place-items-center text-slate-600 transition hover:bg-slate-100 hover:text-pine">
+            <i data-lucide="minus" class="h-4 w-4"></i>
+          </button>
+          <span class="h-px w-full bg-slate-200"></span>
+          <button type="button" aria-label="Kunci ke posisi saya" class="grid h-9 w-9 place-items-center text-sky-600 transition hover:bg-sky-50">
+            <i data-lucide="locate-fixed" class="h-4 w-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Panel samping: status geofencing & metrik spasial -->
+      <div class="space-y-4 border-t border-slate-200/80 p-4 lg:col-span-2 lg:border-l lg:border-t-0 sm:p-5">
+
+        <!-- Status geofencing -->
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
+          <p class="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-emerald-800">
+            <span class="relative flex h-2 w-2">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-70"></span>
+              <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+            </span>
+            Status Geofencing
+          </p>
+          <p class="mt-2 text-[13.5px] font-bold leading-snug text-pine">
+            🟢 Surveyor berada di dalam area poligon
+            <span class="block font-mono text-[11.5px] font-semibold text-emerald-700">(Akurasi GPS: ±4 meter)</span>
+          </p>
+          <p class="mt-2 text-[12px] leading-relaxed text-emerald-900/70">
+            Posisi terekam masuk dalam batas klaim. Validasi spasial dapat dilanjutkan ke tahap sampling.
+          </p>
+        </div>
+
+        <!-- Metrik koordinat -->
+        <dl class="grid grid-cols-2 gap-2.5">
+          <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <dt class="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">Latitude</dt>
+            <dd class="tnum mt-0.5 font-mono text-[13px] font-bold text-pine">-7.362410</dd>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <dt class="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">Longitude</dt>
+            <dd class="tnum mt-0.5 font-mono text-[13px] font-bold text-pine">109.902184</dd>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <dt class="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">Luas Poligon</dt>
+            <dd class="tnum mt-0.5 font-mono text-[13px] font-bold text-pine">4.520 m²</dd>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <dt class="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">Jarak ke Tepi</dt>
+            <dd class="tnum mt-0.5 font-mono text-[13px] font-bold text-pine">11,4 m</dd>
+          </div>
+        </dl>
+
+        <!-- Checklist verifikasi patok -->
+        <div class="rounded-xl border border-slate-200 p-3.5">
+          <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Checklist Patok Batas</p>
+          <ul class="mt-2.5 space-y-2">
+            <li>
+              <label class="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-slate-600 transition hover:text-pine">
+                <input type="checkbox" checked class="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                Patok P1–P3 ditemukan fisik di lapangan
+              </label>
+            </li>
+            <li>
+              <label class="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-slate-600 transition hover:text-pine">
+                <input type="checkbox" checked class="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                Tidak ada sengketa batas dengan tetangga
+              </label>
+            </li>
+            <li>
+              <label class="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium text-slate-600 transition hover:text-pine">
+                <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                Poligon sesuai kondisi tutupan lahan
+              </label>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Aksi ulangi pembacaan GPS -->
+        <button type="button" id="btnRefreshGps"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 active:scale-[.99]">
+          <i data-lucide="refresh-cw" id="icGps" class="h-4 w-4"></i> Ulangi Pembacaan GPS
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================
+       C · STEP 2 · FORM INPUT SAMPLING ALOMETRIK (Kartu 2)
+  ======================================================== -->
+  <section id="step-2" class="fade-up overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card" style="animation-delay:.06s">
+
+    <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 p-4 sm:p-5">
+      <div class="flex items-start gap-3">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-100">
+          <i data-lucide="ruler" class="h-4.5 w-4.5"></i>
+        </span>
+        <div class="min-w-0">
+          <h2 class="text-[15px] font-bold tracking-tight text-pine">Step 2 · Form Input Sampling Alometrik</h2>
+          <p class="mt-0.5 text-[12.5px] text-slate-500">Bandingkan klaim petani dengan hasil ukur aktual di lapangan.</p>
+        </div>
+      </div>
+      <button type="button" id="btnAddRow"
+        class="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-2.5 text-[13px] font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100 active:scale-[.98]">
+        <i data-lucide="plus" class="h-4 w-4"></i> Tambah Sampel
+      </button>
+    </header>
+
+    <div class="p-4 sm:p-5">
+
+      <!-- Tabel sampling (desktop) -->
+      <div class="hidden overflow-hidden rounded-xl border border-slate-200 lg:block">
+        <table class="w-full border-collapse text-left">
+          <thead>
+            <tr class="bg-slate-50/80">
+              <th scope="col" class="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Jenis / Klaim Petani</th>
+              <th scope="col" class="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Klaim (Pohon)</th>
+              <th scope="col" class="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-sky-700">Jumlah Pohon Hidup</th>
+              <th scope="col" class="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-sky-700">Rata-rata DBH (cm)</th>
+              <th scope="col" class="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Rata-rata Tinggi (m)<span class="ml-1 text-slate-300">ops.</span></th>
+              <th scope="col" class="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">Catatan Kesehatan</th>
+            </tr>
+          </thead>
+          <tbody id="sampleRows" class="divide-y divide-slate-100">
+
+            <!-- Baris 1 · Sengon Laut -->
+            <tr class="group transition hover:bg-sky-50/40">
+              <td class="px-4 py-3.5 align-top">
+                <p class="flex items-center gap-2 text-[13.5px] font-bold text-pine">
+                  <i data-lucide="tree-deciduous" class="h-4 w-4 text-emerald-600"></i> Sengon Laut
+                </p>
+                <p class="mt-0.5 font-mono text-[10.5px] text-slate-400">Paraserianthes falcataria · 4.520 m²</p>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <span class="tnum inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-[13px] font-bold text-slate-600">100 Pohon</span>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <label class="block">
+                  <span class="sr-only">Jumlah pohon hidup — Sengon Laut</span>
+                  <input type="number" min="0" step="1" value="94" data-claim="100"
+                    class="sample-alive w-28 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+                </label>
+                <p class="sample-hint mt-1.5 font-mono text-[10.5px] font-semibold text-slate-400">Selisih: -6 (-6,0%)</p>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <label class="block">
+                  <span class="sr-only">Rata-rata lingkar batang / DBH — Sengon Laut</span>
+                  <input type="number" min="0" step="0.1" value="24.6"
+                    class="sample-dbh w-28 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+                </label>
+                <p class="mt-1.5 font-mono text-[10.5px] text-slate-400">Klaim: 22,0 cm</p>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <label class="block">
+                  <span class="sr-only">Rata-rata tinggi — Sengon Laut</span>
+                  <input type="number" min="0" step="0.1" placeholder="—"
+                    class="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+                </label>
+                <p class="mt-1.5 font-mono text-[10.5px] text-slate-400">Monokotil saja</p>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <label class="block">
+                  <span class="sr-only">Catatan kesehatan pohon — Sengon Laut</span>
+                  <input type="text" value="Sehat, 6 pohon mati karena rebah (angin kencang Januari)."
+                    class="w-full min-w-[220px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-pine shadow-sm transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+                </label>
+              </td>
+            </tr>
+
+            <!-- Baris 2 · Kelapa Dalam -->
+            <tr class="group transition hover:bg-sky-50/40">
+              <td class="px-4 py-3.5 align-top">
+                <p class="flex items-center gap-2 text-[13.5px] font-bold text-pine">
+                  <i data-lucide="palmtree" class="h-4 w-4 text-emerald-600"></i> Kelapa Dalam
+                </p>
+                <p class="mt-0.5 font-mono text-[10.5px] text-slate-400">Cocos nucifera · monokotil</p>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <span class="tnum inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-[13px] font-bold text-slate-600">30 Pohon</span>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <label class="block">
+                  <span class="sr-only">Jumlah pohon hidup — Kelapa Dalam</span>
+                  <input type="number" min="0" step="1" value="30" data-claim="30"
+                    class="sample-alive w-28 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition hover:border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+                </label>
+                <p class="sample-hint mt-1.5 font-mono text-[10.5px] font-semibold text-slate-400">Selisih: 0 (0,0%)</p>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <label class="block">
+                  <span class="sr-only">Rata-rata lingkar batang / DBH — Kelapa Dalam</span>
+                  <input type="number" min="0" step="0.1" value="41.2"
+                    class="sample-dbh w-28 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition hover:border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+                </label>
+                <p class="mt-1.5 font-mono text-[10.5px] text-slate-400">Klaim: 40,0 cm</p>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <label class="block">
+                  <span class="sr-only">Rata-rata tinggi — Kelapa Dalam</span>
+                  <input type="number" min="0" step="0.1" value="9.4"
+                    class="w-24 rounded-xl border border-emerald-200 bg-emerald-50/40 px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition hover:border-emerald-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/25" />
+                </label>
+                <p class="mt-1.5 font-mono text-[10.5px] font-semibold text-emerald-600">Wajib (monokotil)</p>
+              </td>
+              <td class="px-4 py-3.5 align-top">
+                <label class="block">
+                  <span class="sr-only">Catatan kesehatan pohon — Kelapa Dalam</span>
+                  <input type="text" placeholder="Mis: daun menguning pada 2 rumpun…"
+                    class="w-full min-w-[220px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-pine shadow-sm transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+                </label>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Kartu sampling (tablet/mobile) -->
+      <div class="space-y-3 lg:hidden">
+
+        <!-- Sampel 1 -->
+        <article class="rounded-xl border border-slate-200 p-4 transition hover:border-sky-200 hover:bg-sky-50/30">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="flex items-center gap-2 text-[14px] font-bold text-pine">
+                <i data-lucide="tree-deciduous" class="h-4 w-4 text-emerald-600"></i> Sengon Laut
+              </p>
+              <p class="mt-0.5 font-mono text-[10.5px] text-slate-400">Paraserianthes falcataria</p>
+            </div>
+            <span class="tnum shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-[12px] font-bold text-slate-600">Klaim: 100</span>
+          </div>
+          <div class="mt-3 grid grid-cols-2 gap-3">
+            <label class="block">
+              <span class="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-sky-700">Jumlah Pohon Hidup</span>
+              <input type="number" min="0" step="1" value="94"
+                class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+            </label>
+            <label class="block">
+              <span class="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-sky-700">Rata-rata DBH (cm)</span>
+              <input type="number" min="0" step="0.1" value="24.6"
+                class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+            </label>
+            <label class="block col-span-2">
+              <span class="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-slate-400">Rata-rata Tinggi (m) — opsional</span>
+              <input type="number" min="0" step="0.1" placeholder="Khusus monokotil"
+                class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition placeholder:text-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+            </label>
+            <label class="block col-span-2">
+              <span class="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-slate-400">Catatan Kesehatan Pohon</span>
+              <input type="text" value="Sehat, 6 pohon mati karena rebah (angin kencang Januari)."
+                class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-[13px] text-pine shadow-sm transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+            </label>
+          </div>
+        </article>
+
+        <!-- Sampel 2 -->
+        <article class="rounded-xl border border-slate-200 p-4 transition hover:border-sky-200 hover:bg-sky-50/30">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="flex items-center gap-2 text-[14px] font-bold text-pine">
+                <i data-lucide="palmtree" class="h-4 w-4 text-emerald-600"></i> Kelapa Dalam
+              </p>
+              <p class="mt-0.5 font-mono text-[10.5px] text-slate-400">Cocos nucifera · monokotil</p>
+            </div>
+            <span class="tnum shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-[12px] font-bold text-slate-600">Klaim: 30</span>
+          </div>
+          <div class="mt-3 grid grid-cols-2 gap-3">
+            <label class="block">
+              <span class="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-sky-700">Jumlah Pohon Hidup</span>
+              <input type="number" min="0" step="1" value="30"
+                class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+            </label>
+            <label class="block">
+              <span class="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-sky-700">Rata-rata DBH (cm)</span>
+              <input type="number" min="0" step="0.1" value="41.2"
+                class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+            </label>
+            <label class="block col-span-2">
+              <span class="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-emerald-700">Rata-rata Tinggi (m)</span>
+              <input type="number" min="0" step="0.1" value="9.4"
+                class="w-full rounded-xl border border-emerald-200 bg-emerald-50/40 px-3 py-2.5 text-[14px] font-semibold text-pine shadow-sm transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/25" />
+            </label>
+            <label class="block col-span-2">
+              <span class="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-slate-400">Catatan Kesehatan Pohon</span>
+              <input type="text" placeholder="Mis: daun menguning pada 2 rumpun…"
+                class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-[13px] text-pine shadow-sm transition placeholder:text-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25" />
+            </label>
+          </div>
+        </article>
+      </div>
+
+      <!-- Ringkasan deviasi (dihitung otomatis dari input) -->
+      <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
+          <p class="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">Total Klaim</p>
+          <p class="tnum mt-1 text-[20px] font-extrabold leading-none text-pine">130</p>
+        </div>
+        <div class="rounded-xl border border-sky-200 bg-sky-50/70 p-3.5">
+          <p class="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-sky-700">Total Aktual</p>
+          <p id="sumActual" class="tnum mt-1 text-[20px] font-extrabold leading-none text-sky-700">124</p>
+        </div>
+        <div class="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5">
+          <p class="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-amber-700">Deviasi</p>
+          <p id="sumDeviation" class="tnum mt-1 text-[20px] font-extrabold leading-none text-amber-700">-4,6%</p>
+        </div>
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5">
+          <p class="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-emerald-700">Estimasi Biomassa</p>
+          <p class="tnum mt-1 text-[20px] font-extrabold leading-none text-emerald-700">18,7 t</p>
+        </div>
+      </div>
+      <p class="mt-2.5 flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-[12px] leading-relaxed text-slate-500">
+        <i data-lucide="info" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400"></i>
+        Deviasi di bawah <span class="font-semibold text-slate-600">±10%</span> masih dalam toleransi MRV. Jika lebih besar, gunakan tombol
+        <span class="font-semibold text-amber-700">Minta Revisi Batas</span> di bawah untuk mengembalikan data ke petani.
+      </p>
+    </div>
+  </section>
+
+  <!-- ========================================================
+       D · STEP 3 · DOKUMENTASI LAPANGAN (Kartu 3)
+  ======================================================== -->
+  <section id="step-3" class="fade-up overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card" style="animation-delay:.12s">
+
+    <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 p-4 sm:p-5">
+      <div class="flex items-start gap-3">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-100">
+          <i data-lucide="camera" class="h-4.5 w-4.5"></i>
+        </span>
+        <div class="min-w-0">
+          <h2 class="text-[15px] font-bold tracking-tight text-pine">Step 3 · Dokumentasi Lapangan</h2>
+          <p class="mt-0.5 text-[12.5px] text-slate-500">Unggah bukti visual yang akan diverifikasi validator pusat.</p>
+        </div>
+      </div>
+      <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-[10.5px] font-semibold text-slate-500">
+        <i data-lucide="image" class="h-3.5 w-3.5"></i> 2 dari 3 foto wajib
+      </span>
+    </header>
+
+    <div class="p-4 sm:p-5">
+
+      <!-- Syarat dokumentasi -->
+      <div class="flex items-start gap-2.5 rounded-xl border border-sky-200 bg-sky-50/70 p-3.5">
+        <i data-lucide="list-checks" class="mt-0.5 h-4 w-4 shrink-0 text-sky-600"></i>
+        <p class="text-[12.5px] leading-relaxed text-sky-900">
+          Wajib melampirkan <span class="font-bold">1 foto patok batas lahan</span> dan
+          <span class="font-bold">1 foto kanopi/tegakan pohon</span>. Foto akan di-geotag otomatis.
+        </p>
+      </div>
+
+      <!-- Area unggah (drag & drop / klik kamera) -->
+      <div id="dropzone"
+        class="mt-3.5 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-6 py-9 text-center transition hover:border-sky-400 hover:bg-sky-50/40">
+        <span class="grid h-14 w-14 place-items-center rounded-2xl bg-white text-sky-600 shadow-card ring-1 ring-inset ring-slate-200">
+          <i data-lucide="camera" class="h-6 w-6"></i>
+        </span>
+        <p class="mt-3 text-[14px] font-bold text-pine">Seret &amp; lepas foto di sini</p>
+        <p class="mt-0.5 text-[12.5px] text-slate-500">atau ambil langsung dari kamera perangkat</p>
+        <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+          <label class="cursor-pointer">
+            <span class="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-card transition hover:bg-sky-700 hover:shadow-lift active:scale-[.98]">
+              <i data-lucide="upload" class="h-4 w-4"></i> Pilih dari Galeri
+            </span>
+            <input type="file" accept="image/*" multiple class="hidden" id="fileInput" />
+          </label>
+          <label class="cursor-pointer">
+            <span class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-slate-600 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 active:scale-[.98]">
+              <i data-lucide="aperture" class="h-4 w-4"></i> Buka Kamera
+            </span>
+            <input type="file" accept="image/*" capture="environment" class="hidden" id="cameraInput" />
+          </label>
+        </div>
+        <p class="mt-3 font-mono text-[10.5px] text-slate-400">JPG/PNG · maks. 8 MB/foto · EXIF &amp; koordinat GPS ikut tersimpan</p>
+      </div>
+
+      <!-- Thumbnail foto dummy yang sudah diunggah -->
+      <p class="mt-5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Foto Terunggah (2)</p>
+      <div class="mt-2.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+
+        <!-- Foto 1 · Patok batas lahan -->
+        <figure class="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-card transition hover:border-emerald-300 hover:shadow-lift">
+          <div class="relative h-44 w-full overflow-hidden">
+            <!-- Dummy visual patok batas (SVG) -->
+            <svg class="h-full w-full" viewBox="0 0 400 260" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <defs>
+                <linearGradient id="sky1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#bfe3f5" /><stop offset="100%" stop-color="#e6f3e0" />
+                </linearGradient>
+                <filter id="grain1"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" /><feColorMatrix type="saturate" values="0" /></filter>
+              </defs>
+              <rect width="400" height="260" fill="url(#sky1)" />
+              <!-- Bukit -->
+              <path d="M0,150 C90,110 170,140 260,120 C330,104 370,124 400,116 L400,260 L0,260 Z" fill="#5b823f" />
+              <!-- Tanah -->
+              <rect y="170" width="400" height="90" fill="#6d8a4a" />
+              <!-- Deretan pohon latar -->
+              <g fill="#3f6230" opacity=".85">
+                <circle cx="60" cy="150" r="26" /><circle cx="140" cy="146" r="30" /><circle cx="250" cy="142" r="24" /><circle cx="340" cy="148" r="28" />
+              </g>
+              <g fill="#6b4a2a">
+                <rect x="56" y="150" width="8" height="30" /><rect x="135" y="146" width="9" height="34" /><rect x="246" y="142" width="8" height="28" /><rect x="336" y="148" width="9" height="32" />
+              </g>
+              <!-- Patok batas depan -->
+              <g>
+                <rect x="176" y="118" width="24" height="90" rx="3" fill="#f5f1e6" stroke="#c9c0a8" stroke-width="2" />
+                <rect x="176" y="118" width="24" height="26" fill="#e11d48" />
+                <text x="188" y="164" text-anchor="middle" font-family="monospace" font-size="13" font-weight="700" fill="#0F291E">P1</text>
+                <ellipse cx="188" cy="210" rx="30" ry="7" fill="#4a5c33" opacity=".55" />
+              </g>
+              <rect width="400" height="260" filter="url(#grain1)" opacity=".1" style="mix-blend-mode:multiply" />
+            </svg>
+
+            <!-- Watermark koordinat -->
+            <figcaption class="geo-tag absolute bottom-2 left-2 right-2 flex items-center justify-between gap-2 rounded-lg bg-black/35 px-2 py-1 font-mono text-[9.5px] font-semibold text-white backdrop-blur-[1px]">
+              <span>-7.362410, 109.902184</span>
+              <span class="text-emerald-200">24 Jun 2026 · 08:47</span>
+            </figcaption>
+            <!-- Badge jenis -->
+            <span class="absolute left-2 top-2 rounded-md bg-emerald-600/95 px-2 py-1 font-mono text-[9.5px] font-bold uppercase tracking-wide text-white">
+              Patok Batas P1
+            </span>
+            <!-- Tombol hapus -->
+            <button type="button" aria-label="Hapus foto patok batas"
+              class="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-lg bg-white/90 text-slate-600 opacity-0 shadow-card transition hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100">
+              <i data-lucide="trash-2" class="h-4 w-4"></i>
+            </button>
+          </div>
+          <div class="flex items-center gap-2 border-t border-slate-200 bg-white px-3 py-2.5">
+            <i data-lucide="badge-check" class="h-3.5 w-3.5 shrink-0 text-emerald-600"></i>
+            <p class="truncate text-[12px] font-semibold text-slate-600">patok_batas_P1.jpg · 2,4 MB</p>
+          </div>
+        </figure>
+
+        <!-- Foto 2 · Kanopi / tegakan pohon -->
+        <figure class="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-card transition hover:border-emerald-300 hover:shadow-lift">
+          <div class="relative h-44 w-full overflow-hidden">
+            <!-- Dummy visual kanopi (SVG) -->
+            <svg class="h-full w-full" viewBox="0 0 400 260" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <defs>
+                <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#d6ecd0" /><stop offset="100%" stop-color="#8fae6a" />
+                </linearGradient>
+                <filter id="grain2"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" /><feColorMatrix type="saturate" values="0" /></filter>
+              </defs>
+              <rect width="400" height="260" fill="url(#sky2)" />
+              <!-- Kanopi rapat -->
+              <g fill="#2f5f33" opacity=".9">
+                <circle cx="40" cy="52" r="46" /><circle cx="120" cy="34" r="52" /><circle cx="205" cy="50" r="48" />
+                <circle cx="292" cy="30" r="54" /><circle cx="368" cy="56" r="44" />
+                <circle cx="82" cy="96" r="38" /><circle cx="250" cy="92" r="36" />
+              </g>
+              <g fill="#3d7740" opacity=".8">
+                <circle cx="66" cy="40" r="30" /><circle cx="168" cy="62" r="28" /><circle cx="330" cy="44" r="30" />
+              </g>
+              <!-- Batang -->
+              <g fill="#5c4023">
+                <rect x="112" y="96" width="16" height="150" /><rect x="252" y="104" width="14" height="140" /><rect x="188" y="118" width="12" height="120" />
+              </g>
+              <!-- Semak bawah -->
+              <path d="M0,200 C80,180 150,214 230,196 C310,178 360,206 400,192 L400,260 L0,260 Z" fill="#3a6b34" />
+              <rect width="400" height="260" filter="url(#grain2)" opacity=".1" style="mix-blend-mode:multiply" />
+            </svg>
+
+            <!-- Watermark koordinat -->
+            <figcaption class="geo-tag absolute bottom-2 left-2 right-2 flex items-center justify-between gap-2 rounded-lg bg-black/35 px-2 py-1 font-mono text-[9.5px] font-semibold text-white backdrop-blur-[1px]">
+              <span>-7.362377, 109.902241</span>
+              <span class="text-emerald-200">24 Jun 2026 · 08:52</span>
+            </figcaption>
+            <!-- Badge jenis -->
+            <span class="absolute left-2 top-2 rounded-md bg-emerald-600/95 px-2 py-1 font-mono text-[9.5px] font-bold uppercase tracking-wide text-white">
+              Kanopi Tegakan
+            </span>
+            <!-- Tombol hapus -->
+            <button type="button" aria-label="Hapus foto kanopi"
+              class="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-lg bg-white/90 text-slate-600 opacity-0 shadow-card transition hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 group-hover:opacity-100">
+              <i data-lucide="trash-2" class="h-4 w-4"></i>
+            </button>
+          </div>
+          <div class="flex items-center gap-2 border-t border-slate-200 bg-white px-3 py-2.5">
+            <i data-lucide="badge-check" class="h-3.5 w-3.5 shrink-0 text-emerald-600"></i>
+            <p class="truncate text-[12px] font-semibold text-slate-600">kanopi_tegakan_utara.jpg · 3,1 MB</p>
+          </div>
+        </figure>
+      </div>
+
+      <!-- Catatan tambahan surveyor -->
+      <label class="mt-5 block">
+        <span class="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Catatan Audit Tambahan</span>
+        <textarea rows="3" placeholder="Mis: Akses jalan menuju lahan hanya bisa dilewati motor; patok P4 perlu diganti karena lapuk."
+          class="w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13.5px] text-pine shadow-sm transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/25"></textarea>
+      </label>
+    </div>
+  </section>
+
+  <!-- Catatan kaki -->
+  <p class="text-center font-mono text-[10.5px] text-slate-400">
+    TaniKarbon · Audit TKT-WNSB-842 · SRV-09 · Data tersimpan lokal &amp; menunggu sinkronisasi
+  </p>
+</main>
+
+<!-- ============================================================
+     E · FOOTER FLOATING ACTIONS (Keputusan Audit)
+============================================================ -->
+<div class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-float">
+  <div class="mx-auto max-w-[1200px] px-4 py-3 sm:px-6">
+
+    <!-- Baris ringkasan singkat (desktop) -->
+    <div class="mb-2.5 hidden items-center justify-between gap-3 md:flex">
+      <p class="flex items-center gap-2 font-mono text-[10.5px] font-semibold text-slate-400">
+        <i data-lucide="shield-check" class="h-3.5 w-3.5 text-emerald-600"></i>
+        Geofencing valid · Sampling 2/2 terisi · Dokumentasi 2/3
+      </p>
+      <p class="font-mono text-[10.5px] text-slate-400">Keputusan audit tidak dapat diubah setelah dikirim</p>
+    </div>
+
+    <!-- 3 tombol keputusan -->
+    <div class="grid grid-cols-3 items-stretch gap-2 sm:gap-3">
+
+      <!-- 1 · TOLAK PERMANEN -->
+      <button type="button" id="btnReject"
+        class="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-rose-200 bg-white px-3 py-3.5 text-[12.5px] font-bold text-rose-600 transition hover:border-rose-400 hover:bg-rose-50 active:scale-[.98] sm:text-[14px]">
+        <i data-lucide="x-octagon" class="h-4.5 w-4.5 shrink-0"></i>
+        <span class="truncate">Tolak Permanen</span>
+      </button>
+
+      <!-- 2 · MINTA REVISI BATAS -->
+      <button type="button" id="btnRevise"
+        class="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-amber-300 bg-amber-500 px-3 py-3.5 text-[12.5px] font-bold text-white transition hover:bg-amber-600 hover:shadow-lift active:scale-[.98] sm:text-[14px]">
+        <i data-lucide="pencil-ruler" class="h-4.5 w-4.5 shrink-0"></i>
+        <span class="truncate">Minta Revisi Batas</span>
+      </button>
+
+      <!-- 3 · SETUJUI & VERIFIKASI -->
+      <button type="button" id="btnApprove"
+        class="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-3.5 text-[12.5px] font-extrabold text-white shadow-card transition hover:bg-emerald-700 hover:shadow-lift active:scale-[.98] sm:text-[14px]">
+        <i data-lucide="check" class="h-4.5 w-4.5 shrink-0"></i>
+        <span class="truncate">✓ Setujui &amp; Verifikasi</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     F · MODAL "MINTA REVISI PETANI"
+============================================================ -->
+<div id="modalRevise" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="modalReviseTitle">
+  <!-- Backdrop -->
+  <div id="modalBackdrop" class="absolute inset-0 bg-pine/50 backdrop-blur-sm"></div>
+
+  <!-- Panel modal -->
+  <div class="absolute inset-0 flex items-end justify-center p-0 sm:items-center sm:p-6">
+    <div id="modalPanel" class="modal-in relative max-h-[92vh] w-full max-w-lg overflow-y-auto scroll-slim rounded-t-2xl border border-slate-200 bg-white shadow-lift sm:rounded-2xl">
+
+      <!-- Header modal -->
+      <header class="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+        <div class="flex items-start gap-3">
+          <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-100">
+            <i data-lucide="pencil-ruler" class="h-5 w-5"></i>
+          </span>
+          <div class="min-w-0">
+            <h3 id="modalReviseTitle" class="text-[15px] font-bold tracking-tight text-pine">Minta Revisi Petani</h3>
+            <p class="mt-0.5 font-mono text-[10.5px] text-slate-400">TKT-WNSB-842 · Pak Joko Widodo</p>
+          </div>
+        </div>
+        <button type="button" id="btnCloseModal" aria-label="Tutup modal"
+          class="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-pine active:scale-95">
+          <i data-lucide="x" class="h-4 w-4"></i>
+        </button>
+      </header>
+
+      <!-- Isi modal -->
+      <div class="space-y-4 px-5 py-4">
+
+        <!-- Dropdown kategori kesalahan -->
+        <label class="block">
+          <span class="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Kategori Kesalahan</span>
+          <span class="relative block">
+            <select id="reviseCategory"
+              class="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3.5 py-3 pr-10 text-[13.5px] font-medium text-pine shadow-sm transition hover:border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/25">
+            <option value="" disabled selected>Pilih kategori kesalahan…</option>
+            <option>Koordinat Poligon Melenceng</option>
+            <option>Luas Lahan Tidak Sesuai Fisik</option>
+            <option>Jumlah Pohon Tidak Sesuai</option>
+            <option>Patok Batas Tidak Ditemukan / Rusak</option>
+            <option>Foto Dokumentasi Tidak Lengkap</option>
+            <option>Lainnya (jelaskan pada catatan)</option>
+          </select>
+          <i data-lucide="chevron-down" class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"></i>
+          </span>
+        </label>
+
+        <!-- Textarea catatan untuk petani -->
+        <label class="block">
+          <span class="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Catatan untuk Petani</span>
+          <textarea id="reviseNote" rows="4"
+            placeholder="Contoh: Tolong geser poligon patok utara sejauh 5 meter ke kiri karena menabrak jalan desa."
+            class="w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13.5px] leading-relaxed text-pine shadow-sm transition placeholder:text-slate-300 hover:border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/25">Tolong geser poligon patok utara sejauh 5 meter ke kiri karena menabrak jalan desa.</textarea>
+          <span class="mt-1.5 flex items-center justify-between">
+            <span class="font-mono text-[10px] text-slate-400">Catatan akan dikirim via WhatsApp &amp; notifikasi aplikasi petani.</span>
+            <span id="noteCount" class="tnum font-mono text-[10px] font-semibold text-slate-400">0/500</span>
+          </span>
+        </label>
+
+        <!-- Pengingat SLA -->
+        <div class="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3.5">
+          <i data-lucide="calendar-clock" class="mt-0.5 h-4 w-4 shrink-0 text-amber-600"></i>
+          <p class="text-[12.5px] leading-relaxed text-amber-900">
+            Tiket masuk ke antrean <span class="font-bold">Menunggu Revisi</span>. Petani memiliki batas waktu
+            <span class="font-bold">3 hari</span> untuk memperbaiki dan mengirim ulang data.
+          </p>
+        </div>
+      </div>
+
+      <!-- Footer modal -->
+      <footer class="sticky bottom-0 flex items-center gap-2.5 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+        <button type="button" id="btnCancelRevise"
+          class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[13.5px] font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[.98]">
+          Batal
+        </button>
+        <button type="button" id="btnSendRevise"
+          class="inline-flex flex-[1.4] items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-[13.5px] font-bold text-white shadow-card transition hover:bg-amber-600 hover:shadow-lift active:scale-[.98]">
+          <i data-lucide="send" class="h-4 w-4"></i> Kirim Instruksi Revisi
+        </button>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     TOAST CONTAINER
+============================================================ -->
+<div id="toastHost" class="pointer-events-none fixed inset-x-0 bottom-28 z-[60] flex flex-col items-center gap-2 px-4 sm:bottom-32"></div>
+
+<!-- ============================================================
+     JAVASCRIPT · interaksi ringan (Vanilla JS)
+     1. Timer audit berjalan
+     2. Hitung deviasi sampling otomatis
+     3. Drag & drop / input foto
+     4. Modal revisi (buka, tutup, kirim)
+     5. Keputusan audit (setujui / tolak)
+============================================================ -->
+<script>
+  /* ---------- 0. Render ikon Lucide ---------- */
+  if (window.lucide) lucide.createIcons();
+
+  /* ---------- 1. Toast sederhana ---------- */
+  const toastHost = document.getElementById('toastHost');
+  function toast(message, tone = 'pine') {
+    const tones = {
+      pine:     'border-pine/20 bg-pine text-white',
+      sky:      'border-sky-200 bg-white text-sky-800',
+      emerald:  'border-emerald-200 bg-white text-emerald-800',
+      amber:    'border-amber-200 bg-white text-amber-900',
+      rose:     'border-rose-200 bg-white text-rose-800',
+    };
+    const el = document.createElement('div');
+    el.className = `toast-in pointer-events-auto flex max-w-md items-start gap-2.5 rounded-xl border px-4 py-3 text-[13px] font-semibold shadow-lift ${tones[tone] || tones.pine}`;
+    el.innerHTML = `<i data-lucide="info" class="mt-0.5 h-4 w-4 shrink-0 opacity-70"></i><span class="min-w-0">${message}</span>`;
+    toastHost.appendChild(el);
+    if (window.lucide) lucide.createIcons();
+    setTimeout(() => { el.style.transition = 'opacity .25s, transform .25s'; el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; }, 3400);
+    setTimeout(() => el.remove(), 3700);
+  }
+
+  /* ---------- 2. Timer audit ---------- */
+  const timerEl = document.getElementById('auditTimer');
+  let seconds = 15 * 60 + 20; // mulai dari 00:15:20 sesuai spesifikasi PRD
+  setInterval(() => {
+    seconds += 1;
+    const h = String(Math.floor(seconds / 3600)).padStart(2, '0');
+    const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+    const s = String(seconds % 60).padStart(2, '0');
+    timerEl.textContent = `${h}:${m}:${s}`;
+  }, 1000);
+
+  /* ---------- 3. Hitung deviasi sampling secara otomatis ---------- */
+  const aliveInputs = Array.from(document.querySelectorAll('.sample-alive'));
+  const sumActualEl = document.getElementById('sumActual');
+  const sumDevEl    = document.getElementById('sumDeviation');
+
+  function recalcSamples() {
+    let claim = 0, actual = 0;
+    aliveInputs.forEach((input) => {
+      const c = parseFloat(input.dataset.claim) || 0;
+      const a = parseFloat(input.value) || 0;
+      claim += c;
+      actual += a;
+
+      // Update hint per baris (selisih & persentase)
+      const hint = input.closest('td')?.querySelector('.sample-hint')
+                || input.parentElement?.querySelector('.sample-hint');
+      if (hint) {
+        const diff = a - c;
+        const pct  = c ? (diff / c) * 100 : 0;
+        const sign = diff > 0 ? '+' : (diff < 0 ? '' : '±');
+        hint.textContent = `Selisih: ${sign}${diff} (${sign}${pct.toFixed(1)}%)`;
+        hint.className = 'sample-hint mt-1.5 font-mono text-[10.5px] font-semibold ' +
+          (Math.abs(pct) > 10 ? 'text-rose-600' : Math.abs(pct) > 0 ? 'text-amber-600' : 'text-emerald-600');
+      }
+    });
+
+    sumActualEl.textContent = actual;
+    const dev = claim ? ((actual - claim) / claim) * 100 : 0;
+    sumDevEl.textContent = `${dev > 0 ? '+' : ''}${dev.toFixed(1)}%`;
+    sumDevEl.className = 'tnum mt-1 text-[20px] font-extrabold leading-none ' +
+      (Math.abs(dev) > 10 ? 'text-rose-700' : 'text-amber-700');
+  }
+  aliveInputs.forEach((input) => input.addEventListener('input', recalcSamples));
+  recalcSamples();
+
+  /* ---------- 4. Tambah baris sampel (dummy) ---------- */
+  document.getElementById('btnAddRow').addEventListener('click', () => {
+    toast('Baris sampel baru ditambahkan · isi jenis tanaman & hasil ukur.', 'sky');
+  });
+
+  /* ---------- 5. Ulangi pembacaan GPS (dummy) ---------- */
+  document.getElementById('btnRefreshGps').addEventListener('click', () => {
+    const ic = document.getElementById('icGps');
+    ic.style.transition = 'transform .8s cubic-bezier(.22,1,.36,1)';
+    ic.style.transform = 'rotate(360deg)';
+    toast('Mengkalibrasi ulang GNSS… akurasi sekarang ±3,1 m.', 'emerald');
+    setTimeout(() => { ic.style.transform = 'rotate(0deg)'; }, 900);
+  });
+
+  /* ---------- 6. Area unggah foto (drag & drop + klik) ---------- */
+  const dropzone = document.getElementById('dropzone');
+  ['dragenter', 'dragover'].forEach((evt) => {
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add('drop-active'); });
+  });
+  ['dragleave', 'drop'].forEach((evt) => {
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove('drop-active'); });
+  });
+  dropzone.addEventListener('drop', () => toast('Foto diterima, sedang di-geotag & diunggah…', 'emerald'));
+  ['fileInput', 'cameraInput'].forEach((id) => {
+    document.getElementById(id).addEventListener('change', () => toast('Foto dipilih · koordinat GPS otomatis tersemat.', 'emerald'));
+  });
+
+  /* ---------- 7. Modal "Minta Revisi Petani" ---------- */
+  const modal   = document.getElementById('modalRevise');
+  const panel   = document.getElementById('modalPanel');
+  const noteEl  = document.getElementById('reviseNote');
+  const countEl = document.getElementById('noteCount');
+
+  function openModal() {
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    panel.classList.remove('modal-in'); void panel.offsetWidth; panel.classList.add('modal-in');
+    setTimeout(() => noteEl.focus(), 60);
+  }
+  function closeModal() {
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('btnRevise').addEventListener('click', openModal);
+  document.getElementById('btnCloseModal').addEventListener('click', closeModal);
+  document.getElementById('btnCancelRevise').addEventListener('click', closeModal);
+  document.getElementById('modalBackdrop').addEventListener('click', closeModal);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal(); });
+
+  // Karakter counter pada textarea catatan
+  function updateCount() { countEl.textContent = `${noteEl.value.length}/500`; }
+  noteEl.addEventListener('input', updateCount);
+  updateCount();
+
+  // Kirim instruksi revisi
+  document.getElementById('btnSendRevise').addEventListener('click', () => {
+    const cat  = document.getElementById('reviseCategory');
+    const note = noteEl.value.trim();
+    if (!cat.value)      { toast('Pilih kategori kesalahan terlebih dahulu.', 'rose'); cat.focus(); return; }
+    if (note.length < 10){ toast('Catatan untuk petani minimal 10 karakter.', 'rose'); noteEl.focus(); return; }
+    closeModal();
+    toast(`Instruksi revisi (${cat.value}) dikirim ke Pak Joko Widodo ✔`, 'amber');
+  });
+
+  /* ---------- 8. Keputusan audit: setujui & tolak ---------- */
+  document.getElementById('btnApprove').addEventListener('click', () => {
+    toast('Lahan TKT-WNSB-842 terverifikasi ✔ Menunggu sinkronisasi ke server MRV.', 'emerald');
+  });
+
+  document.getElementById('btnReject').addEventListener('click', () => {
+    // Konfirmasi berlapis karena keputusan bersifat permanen
+    if (confirm('Tolak permanen tiket TKT-WNSB-842?\n\nTindakan ini menggugurkan lahan dari program karbon dan tidak dapat dibatalkan.')) {
+      toast('Tiket digugurkan permanen · alasan wajib dilengkapi pada laporan.', 'rose');
+    }
+  });
+</script>
+</body>
+</html>

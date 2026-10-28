@@ -590,7 +590,7 @@ export default function FieldInspectionWorksheetView({
                   +1,94 <span className="text-base font-normal font-mono text-white">tCO2e / tahun</span>
                 </div>
                 <span className="text-[10px] text-emerald-400 font-sans block">
-                  Dikunci Permanen untuk Kuota Klaster Garung Wonosobo
+                  Dikunci Permanen untuk Kuota Klaster Agroforestri
                 </span>
               </div>
             </div>
