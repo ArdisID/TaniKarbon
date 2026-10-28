@@ -1,22 +1,18 @@
 import React from 'react';
 import { 
   ClipboardList, 
-  MapPin, 
-  FileCheck2, 
   History 
 } from 'lucide-react';
 
 export default function SurveyorMobileNav({ 
   currentTab, 
   onSelectTab,
-  pendingCount = 6,
+  pendingCount = 0,
   syncQueueCount = 0
 }) {
   const tabs = [
-    { id: 'tasks', label: 'Tugas', icon: ClipboardList, badge: pendingCount > 0 ? pendingCount : null },
-    { id: 'map', label: 'Peta', icon: MapPin },
-    { id: 'inspection', label: 'Inspeksi', icon: FileCheck2 },
-    { id: 'sync', label: 'Riwayat', icon: History, badge: syncQueueCount > 0 ? syncQueueCount : null },
+    { id: 'tasks', label: 'Tugas & Rute', icon: ClipboardList, badge: pendingCount > 0 ? pendingCount : null },
+    { id: 'sync', label: 'Riwayat & Sinkron', icon: History, badge: syncQueueCount > 0 ? syncQueueCount : null },
   ];
 
   return (

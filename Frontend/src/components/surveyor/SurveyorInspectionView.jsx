@@ -33,7 +33,7 @@ import {
   Crosshair,
   Loader2
 } from 'lucide-react';
-import { MapContainer, TileLayer, Polygon, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Marker, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { submitSurveyorAudit } from '../../api/surveyor';
@@ -95,13 +95,28 @@ export default function SurveyorInspectionView({
   onToast,
   onAuditComplete
 }) {
-  // 1. Resolve Land Plot Data
+  // 1. Resolve Land Plot Data (STRICT: NO fallback to tasks[0])
   const plot = useMemo(() => {
     if (!plotId || !tasks || tasks.length === 0) {
-      return tasks?.[0] || null;
+      return null;
     }
-    return tasks.find((t) => t.id === plotId || t.land_id === plotId) || tasks[0] || null;
+    return tasks.find((t) => t.id === plotId || t.land_id === plotId) || null;
   }, [plotId, tasks]);
+
+  // Strict route guard: redirect to /surveyor/tugas if plotId is missing
+  useEffect(() => {
+    if (!plotId) {
+      if (onBack) onBack();
+    }
+  }, [plotId, onBack]);
+
+  // Guard: if tasks are loaded and the plotId is not found, return to dashboard
+  useEffect(() => {
+    if (plotId && tasks.length > 0 && !plot) {
+      if (onToast) onToast('Lahan tidak ditemukan dalam antrean inspeksi Anda.', 'rose');
+      if (onBack) onBack();
+    }
+  }, [plotId, tasks, plot, onBack, onToast]);
 
   const activePlotId = plot?.id || plotId || 'plot-default';
   const displayTicketId = 'TKT-' + (plot?.id ? plot.id.slice(0, 8).toUpperCase() : 'WNSB-842');
@@ -135,6 +150,45 @@ export default function SurveyorInspectionView({
       [-6.3695, 106.8330]
     ];
   }, [plot]);
+
+  // 4 Extreme Points (North, East, South, West) when polygon > 6 vertices
+  const extremeVertexMap = useMemo(() => {
+    if (!polygonLatLngs || polygonLatLngs.length <= 6) return null;
+
+    let northIdx = 0;
+    let southIdx = 0;
+    let eastIdx = 0;
+    let westIdx = 0;
+
+    polygonLatLngs.forEach((pt, i) => {
+      const lat = pt[0];
+      const lng = pt[1];
+      if (lat > polygonLatLngs[northIdx][0]) northIdx = i;
+      if (lat < polygonLatLngs[southIdx][0]) southIdx = i;
+      if (lng > polygonLatLngs[eastIdx][1]) eastIdx = i;
+      if (lng < polygonLatLngs[westIdx][1]) westIdx = i;
+    });
+
+    const extremeList = [
+      { idx: northIdx, name: 'Utara' },
+      { idx: eastIdx, name: 'Timur' },
+      { idx: southIdx, name: 'Selatan' },
+      { idx: westIdx, name: 'Barat' }
+    ];
+
+    const map = new Map();
+    let counter = 1;
+    extremeList.forEach((item) => {
+      if (!map.has(item.idx)) {
+        map.set(item.idx, {
+          label: `Patok ${counter++}`,
+          direction: item.name
+        });
+      }
+    });
+
+    return map;
+  }, [polygonLatLngs]);
 
   // Centroid
   const centroidLatLng = useMemo(() => {
@@ -472,8 +526,25 @@ export default function SurveyorInspectionView({
     }
   };
 
+  if (!plot) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-center font-sans">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mb-3" />
+        <p className="font-bold text-[#0F291E]">Memuat data inspeksi lahan…</p>
+        <p className="text-xs text-slate-500 mt-1">Mengambil koordinat dan pohon dari server</p>
+        <button
+          type="button"
+          onClick={onBack || (() => onNavigateTab && onNavigateTab('tasks'))}
+          className="mt-4 px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition cursor-pointer"
+        >
+          ← Kembali ke Dashboard
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-800 antialiased pb-32">
+    <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-800 antialiased pb-36">
       {/* ============================================================
            A · HEADER NAVIGASI EKSEKUSI (Sticky Pine Forest)
       ============================================================ */}
@@ -574,9 +645,9 @@ export default function SurveyorInspectionView({
       </header>
 
       {/* ============================================================
-           KONTEN UTAMA FORM INSPEKSI
+           KONTEN UTAMA FORM INSPEKSI (Mode Fokus Layar Penuh)
       ============================================================ */}
-      <main className="mx-auto max-w-[1200px] space-y-6 px-4 pt-6 sm:px-6">
+      <main className="mx-auto max-w-[1200px] space-y-6 px-4 pt-6 pb-36 sm:px-6 sm:pb-40">
 
         {/* ========================================================
              B · STEP 1 · VALIDASI SPASIAL & GEOFENCING
@@ -641,19 +712,62 @@ export default function SurveyorInspectionView({
                   </Polygon>
                 )}
 
-                {/* Marker Vertex Poligon P1, P2, dll */}
-                {polygonLatLngs.map((pt, idx) => (
-                  <Marker
-                    key={idx}
-                    position={pt}
-                    icon={L.divIcon({
-                      className: 'vertex-marker',
-                      html: `<div style="background:#10B981;color:#fff;border:2px solid #ECFDF5;border-radius:4px;padding:1px 4px;font-size:9px;font-family:monospace;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,0.3);">P${idx + 1}</div>`,
-                      iconSize: [24, 18],
-                      iconAnchor: [12, 9]
-                    })}
-                  />
-                ))}
+                {/* Marker Vertex Poligon: jika > 6 hanya render 4 patok utama ekstrem; titik lain berupa CircleMarker halus */}
+                {polygonLatLngs.map((pt, idx) => {
+                  const isLargePolygon = polygonLatLngs.length > 6;
+                  if (isLargePolygon) {
+                    const extreme = extremeVertexMap?.get(idx);
+                    if (extreme) {
+                      return (
+                        <Marker
+                          key={`patok-extreme-${idx}`}
+                          position={pt}
+                          icon={L.divIcon({
+                            className: 'vertex-marker',
+                            html: `<div style="background:#0F291E;color:#10B981;border:2px solid #10B981;border-radius:6px;padding:2px 6px;font-size:10px;font-family:monospace;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;">${extreme.label}</div>`,
+                            iconSize: [56, 22],
+                            iconAnchor: [28, 11]
+                          })}
+                        >
+                          <Popup>
+                            <div className="font-sans text-xs">
+                              <strong>{extreme.label} ({extreme.direction})</strong>
+                              <p className="font-mono text-[10px] text-slate-500 mt-0.5">
+                                {pt[0].toFixed(6)}, {pt[1].toFixed(6)}
+                              </p>
+                            </div>
+                          </Popup>
+                        </Marker>
+                      );
+                    }
+                    return (
+                      <CircleMarker
+                        key={`patok-dot-${idx}`}
+                        center={pt}
+                        radius={3}
+                        pathOptions={{
+                          color: '#10B981',
+                          fillColor: '#FFFFFF',
+                          fillOpacity: 0.9,
+                          weight: 1.5
+                        }}
+                      />
+                    );
+                  }
+
+                  return (
+                    <Marker
+                      key={`patok-${idx}`}
+                      position={pt}
+                      icon={L.divIcon({
+                        className: 'vertex-marker',
+                        html: `<div style="background:#10B981;color:#fff;border:2px solid #ECFDF5;border-radius:4px;padding:1px 4px;font-size:9px;font-family:monospace;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,0.3);">P${idx + 1}</div>`,
+                        iconSize: [24, 18],
+                        iconAnchor: [12, 9]
+                      })}
+                    />
+                  );
+                })}
 
                 {/* Titik GPS Surveyor (Denyut Hijau-Zamrud & Crosshair) */}
                 <Marker
@@ -686,7 +800,7 @@ export default function SurveyorInspectionView({
               {/* Legend Peta */}
               <div className="absolute bottom-3 left-3 z-[1000] rounded-xl bg-white/95 px-3 py-2 shadow-sm backdrop-blur-sm border border-slate-200">
                 <p className="flex items-center gap-1.5 font-mono text-[10px] font-semibold text-slate-700">
-                  <span className="inline-block h-0.5 w-4 rounded bg-emerald-500"></span> Batas Poligon Petani ({polygonLatLngs.length} Patok)
+                  <span className="inline-block h-0.5 w-4 rounded bg-emerald-500"></span> Batas Poligon Petani ({polygonLatLngs.length} Titik{polygonLatLngs.length > 6 ? ' · 4 Patok Utama' : ` · ${polygonLatLngs.length} Patok`})
                 </p>
                 <p className="mt-1 flex items-center gap-1.5 font-mono text-[10px] font-semibold text-slate-700">
                   <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#0F291E] ring-1 ring-emerald-500"></span> Posisi GPS Surveyor
@@ -766,7 +880,7 @@ export default function SurveyorInspectionView({
                         onChange={(e) => setChecklists((prev) => ({ ...prev, p1_p3: e.target.checked }))}
                         className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                       />
-                      Patok P1–P{polygonLatLngs.length || 4} ditemukan fisik di lapangan
+                      Patok batas fisik {polygonLatLngs.length > 6 ? '(4 Patok Utama)' : `(P1–P${polygonLatLngs.length || 4})`} ditemukan di lapangan
                     </label>
                   </li>
                   <li>

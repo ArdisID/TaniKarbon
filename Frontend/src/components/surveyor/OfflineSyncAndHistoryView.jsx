@@ -7,8 +7,10 @@ import {
   Upload, 
   RefreshCw, 
   CheckCheck,
-  SearchX
+  SearchX,
+  FileText
 } from 'lucide-react';
+import BeritaAcaraModal from './BeritaAcaraModal';
 
 export default function OfflineSyncAndHistoryView({ 
   isOnline = true, 
@@ -19,6 +21,7 @@ export default function OfflineSyncAndHistoryView({
 }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0);
+  const [selectedBa, setSelectedBa] = useState(null);
 
   const handleSyncNow = () => {
     if (!isOnline) {
@@ -189,7 +192,8 @@ export default function OfflineSyncAndHistoryView({
                   <th className="px-5 py-3.5 whitespace-nowrap text-center">Keputusan Surveyor</th>
                   <th className="px-5 py-3.5 whitespace-nowrap text-right">Tonase Tervalidasi</th>
                   <th className="px-5 py-3.5 whitespace-nowrap">Waktu &amp; GPS Check-In</th>
-                  <th className="px-5 py-3.5 whitespace-nowrap text-right">Status Audit</th>
+                  <th className="px-5 py-3.5 whitespace-nowrap text-center">Status Audit</th>
+                  <th className="px-5 py-3.5 whitespace-nowrap text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-sans">
@@ -223,10 +227,20 @@ export default function OfflineSyncAndHistoryView({
                         {item.gpsCoord}
                       </span>
                     </td>
-                    <td className="px-5 py-4 whitespace-nowrap text-right">
+                    <td className="px-5 py-4 whitespace-nowrap text-center">
                       <span className="px-2.5 py-1 rounded-lg text-xs font-sans font-medium bg-slate-100 text-slate-700 border border-slate-200">
                         {item.clusterStatus}
                       </span>
+                    </td>
+                    <td className="px-5 py-4 whitespace-nowrap text-right">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBa(item)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F291E] text-white hover:bg-[#173D2E] text-xs font-bold transition shadow-xs cursor-pointer"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Lihat Berita Acara</span>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -235,6 +249,13 @@ export default function OfflineSyncAndHistoryView({
           </div>
         )}
       </div>
+
+      {/* Official Berita Acara Modal */}
+      <BeritaAcaraModal
+        isOpen={Boolean(selectedBa)}
+        onClose={() => setSelectedBa(null)}
+        data={selectedBa}
+      />
     </div>
   );
 }

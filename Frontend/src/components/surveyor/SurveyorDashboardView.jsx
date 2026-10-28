@@ -33,13 +33,15 @@ import {
   CheckCircle2,
   ExternalLink,
   LocateFixed,
-  AlertTriangle
+  AlertTriangle,
+  FileText
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Polygon, Polyline, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getSurveyorTasks } from '../../api/surveyor';
 import { getStoredUser } from '../../api/auth';
+import BeritaAcaraModal from './BeritaAcaraModal';
 
 // Helper hitung jarak Haversine (km)
 function calculateHaversineDistanceKm(lat1, lon1, lat2, lon2) {
@@ -108,10 +110,12 @@ function parseGeoJsonPolygon(geojson) {
 
 export default function SurveyorDashboardView({
   currentUser: propUser,
+  tasks: propTasks,
   onOpenScheduleModal,
   onStartInspection,
   onNavigateTab,
-  onToast
+  onToast,
+  onRefreshTasks
 }) {
   // 1. Deteksi Sinyal (Online/Offline) Otomatis
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -168,16 +172,27 @@ export default function SurveyorDashboardView({
   }, []);
 
   // 3. Fetch Data Tugas Surveyor (Backend Integration - 100% PostgreSQL, ZERO Mock)
-  const [tasks, setTasks] = useState([]);
-  const [isLoadingTasks, setIsLoadingTasks] = useState(true);
+  const [tasks, setTasks] = useState(propTasks || []);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(!propTasks || propTasks.length === 0);
   const [syncTime, setSyncTime] = useState('08:00');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [selectedBaTask, setSelectedBaTask] = useState(null);
 
   const activeUser = propUser || getStoredUser() || { full_name: 'Budi Surveyor', email: 'surveyor@tanikarbon.com' };
+
+  useEffect(() => {
+    if (propTasks && propTasks.length > 0) {
+      setTasks(propTasks);
+      setIsLoadingTasks(false);
+    }
+  }, [propTasks]);
 
   const loadSurveyorTasks = async () => {
     try {
       setIsLoadingTasks(true);
+      if (onRefreshTasks) {
+        await onRefreshTasks();
+      }
       const data = await getSurveyorTasks();
       if (Array.isArray(data)) {
         setTasks(data);
@@ -186,14 +201,16 @@ export default function SurveyorDashboardView({
       }
     } catch (err) {
       console.warn('Gagal memuat tugas dari API backend:', err.message);
-      setTasks([]);
+      if (!propTasks) setTasks([]);
     } finally {
       setIsLoadingTasks(false);
     }
   };
 
   useEffect(() => {
-    loadSurveyorTasks();
+    if (!propTasks || propTasks.length === 0) {
+      loadSurveyorTasks();
+    }
   }, []);
 
   // Sinkronisasi data interaktif
@@ -284,32 +301,65 @@ export default function SurveyorDashboardView({
     });
   }, [tasks, surveyorLocation]);
 
+  // Helpers filter lahan
+  const isPendingInspectionPlot = (t) => {
+    const s = String(t.status || '').toLowerCase();
+    const isPendingStatus = s === 'draft' || s === 'pending_survey' || s.includes('pending');
+    const hasTreeBlocks = Array.isArray(t.tree_blocks) && t.tree_blocks.length > 0;
+    return isPendingStatus && hasTreeBlocks;
+  };
+
+  const isCompletedPlot = (t) => {
+    const s = String(t.status || '').toLowerCase();
+    return s === 'verified' || s === 'approved' || s.includes('verif') || s === 'rejected';
+  };
+
+  // 1. Antrean Aktif (HANYA draft / pending_survey DAN memiliki minimal 1 tree block)
+  const activeInspectionTasks = useMemo(() => {
+    return enrichedTasks.filter(isPendingInspectionPlot);
+  }, [enrichedTasks]);
+
+  // 2. Lahan Selesai Diaudit (verified / rejected) untuk Berita Acara Read-Only
+  const completedTasks = useMemo(() => {
+    return enrichedTasks.filter(isCompletedPlot);
+  }, [enrichedTasks]);
+
   // Selected Task
   const selectedTask = useMemo(() => {
-    if (selectedTaskId) {
-      return enrichedTasks.find((t) => t.id === selectedTaskId) || enrichedTasks[0] || null;
+    if (activeTab === 'completed') {
+      if (selectedTaskId) {
+        return completedTasks.find((t) => t.id === selectedTaskId) || completedTasks[0] || null;
+      }
+      return completedTasks[0] || null;
     }
-    return enrichedTasks[0] || null;
-  }, [enrichedTasks, selectedTaskId]);
+    if (selectedTaskId) {
+      return activeInspectionTasks.find((t) => t.id === selectedTaskId) || activeInspectionTasks[0] || null;
+    }
+    return activeInspectionTasks[0] || null;
+  }, [activeInspectionTasks, completedTasks, selectedTaskId, activeTab]);
 
   // Tasks filtered by activeTab
   const displayTasks = useMemo(() => {
+    if (activeTab === 'completed') {
+      return completedTasks;
+    }
+
     if (activeTab === 'today') {
-      const filtered = enrichedTasks.filter((t) => t.isToday || t.is_today || t.status === 'pending_survey');
-      return filtered.length > 0 ? filtered : enrichedTasks;
+      const filtered = activeInspectionTasks.filter((t) => t.isToday || t.is_today || t.scheduledDate);
+      return filtered.length > 0 ? filtered : activeInspectionTasks;
     }
 
     if (activeTab === 'nearest') {
-      return enrichedTasks.slice().sort((a, b) => a.computedDistance - b.computedDistance);
+      return activeInspectionTasks.slice().sort((a, b) => a.computedDistance - b.computedDistance);
     }
 
-    // Tab 'all'
-    return enrichedTasks;
-  }, [enrichedTasks, activeTab]);
+    // Tab 'all' -> Semua Antrean Aktif
+    return activeInspectionTasks;
+  }, [activeInspectionTasks, completedTasks, activeTab]);
 
-  // Sequential Route Calculation: Surveyor -> Task 1 -> Task 2 -> ...
+  // Sequential Route Calculation: HANYA untuk Antrean Aktif
   const routeCalculation = useMemo(() => {
-    const listToRoute = enrichedTasks.slice(0, 5); // first 5 for sequential route
+    const listToRoute = activeInspectionTasks.slice(0, 5); // first 5 active plots for sequential route
     if (listToRoute.length === 0) {
       return {
         routePoints: [],
@@ -349,18 +399,18 @@ export default function SurveyorDashboardView({
       etaMinutes,
       stops
     };
-  }, [enrichedTasks, surveyorLocation]);
+  }, [activeInspectionTasks, surveyorLocation]);
 
-  // All points for Leaflet map auto bounds
+  // All points for Leaflet map auto bounds (HANYA antrean aktif)
   const mapPoints = useMemo(() => {
     const pts = [[surveyorLocation.lat, surveyorLocation.lng]];
-    enrichedTasks.forEach((t) => {
+    activeInspectionTasks.forEach((t) => {
       if (t.lat && t.lng && !isNaN(t.lat) && !isNaN(t.lng)) {
         pts.push([t.lat, t.lng]);
       }
     });
     return pts;
-  }, [surveyorLocation, enrichedTasks]);
+  }, [surveyorLocation, activeInspectionTasks]);
 
   // Action Handlers
   const handleStartInspectionClick = (task) => {
@@ -658,7 +708,7 @@ export default function SurveyorDashboardView({
               </span>
               <span className="text-slate-300">|</span>
               <span className="inline-flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5 text-slate-400" /> {enrichedTasks.length} petak lahan terdata
+                <MapPin className="h-3.5 w-3.5 text-slate-400" /> {activeInspectionTasks.length} petak antrean aktif
               </span>
             </p>
           </div>
@@ -720,8 +770,8 @@ export default function SurveyorDashboardView({
             <MapAutoFitter points={mapPoints} />
             {flyTarget && <FlyToLocation target={flyTarget} />}
 
-            {/* Poligon Batas Lahan PostGIS untuk Setiap Tugas */}
-            {enrichedTasks.map((task) => {
+            {/* Poligon Batas Lahan PostGIS untuk Setiap Tugas Antrean Aktif */}
+            {activeInspectionTasks.map((task) => {
               const isSelected = selectedTask?.id === task.id;
               if (!task.polygonCoords || task.polygonCoords.length === 0) return null;
 
@@ -781,8 +831,8 @@ export default function SurveyorDashboardView({
               </Popup>
             </Marker>
 
-            {/* Marker Nomor Urut Lahan */}
-            {enrichedTasks.map((task, idx) => {
+            {/* Marker Nomor Urut Lahan Antrean Aktif */}
+            {activeInspectionTasks.map((task, idx) => {
               if (!task.lat || !task.lng) return null;
               const isSelected = selectedTask?.id === task.id;
               return (
@@ -863,7 +913,7 @@ export default function SurveyorDashboardView({
             </span>
           </div>
 
-          <div className="flex rounded-xl bg-slate-100 p-1">
+          <div className="flex rounded-xl bg-slate-100 p-1 flex-wrap gap-1">
             <button
               type="button"
               onClick={() => setActiveTab('all')}
@@ -873,7 +923,7 @@ export default function SurveyorDashboardView({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Semua Lahan
+              Semua Antrean ({activeInspectionTasks.length})
             </button>
             <button
               type="button"
@@ -897,6 +947,17 @@ export default function SurveyorDashboardView({
             >
               Jadwal Hari Ini
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('completed')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                activeTab === 'completed'
+                  ? 'bg-white text-[#0F291E] shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Selesai Diaudit ({completedTasks.length})
+            </button>
           </div>
         </div>
 
@@ -904,9 +965,15 @@ export default function SurveyorDashboardView({
         {displayTasks.length === 0 && (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
             <SearchX className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-base font-bold text-[#0F291E]">Belum ada antrean lahan untuk diinspeksi</h3>
+            <h3 className="text-base font-bold text-[#0F291E]">
+              {activeTab === 'completed'
+                ? 'Belum ada riwayat lahan yang selesai diaudit'
+                : 'Belum ada antrean lahan aktif untuk diinspeksi'}
+            </h3>
             <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
-              Seluruh pendaftaran lahan baru dari Portal Petani akan otomatis muncul di sini dan siap dijadwalkan verifikasi lapangan.
+              {activeTab === 'completed'
+                ? 'Lahan yang telah selesai diverifikasi atau ditolak oleh surveyor akan otomatis tercatat di sini dan di menu Riwayat & Sinkronisasi.'
+                : 'Seluruh pendaftaran lahan baru dari Portal Petani yang memiliki blok pohon akan otomatis muncul di sini dan siap diinspeksi.'}
             </p>
           </div>
         )}
@@ -916,7 +983,9 @@ export default function SurveyorDashboardView({
           {displayTasks.map((task) => {
             const isSelected = selectedTask?.id === task.id;
             const area = task.area_sqm || task.areaM2 || 0;
-            const treeCount = task.tree_blocks?.reduce((acc, b) => acc + (b.tree_count || 0), 0) || task.treeCount || 0;
+            const treeCount = task.tree_blocks?.reduce((acc, b) => acc + (b.total_population || b.tree_count || 0), 0) || task.treeCount || 0;
+            const isCompleted = isCompletedPlot(task);
+            const isVerified = String(task.status || '').toLowerCase().includes('verif') || task.status === 'approved';
 
             return (
               <article
@@ -930,9 +999,19 @@ export default function SurveyorDashboardView({
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-mono text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                      TKT-{task.id?.slice(0, 8).toUpperCase()}
-                    </span>
+                    {isCompleted ? (
+                      <span className={`font-mono text-[11px] font-bold border px-2 py-0.5 rounded-md ${
+                        isVerified
+                          ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                          : 'text-rose-800 bg-rose-50 border-rose-200'
+                      }`}>
+                        {isVerified ? '✓ Terverifikasi' : '✕ Ditolak'}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                        TKT-{task.id?.slice(0, 8).toUpperCase()}
+                      </span>
+                    )}
                     <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-slate-500">
                       <MapPin className="h-3 w-3 text-emerald-600" />
                       {task.computedDistance} km
@@ -971,23 +1050,44 @@ export default function SurveyorDashboardView({
                     <MessageCircle className="h-4 w-4" />
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStartInspectionClick(task);
-                    }}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0F291E] py-2 px-3 text-xs font-bold text-white transition hover:bg-[#173D2E] active:scale-[.98] cursor-pointer"
-                  >
-                    <span>Mulai Inspeksi</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-emerald-400" />
-                  </button>
+                  {isCompleted ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBaTask(task);
+                      }}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-800 py-2 px-3 text-xs font-bold text-white transition hover:bg-slate-900 active:scale-[.98] cursor-pointer"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>Lihat Berita Acara</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartInspectionClick(task);
+                      }}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0F291E] py-2 px-3 text-xs font-bold text-white transition hover:bg-[#173D2E] active:scale-[.98] cursor-pointer"
+                    >
+                      <span>Mulai Inspeksi</span>
+                      <ArrowRight className="h-3.5 w-3.5 text-emerald-400" />
+                    </button>
+                  )}
                 </div>
               </article>
             );
           })}
         </div>
       </section>
+
+      {/* Official Berita Acara Modal (Read-Only) */}
+      <BeritaAcaraModal
+        isOpen={Boolean(selectedBaTask)}
+        onClose={() => setSelectedBaTask(null)}
+        data={selectedBaTask}
+      />
     </div>
   );
 }

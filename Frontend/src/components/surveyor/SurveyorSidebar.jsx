@@ -1,8 +1,6 @@
 import React from 'react';
 import { 
   ClipboardList, 
-  MapPin, 
-  FileCheck2, 
   History, 
   Compass, 
   UserCheck, 
@@ -26,21 +24,10 @@ export default function SurveyorSidebar({
   const menuItems = [
     {
       id: 'tasks',
-      label: 'Tugas & Antrean',
+      label: 'Tugas & Rute Inspeksi',
       icon: ClipboardList,
       badge: pendingCount > 0 ? `${pendingCount}` : null,
       badgeColor: 'bg-emerald-100 text-emerald-800'
-    },
-    {
-      id: 'map',
-      label: 'Peta & Rute Kebun',
-      icon: MapPin,
-    },
-    {
-      id: 'inspection',
-      label: 'Inspeksi Lapangan',
-      icon: FileCheck2,
-      highlight: true
     },
     {
       id: 'sync',
