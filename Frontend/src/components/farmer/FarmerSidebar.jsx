@@ -61,7 +61,7 @@ export default function FarmerSidebar({
     if (onLogout) {
       onLogout();
     } else {
-      window.location.href = '/login';
+      window.location.replace('/login');
     }
   };
 

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import LandingPage from './components/LandingPage';
 import AuthGateway from './components/AuthGateway';
 import SurveyorLoginView from './components/surveyor/SurveyorLoginView';
@@ -17,14 +18,13 @@ const PROTECTED_ROLES = {
   admin: ['/admin', '/authority', '/manager'],
 };
 
-const ROLE_PRIMARY_PATHS = {
-  farmer: '/mitra-tani/dashboard',
-  corporate: '/korporat',
-  surveyor: '/surveyor/tugas',
-  admin: '/admin',
-};
-
-const LOGIN_PATHS = ['/login', '/auth', '/daftar', '/surveyor/login', '/admin/login'];
+export function getDashboardPathForRole(role) {
+  if (role === 'surveyor') return '/surveyor/tugas';
+  if (role === 'farmer') return '/mitra-tani';
+  if (role === 'corporate' || role === 'company') return '/korporat';
+  if (role === 'admin') return '/admin';
+  return '/mitra-tani';
+}
 
 function matchesRolePath(path, prefixes) {
   const normalized = (path || '').toLowerCase();
@@ -35,14 +35,69 @@ function isProtectedRoute(path) {
   return Object.values(PROTECTED_ROLES).some(prefixes => matchesRolePath(path, prefixes));
 }
 
-function getRoleFromPath(path) {
-  for (const [role, prefixes] of Object.entries(PROTECTED_ROLES)) {
-    if (matchesRolePath(path, prefixes)) return role;
+/**
+ * GuestRoute: Melindungi halaman /login dan /register agar user yang sudah login
+ * tidak bisa mengaksesnya (termasuk via tombol "Back" di browser).
+ * Pengguna langsung dilempar (redirect) ke dashboard sesuai rolenya.
+ */
+export function GuestRoute({ children, currentUser }) {
+  const token = getStoredToken();
+  const storedUser = getStoredUser();
+  const user = currentUser || storedUser;
+
+  if (token && user) {
+    const role = user?.role === 'company' ? 'corporate' : user?.role;
+    if (role === 'surveyor') {
+      return <Navigate to="/surveyor/tugas" replace />;
+    }
+    if (role === 'farmer') {
+      return <Navigate to="/mitra-tani" replace />;
+    }
+    if (role === 'corporate') {
+      return <Navigate to="/korporat" replace />;
+    }
+    if (role === 'admin') {
+      return <Navigate to="/admin" replace />;
+    }
+    return <Navigate to="/mitra-tani" replace />;
   }
-  return null;
+
+  return children;
+}
+
+/**
+ * ProtectedRoute: Menjamin rute workspace hanya bisa diakses oleh user terautentikasi
+ * dengan role yang sesuai. Mencegah unauthenticated access dan cross-role bypass.
+ */
+export function ProtectedRoute({ children, allowedRoles, currentUser }) {
+  const token = getStoredToken();
+  const storedUser = getStoredUser();
+  const user = currentUser || storedUser;
+
+  if (!token || !user) {
+    if (allowedRoles && allowedRoles.includes('surveyor')) {
+      return <Navigate to="/surveyor/login" replace />;
+    }
+    if (allowedRoles && allowedRoles.includes('admin')) {
+      return <Navigate to="/admin/login" replace />;
+    }
+    return <Navigate to="/login" replace />;
+  }
+
+  const role = user?.role === 'company' ? 'corporate' : user?.role;
+  if (allowedRoles && !allowedRoles.includes(role)) {
+    if (role === 'surveyor') return <Navigate to="/surveyor/tugas" replace />;
+    if (role === 'farmer') return <Navigate to="/mitra-tani" replace />;
+    if (role === 'corporate') return <Navigate to="/korporat" replace />;
+    if (role === 'admin') return <Navigate to="/admin" replace />;
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
 }
 
 export default function App() {
+  const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState(getStoredUser);
   const [authTab, setAuthTab] = useState('farmer');
 
@@ -51,70 +106,21 @@ export default function App() {
   const [trees, setTrees] = useState([...TREES_DATA]);
   const [totalRetired, setTotalRetired] = useState(2400);
 
-  // Initial view resolver with strict guard
-  const getInitialView = () => {
-    const path = window.location.pathname.toLowerCase();
-    const token = getStoredToken();
-    const user = getStoredUser();
-    const userRole = user?.role === 'company' ? 'corporate' : user?.role;
-
-    // 1. Unauthenticated trying to access protected route -> force /login
-    if ((!token || !user) && isProtectedRoute(path)) {
-      window.history.replaceState({ view: 'auth' }, '', '/login');
-      return 'auth';
-    }
-
-    // 2. Authenticated user trying to access login or other role workspace -> redirect to own workspace
-    if (token && user && userRole) {
-      const targetRole = getRoleFromPath(path);
-      const isLogin = LOGIN_PATHS.includes(path);
-      if (isLogin || (targetRole && targetRole !== userRole)) {
-        const targetPath = ROLE_PRIMARY_PATHS[userRole] || '/mitra-tani/dashboard';
-        window.history.replaceState({ view: userRole }, '', targetPath);
-        return userRole;
-      }
-      if (targetRole === userRole) {
-        if (userRole === 'surveyor' && (path === '/surveyor' || path === '/surveyor/')) {
-          window.history.replaceState({ view: userRole }, '', '/surveyor/tugas');
-        }
-        return userRole;
-      }
-    }
-
-    // 3. Normal path resolution
-    if (path === '/surveyor/login') return 'surveyor_login';
-    if (path === '/admin/login') return 'admin_login';
-    const matchedRole = getRoleFromPath(path);
-    if (matchedRole) return matchedRole;
-    if (LOGIN_PATHS.includes(path)) return 'auth';
-    return 'landing';
-  };
-
-  const [view, setView] = useState(getInitialView);
-
-  // Verify auth session against backend GET /api/v1/auth/me on mount
+  // Verifikasi sesi auth terhadap backend GET /api/v1/auth/me saat mount
   useEffect(() => {
     async function verifySession() {
       const token = getStoredToken();
-      const path = window.location.pathname.toLowerCase();
-
-      if (!token) {
-        if (isProtectedRoute(path)) {
-          window.history.replaceState({ view: 'auth' }, '', '/login');
-          setView('auth');
-        }
-        return;
-      }
+      if (!token) return;
 
       try {
         const me = await getMe();
         if (!me) {
-          // Token expired or invalid
+          // Token expired atau tidak valid
           clearAuthSession();
           setCurrentUser(null);
+          const path = window.location.pathname.toLowerCase();
           if (isProtectedRoute(path)) {
-            window.history.replaceState({ view: 'auth' }, '', '/login');
-            setView('auth');
+            window.location.replace('/login');
           }
         } else {
           const normalizedRole = me.role === 'company' ? 'corporate' : me.role;
@@ -126,16 +132,6 @@ export default function App() {
           };
           setCurrentUser(updatedUser);
           localStorage.setItem('tanikarbon_user', JSON.stringify(updatedUser));
-
-          // If on login path or accessing another role's route, force redirect to user's workspace
-          const targetRole = getRoleFromPath(path);
-          if (LOGIN_PATHS.includes(path) || (targetRole && targetRole !== normalizedRole)) {
-            const userPath = ROLE_PRIMARY_PATHS[normalizedRole] || '/mitra-tani/dashboard';
-            window.history.replaceState({ view: normalizedRole }, '', userPath);
-            setView(normalizedRole);
-          } else if (normalizedRole === 'surveyor' && (path === '/surveyor' || path === '/surveyor/')) {
-            window.history.replaceState({ view: 'surveyor' }, '', '/surveyor/tugas');
-          }
         }
       } catch (err) {
         console.error('Session verification error:', err);
@@ -150,120 +146,63 @@ export default function App() {
     if (resolvedView === 'company') resolvedView = 'corporate';
     if (tab) setAuthTab(tab);
 
-    const token = getStoredToken();
-    const user = getStoredUser();
-    const userRole = user?.role === 'company' ? 'corporate' : user?.role;
-
-    // Guard against unauthenticated access to protected view
-    const viewRoles = ['farmer', 'corporate', 'surveyor', 'admin'];
-    if (viewRoles.includes(resolvedView) && (!token || !user)) {
-      window.history.replaceState({ view: 'auth' }, '', '/login');
-      setView('auth');
+    if (resolvedView === 'landing') {
+      navigate('/');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (resolvedView === 'auth' || resolvedView === 'login') {
+      navigate('/login');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (resolvedView === 'register') {
+      navigate('/register');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (resolvedView === 'surveyor_login') {
+      navigate('/surveyor/login');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (resolvedView === 'admin_login') {
+      navigate('/admin/login');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
-    // Guard against authenticated user going to login page or foreign role
-    if (token && user && userRole) {
-      if (resolvedView === 'auth' || resolvedView === 'surveyor_login' || resolvedView === 'admin_login') {
-        resolvedView = userRole;
-      } else if (viewRoles.includes(resolvedView) && resolvedView !== userRole) {
-        resolvedView = userRole;
-      }
-    }
-
-    setView(resolvedView);
-    let targetPath = '/';
-    if (resolvedView === 'farmer') {
-      const cur = window.location.pathname.toLowerCase();
-      targetPath = matchesRolePath(cur, PROTECTED_ROLES.farmer) ? window.location.pathname : '/mitra-tani/dashboard';
-    }
-    else if (resolvedView === 'corporate') targetPath = '/korporat';
-    else if (resolvedView === 'surveyor') {
-      const cur = window.location.pathname.toLowerCase();
-      targetPath = matchesRolePath(cur, PROTECTED_ROLES.surveyor) && cur !== '/surveyor'
-        ? `${window.location.pathname}${window.location.search}`
-        : '/surveyor/tugas';
-    }
-    else if (resolvedView === 'surveyor_login') targetPath = '/surveyor/login';
-    else if (resolvedView === 'admin') targetPath = '/admin';
-    else if (resolvedView === 'admin_login') targetPath = '/admin/login';
-    else if (resolvedView === 'auth') targetPath = '/login';
-
-    if (window.location.pathname !== targetPath) {
-      window.history.pushState({ view: resolvedView }, '', targetPath);
-    }
+    const dest = getDashboardPathForRole(resolvedView);
+    navigate(dest);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [navigate]);
 
-  // Listen to browser Back / Forward buttons with STRICT ROUTE & ROLE GUARD
-  useEffect(() => {
-    const handlePopState = () => {
-      const currentPath = window.location.pathname.toLowerCase();
-      const token = getStoredToken();
-      const user = getStoredUser();
-      const userRole = user?.role === 'company' ? 'corporate' : user?.role;
-
-      // 1. Unauthenticated guard
-      if (!token || !user) {
-        if (isProtectedRoute(currentPath)) {
-          window.history.replaceState({ view: 'auth' }, '', '/login');
-          setView('auth');
-          return;
-        }
-        if (currentPath === '/surveyor/login') setView('surveyor_login');
-        else if (currentPath === '/admin/login') setView('admin_login');
-        else if (LOGIN_PATHS.includes(currentPath)) setView('auth');
-        else setView('landing');
-        return;
-      }
-
-      // 2. Authenticated guard (Anti Back-Button Bypass to /login or other role)
-      const targetRole = getRoleFromPath(currentPath);
-      const isLoginPath = LOGIN_PATHS.includes(currentPath);
-
-      if (isLoginPath || (targetRole && targetRole !== userRole)) {
-        // Intercept back-button attempt to login or wrong role!
-        const expectedPath = ROLE_PRIMARY_PATHS[userRole] || '/mitra-tani/dashboard';
-        window.history.replaceState({ view: userRole }, '', expectedPath);
-        setView(userRole);
-        return;
-      }
-
-      // Valid navigation for authenticated user
-      if (targetRole === userRole) {
-        setView(userRole);
-      } else if (currentPath === '/') {
-        setView('landing');
-      } else {
-        const expectedPath = ROLE_PRIMARY_PATHS[userRole] || '/mitra-tani/dashboard';
-        window.history.replaceState({ view: userRole }, '', expectedPath);
-        setView(userRole);
-      }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
+  // Handler saat login berhasil dengan history stack replacement (replace: true)
   const handleLogin = useCallback((role, userData) => {
     let resolvedRole = role === 'company' ? 'corporate' : role;
     if (userData) {
       const normalizedUser = {
         ...userData,
-        role: userData.role === 'company' ? 'corporate' : userData.role
+        role: userData.role === 'company' ? 'corporate' : userData.role,
       };
       setCurrentUser(normalizedUser);
       resolvedRole = normalizedUser.role;
+    } else {
+      const stored = getStoredUser();
+      if (stored) {
+        setCurrentUser(stored);
+        resolvedRole = stored.role;
+      }
     }
-    handleNavigate(resolvedRole);
-  }, [handleNavigate]);
+    const targetPath = getDashboardPathForRole(resolvedRole);
+    navigate(targetPath, { replace: true });
+  }, [navigate]);
 
+  // Handler Logout: Pembersihan total localStorage & hard redirect untuk membuang Workspace dari memori
   const handleLogout = useCallback(() => {
     clearAuthSession();
     setCurrentUser(null);
-    window.history.replaceState({ view: 'auth' }, '', '/login');
-    setView('auth');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.location.replace('/login');
   }, []);
 
   const handleAddTree = useCallback((newTree) => {
@@ -276,71 +215,161 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#F6F7F2] text-[#173829]">
-      {/* Views */}
-      <div className="animate-fade-in" key={view}>
-        {view === 'landing' && (
-          <LandingPage onNavigate={handleNavigate} />
-        )}
-        {view === 'auth' && (
-          <AuthGateway
-            defaultTab={authTab}
-            onLogin={handleLogin}
-            onBack={() => handleNavigate('landing')}
-            onNavigateRole={(target) => handleNavigate(target)}
-          />
-        )}
-        {view === 'surveyor_login' && (
-          <SurveyorLoginView
-            onLogin={handleLogin}
-            onBack={() => handleNavigate('landing')}
-            onNavigate={handleNavigate}
-          />
-        )}
-        {view === 'admin_login' && (
-          <AdminLoginView
-            onLogin={handleLogin}
-            onBack={() => handleNavigate('landing')}
-            onNavigate={handleNavigate}
-          />
-        )}
-        {view === 'farmer' && (
-          <FarmerWorkspace
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            walletBalance={walletBalance}
-            onUpdateBalance={setWalletBalance}
-            trees={trees}
-            onAddTree={handleAddTree}
-            onBack={() => handleNavigate('landing')}
-            onNavigateRole={(target) => handleNavigate(target)}
-          />
-        )}
-        {view === 'corporate' && (
-          <CorporateMarketplace
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            totalRetired={totalRetired}
-            onRetire={handleRetire}
-            onBack={() => handleNavigate('landing')}
-            onNavigateRole={(target) => handleNavigate(target)}
-          />
-        )}
-        {view === 'surveyor' && (
-          <SurveyorWorkspace
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            onNavigateRole={(target) => handleNavigate(target)}
-            onBack={() => handleNavigate('landing')}
-          />
-        )}
-        {view === 'admin' && (
-          <AdminWorkspace
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            onNavigateRole={(target) => handleNavigate(target)}
-          />
-        )}
-      </div>
+      <Routes>
+        <Route path="/" element={<LandingPage onNavigate={handleNavigate} />} />
+
+        {/* Guest Routes: Terproteksi dari user yang sudah login */}
+        <Route
+          path="/login"
+          element={
+            <GuestRoute currentUser={currentUser}>
+              <AuthGateway
+                defaultTab={authTab}
+                initialMode="login"
+                onLogin={handleLogin}
+                onBack={() => handleNavigate('landing')}
+                onNavigateRole={(target) => handleNavigate(target)}
+              />
+            </GuestRoute>
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            <GuestRoute currentUser={currentUser}>
+              <AuthGateway
+                defaultTab={authTab}
+                initialMode="register"
+                onLogin={handleLogin}
+                onBack={() => handleNavigate('landing')}
+                onNavigateRole={(target) => handleNavigate(target)}
+              />
+            </GuestRoute>
+          }
+        />
+        <Route path="/auth" element={<Navigate to="/login" replace />} />
+        <Route path="/daftar" element={<Navigate to="/register" replace />} />
+
+        <Route
+          path="/surveyor/login"
+          element={
+            <GuestRoute currentUser={currentUser}>
+              <SurveyorLoginView
+                onLogin={handleLogin}
+                onBack={() => handleNavigate('landing')}
+                onNavigate={handleNavigate}
+              />
+            </GuestRoute>
+          }
+        />
+        <Route
+          path="/admin/login"
+          element={
+            <GuestRoute currentUser={currentUser}>
+              <AdminLoginView
+                onLogin={handleLogin}
+                onBack={() => handleNavigate('landing')}
+                onNavigate={handleNavigate}
+              />
+            </GuestRoute>
+          }
+        />
+
+        {/* Protected Routes: Portal Petani Mitra */}
+        <Route
+          path="/mitra-tani/*"
+          element={
+            <ProtectedRoute allowedRoles={['farmer']} currentUser={currentUser}>
+              <FarmerWorkspace
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                walletBalance={walletBalance}
+                onUpdateBalance={setWalletBalance}
+                trees={trees}
+                onAddTree={handleAddTree}
+                onBack={() => handleNavigate('landing')}
+                onNavigateRole={(target) => handleNavigate(target)}
+              />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/farmer/*" element={<Navigate to="/mitra-tani" replace />} />
+        <Route path="/petani/*" element={<Navigate to="/mitra-tani" replace />} />
+
+        {/* Protected Routes: Portal Korporat / ESG */}
+        <Route
+          path="/korporat/*"
+          element={
+            <ProtectedRoute allowedRoles={['corporate']} currentUser={currentUser}>
+              <CorporateMarketplace
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                totalRetired={totalRetired}
+                onRetire={handleRetire}
+                onBack={() => handleNavigate('landing')}
+                onNavigateRole={(target) => handleNavigate(target)}
+              />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/corporate/*" element={<Navigate to="/korporat" replace />} />
+        <Route path="/b2b/*" element={<Navigate to="/korporat" replace />} />
+
+        {/* Protected Routes: Portal Surveyor Lapangan */}
+        <Route
+          path="/surveyor"
+          element={
+            <ProtectedRoute allowedRoles={['surveyor']} currentUser={currentUser}>
+              <SurveyorWorkspace
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onNavigateRole={(target) => handleNavigate(target)}
+                onBack={() => handleNavigate('landing')}
+              />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="tugas" replace />} />
+          <Route path="tugas" element={null} />
+          <Route path="inspeksi" element={null} />
+          <Route path="riwayat" element={null} />
+          <Route path="*" element={<Navigate to="tugas" replace />} />
+        </Route>
+        <Route
+          path="/surveyor/*"
+          element={
+            <ProtectedRoute allowedRoles={['surveyor']} currentUser={currentUser}>
+              <SurveyorWorkspace
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onNavigateRole={(target) => handleNavigate(target)}
+                onBack={() => handleNavigate('landing')}
+              />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/petugas/*" element={<Navigate to="/surveyor/tugas" replace />} />
+        <Route path="/verifier/*" element={<Navigate to="/surveyor/tugas" replace />} />
+
+        {/* Protected Routes: Portal Admin Platform */}
+        <Route
+          path="/admin/*"
+          element={
+            <ProtectedRoute allowedRoles={['admin']} currentUser={currentUser}>
+              <AdminWorkspace
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onNavigateRole={(target) => handleNavigate(target)}
+              />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/authority/*" element={<Navigate to="/admin" replace />} />
+        <Route path="/manager/*" element={<Navigate to="/admin" replace />} />
+
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </div>
   );
 }

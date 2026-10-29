@@ -14,6 +14,7 @@ import {
   X,
   LogOut
 } from 'lucide-react';
+import { clearAuthSession } from '../../api/auth';
 
 export default function CorporateSidebar({ 
   currentUser,
@@ -54,6 +55,15 @@ export default function CorporateSidebar({
       icon: CreditCard,
     },
   ];
+
+  const handleLogoutClick = () => {
+    clearAuthSession();
+    if (onLogout) {
+      onLogout();
+    } else {
+      window.location.replace('/login');
+    }
+  };
 
   return (
     <>
@@ -191,17 +201,15 @@ export default function CorporateSidebar({
                 </div>
               </div>
 
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs"
-                  title="Keluar dari akun"
-                >
-                  <LogOut className="w-3.5 h-3.5 text-rose-600" />
-                  <span>Keluar Akun</span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleLogoutClick}
+                className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs"
+                title="Keluar dari akun"
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                <span>Keluar Akun</span>
+              </button>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2 py-1">
@@ -214,16 +222,14 @@ export default function CorporateSidebar({
                   {(currentUser?.full_name || 'IHN').substring(0, 3).toUpperCase()}
                 </div>
               </div>
-              {onLogout && (
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 transition border border-rose-200 cursor-pointer"
-                  title="Keluar Akun"
-                >
-                  <LogOut className="w-4 h-4 text-rose-600" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleLogoutClick}
+                className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 transition border border-rose-200 cursor-pointer"
+                title="Keluar Akun"
+              >
+                <LogOut className="w-4 h-4 text-rose-600" />
+              </button>
             </div>
           )}
         </div>

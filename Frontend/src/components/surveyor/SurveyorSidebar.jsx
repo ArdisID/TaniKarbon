@@ -9,6 +9,7 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react';
+import { clearAuthSession } from '../../api/auth';
 
 export default function SurveyorSidebar({ 
   currentUser,
@@ -24,14 +25,14 @@ export default function SurveyorSidebar({
   const menuItems = [
     {
       id: 'tasks',
-      label: 'Tugas & Rute Inspeksi',
+      label: 'Halaman Utama',
       icon: ClipboardList,
       badge: pendingCount > 0 ? `${pendingCount}` : null,
       badgeColor: 'bg-emerald-100 text-emerald-800'
     },
     {
       id: 'sync',
-      label: 'Riwayat & Sinkronisasi',
+      label: 'Riwayat',
       icon: History,
       badge: syncQueueCount > 0 ? `${syncQueueCount}` : null,
       badgeColor: 'bg-amber-100 text-amber-800'
@@ -41,6 +42,15 @@ export default function SurveyorSidebar({
   const handleTabClick = (tabId) => {
     onSelectTab(tabId);
     if (onCloseMobile) onCloseMobile();
+  };
+
+  const handleLogoutClick = () => {
+    clearAuthSession();
+    if (onLogout) {
+      onLogout();
+    } else {
+      window.location.replace('/login');
+    }
   };
 
   return (
@@ -178,17 +188,15 @@ export default function SurveyorSidebar({
             </div>
           </div>
 
-          {onLogout && (
-            <button
-              type="button"
-              onClick={onLogout}
-              className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-xs font-sans"
-              title="Keluar dari akun"
-            >
-              <LogOut className="w-3.5 h-3.5 text-rose-600" />
-              <span>Keluar Akun</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleLogoutClick}
+            className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-xs font-sans"
+            title="Keluar dari akun"
+          >
+            <LogOut className="w-3.5 h-3.5 text-rose-600" />
+            <span>Keluar Akun</span>
+          </button>
         </div>
       </aside>
     </>

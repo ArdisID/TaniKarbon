@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Lock, Mail, Eye, EyeOff, Smartphone, Building2,
   ArrowLeft, ArrowRight, ShieldCheck, Compass, Zap,
@@ -6,9 +7,16 @@ import {
 } from 'lucide-react';
 import { loginUser, registerUser } from '../api/auth';
 
-export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, onNavigateRole }) {
+export default function AuthGateway({ 
+  defaultTab = 'farmer', 
+  initialMode = 'login',
+  onLogin, 
+  onBack, 
+  onNavigateRole 
+}) {
+  const navigate = useNavigate();
   // Mode: 'login' | 'register'
-  const [mode, setMode] = useState('login');
+  const [mode, setMode] = useState(initialMode);
 
   // Public Role: 'farmer' | 'corporate'
   const [role, setRole] = useState(defaultTab === 'corporate' ? 'corporate' : 'farmer');
@@ -99,7 +107,11 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
       }
 
       const resolvedRole = data.role === 'company' ? 'corporate' : data.role;
-      onLogin(resolvedRole, data);
+      if (onLogin) {
+        onLogin(resolvedRole, data);
+      }
+      const targetPath = resolvedRole === 'corporate' ? '/korporat' : '/mitra-tani';
+      navigate(targetPath, { replace: true });
     } catch (err) {
       setErrorMessage(err.message || 'Gagal memproses autentikasi.');
     } finally {
@@ -123,11 +135,19 @@ export default function AuthGateway({ defaultTab = 'farmer', onLogin, onBack, on
 
       const data = await loginUser(creds);
       const resolvedRole = data.role === 'company' ? 'corporate' : data.role;
-      onLogin(resolvedRole, data);
+      if (onLogin) {
+        onLogin(resolvedRole, data);
+      }
+      const targetPath = resolvedRole === 'corporate' ? '/korporat' : '/mitra-tani';
+      navigate(targetPath, { replace: true });
     } catch (err) {
       console.warn('Backend quick demo fallback:', err);
       // Fallback ke login offline jika backend tidak tersedia
-      onLogin(roleToLogin);
+      if (onLogin) {
+        onLogin(roleToLogin);
+      }
+      const targetPath = roleToLogin === 'corporate' ? '/korporat' : '/mitra-tani';
+      navigate(targetPath, { replace: true });
     } finally {
       setLoading(false);
     }

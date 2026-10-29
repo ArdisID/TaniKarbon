@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Compass, 
   ShieldCheck, 
@@ -17,6 +18,7 @@ import {
 import { loginUser } from '../../api/auth';
 
 export default function SurveyorLoginView({ onLogin, onBack, onNavigate }) {
+  const navigate = useNavigate();
   const [surveyorId, setSurveyorId] = useState('SRV-BUDI-09');
   const [pin, setPin] = useState('847291');
   const [showPin, setShowPin] = useState(false);
@@ -33,7 +35,10 @@ export default function SurveyorLoginView({ onLogin, onBack, onNavigate }) {
         password: pin,
         role: 'surveyor'
       });
-      onLogin('surveyor', data);
+      if (onLogin) {
+        onLogin('surveyor', data);
+      }
+      navigate('/surveyor/tugas', { replace: true });
     } catch (err) {
       setErrorMessage(err.message || 'Verifikasi petugas gagal.');
     } finally {
@@ -52,10 +57,16 @@ export default function SurveyorLoginView({ onLogin, onBack, onNavigate }) {
         password: 'Password123!',
         role: 'surveyor'
       });
-      onLogin('surveyor', data);
+      if (onLogin) {
+        onLogin('surveyor', data);
+      }
+      navigate('/surveyor/tugas', { replace: true });
     } catch (err) {
       console.warn('Demo fallback:', err);
-      onLogin('surveyor');
+      if (onLogin) {
+        onLogin('surveyor');
+      }
+      navigate('/surveyor/tugas', { replace: true });
     } finally {
       setLoading(false);
     }

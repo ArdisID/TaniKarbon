@@ -15,6 +15,7 @@ import {
   BadgeAlert,
   LogOut
 } from 'lucide-react';
+import { clearAuthSession } from '../../api/auth';
 
 export default function AdminSidebar({ 
   currentUser,
@@ -23,6 +24,14 @@ export default function AdminSidebar({
   onSelectTab,
   actionRequiredCount = 8
 }) {
+  const handleLogoutClick = () => {
+    clearAuthSession();
+    if (onLogout) {
+      onLogout();
+    } else {
+      window.location.replace('/login');
+    }
+  };
   const menuItems = [
     {
       id: 'dashboard',
@@ -156,17 +165,15 @@ export default function AdminSidebar({
           </div>
         </div>
 
-        {onLogout && (
-          <button
-            type="button"
-            onClick={onLogout}
-            className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs font-sans"
-            title="Keluar dari akun"
-          >
-            <LogOut className="w-3.5 h-3.5 text-rose-600" />
-            <span>Keluar Akun</span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleLogoutClick}
+          className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs font-sans"
+          title="Keluar dari akun"
+        >
+          <LogOut className="w-3.5 h-3.5 text-rose-600" />
+          <span>Keluar Akun</span>
+        </button>
       </div>
     </aside>
   );

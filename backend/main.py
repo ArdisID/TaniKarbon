@@ -116,6 +116,12 @@ async def on_startup():
             await conn.execute(text("ALTER TABLE survey_logs ALTER COLUMN surveyor_id DROP NOT NULL;"))
             await conn.execute(text("ALTER TABLE land_plots ADD COLUMN IF NOT EXISTS scheduled_survey_date TIMESTAMP WITHOUT TIME ZONE;"))
             await conn.execute(text("ALTER TYPE land_status ADD VALUE IF NOT EXISTS 'rejected';"))
+            # Pastikan lahan pengujian ter-assign ke Budi Surveyor jika belum
+            await conn.execute(text("""
+                UPDATE land_plots
+                SET surveyor_id = (SELECT id FROM users WHERE email = 'surveyor@tanikarbon.com' LIMIT 1)
+                WHERE surveyor_id IS NULL AND (name ILIKE '%Karno%' OR name ILIKE '%Kebun Sengon%');
+            """))
         except Exception:
             pass
 
@@ -1753,7 +1759,7 @@ async def get_surveyor_tasks(
 ):
     """
     Mengambil seluruh land_plots di database PostgreSQL di mana
-    surveyor_id == current_user.id ATAU surveyor_id IS NULL.
+    surveyor_id == current_user.id.
     Sertakan data lengkap: id, name, farmer_name, area_sqm, area_ha, status,
     scheduled_survey_date, polygon_boundary, centroid, tree_blocks, dan survey_logs.
     """
@@ -1772,7 +1778,7 @@ async def get_surveyor_tasks(
         JOIN users u_farmer ON lp.farmer_id = u_farmer.id
         LEFT JOIN farmer_profiles fp ON u_farmer.id = fp.user_id
         LEFT JOIN users u_surveyor ON lp.surveyor_id = u_surveyor.id
-        WHERE (lp.surveyor_id = :surveyor_id OR lp.surveyor_id IS NULL)
+        WHERE lp.surveyor_id = :surveyor_id
         ORDER BY 
             CASE WHEN lp.scheduled_survey_date IS NOT NULL THEN 0 ELSE 1 END,
             lp.scheduled_survey_date ASC,

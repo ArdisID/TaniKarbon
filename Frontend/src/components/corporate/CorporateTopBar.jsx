@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   LogOut
 } from 'lucide-react';
+import { clearAuthSession } from '../../api/auth';
 
 export default function CorporateTopBar({ 
   currentUser,
@@ -16,6 +17,14 @@ export default function CorporateTopBar({
   onToggleSidebar,
   apiConnected = true
 }) {
+  const handleLogoutClick = () => {
+    clearAuthSession();
+    if (onLogout) {
+      onLogout();
+    } else {
+      window.location.replace('/login');
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-2.5 transition-all">
@@ -86,7 +95,7 @@ export default function CorporateTopBar({
 
           {/* Logout Button */}
           <button
-            onClick={onLogout}
+            onClick={handleLogoutClick}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs font-sans"
             title="Keluar dari akun"
           >

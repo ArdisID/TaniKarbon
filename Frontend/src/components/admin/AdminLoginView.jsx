@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   ShieldCheck, 
   Lock, 
@@ -17,6 +18,7 @@ import {
 import { loginUser } from '../../api/auth';
 
 export default function AdminLoginView({ onLogin, onBack, onNavigate }) {
+  const navigate = useNavigate();
   const [adminId, setAdminId] = useState('ADM-ROOT-01');
   const [password, setPassword] = useState('••••••••••••');
   const [showPassword, setShowPassword] = useState(false);
@@ -33,7 +35,10 @@ export default function AdminLoginView({ onLogin, onBack, onNavigate }) {
         password: password,
         role: 'admin'
       });
-      onLogin('admin', data);
+      if (onLogin) {
+        onLogin('admin', data);
+      }
+      navigate('/admin', { replace: true });
     } catch (err) {
       setErrorMessage(err.message || 'Autentikasi admin gagal.');
     } finally {
@@ -52,10 +57,16 @@ export default function AdminLoginView({ onLogin, onBack, onNavigate }) {
         password: 'Password123!',
         role: 'admin'
       });
-      onLogin('admin', data);
+      if (onLogin) {
+        onLogin('admin', data);
+      }
+      navigate('/admin', { replace: true });
     } catch (err) {
       console.warn('Demo fallback:', err);
-      onLogin('admin');
+      if (onLogin) {
+        onLogin('admin');
+      }
+      navigate('/admin', { replace: true });
     } finally {
       setLoading(false);
     }

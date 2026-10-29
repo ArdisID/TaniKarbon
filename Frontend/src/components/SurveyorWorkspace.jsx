@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import SurveyorSidebar from './surveyor/SurveyorSidebar';
 import SurveyorDashboardView from './surveyor/SurveyorDashboardView';
 import SurveyorInspectionView from './surveyor/SurveyorInspectionView';
@@ -12,6 +13,9 @@ export default function SurveyorWorkspace({
   onNavigateRole, 
   onBack 
 }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // Parse initial route from URL with strict guard
   const parseCurrentRoute = useCallback(() => {
     const path = window.location.pathname.toLowerCase();
@@ -147,12 +151,19 @@ export default function SurveyorWorkspace({
     }
 
     if (window.location.pathname + window.location.search !== targetPath) {
-      window.history.pushState(null, '', targetPath);
+      navigate(targetPath);
     }
 
     setCurrentTab(tabId);
     setActivePlotId(targetPlotId || null);
-  }, []);
+  }, [navigate]);
+
+  // Sync state whenever URL / location changes
+  useEffect(() => {
+    const route = parseCurrentRoute();
+    setCurrentTab(route.tab);
+    setActivePlotId(route.plotId);
+  }, [location.pathname, location.search, parseCurrentRoute]);
 
   // Listen to popstate (browser Back / Forward)
   useEffect(() => {
@@ -215,6 +226,9 @@ export default function SurveyorWorkspace({
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC] text-slate-800 font-sans antialiased">
+      {/* React Router Nested Outlet for surveyor subroutes */}
+      <Outlet />
+
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-[#0F291E] text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-emerald-400/30 flex items-center gap-3 animate-slide-in-right max-w-md font-sans">

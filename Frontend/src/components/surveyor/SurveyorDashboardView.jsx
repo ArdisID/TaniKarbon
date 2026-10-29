@@ -59,25 +59,26 @@ function calculateHaversineDistanceKm(lat1, lon1, lat2, lon2) {
   return Math.round(R * c * 10) / 10;
 }
 
-// Helper auto-fit bounds Leaflet
-function MapAutoFitter({ points }) {
+// Helper auto-fit bounds Leaflet (HANYA SEKALI saat awal load atau user klik fokus)
+function MapUpdater({ bounds, triggerRecenter }) {
   const map = useMap();
+  const hasFittedRef = useRef(false);
+
   useEffect(() => {
-    if (!map || !points || points.length === 0) return;
+    if (!map || !bounds) return;
     try {
-      const validPoints = points.filter(
-        (p) => p && typeof p[0] === 'number' && typeof p[1] === 'number' && !isNaN(p[0]) && !isNaN(p[1])
-      );
-      if (validPoints.length === 1) {
-        map.setView(validPoints[0], 15);
-      } else if (validPoints.length > 1) {
-        const bounds = L.latLngBounds(validPoints);
-        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+      if (!hasFittedRef.current || triggerRecenter) {
+        const isValid = typeof bounds.isValid === 'function' ? bounds.isValid() : true;
+        if (isValid) {
+          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+          hasFittedRef.current = true;
+        }
       }
     } catch (err) {
-      console.warn('MapAutoFitter error:', err);
+      console.warn('MapUpdater error:', err);
     }
-  }, [map, points]);
+  }, [map, bounds, triggerRecenter]);
+
   return null;
 }
 
@@ -324,6 +325,15 @@ export default function SurveyorDashboardView({
     return enrichedTasks.filter(isCompletedPlot);
   }, [enrichedTasks]);
 
+  // 3. Poligon & Marker yang ditampilkan di Peta mengikuti activeTab
+  const displayedMapPlots = useMemo(() => {
+    if (activeTab === 'completed') {
+      return completedTasks;
+    }
+    // Jika activeTab === 'all' | 'nearest' | 'today': tampilkan antrean aktif
+    return activeInspectionTasks;
+  }, [activeTab, completedTasks, activeInspectionTasks]);
+
   // Selected Task
   const selectedTask = useMemo(() => {
     if (activeTab === 'completed') {
@@ -401,16 +411,29 @@ export default function SurveyorDashboardView({
     };
   }, [activeInspectionTasks, surveyorLocation]);
 
-  // All points for Leaflet map auto bounds (HANYA antrean aktif)
-  const mapPoints = useMemo(() => {
-    const pts = [[surveyorLocation.lat, surveyorLocation.lng]];
-    activeInspectionTasks.forEach((t) => {
+  // Map bounds mengikuti displayedMapPlots (tanpa GPS surveyor agar tidak reset saat koordinat bergerak)
+  const mapBounds = useMemo(() => {
+    const pts = [];
+    displayedMapPlots.forEach((t) => {
       if (t.lat && t.lng && !isNaN(t.lat) && !isNaN(t.lng)) {
         pts.push([t.lat, t.lng]);
       }
     });
-    return pts;
-  }, [surveyorLocation, activeInspectionTasks]);
+    if (pts.length > 0) {
+      return L.latLngBounds(pts);
+    }
+    return null;
+  }, [displayedMapPlots]);
+
+  // Center statis awal hanya pada initial mount
+  const defaultMapCenter = useMemo(() => {
+    return [surveyorLocation.lat || -6.9175, surveyorLocation.lng || 107.6191];
+  }, []);
+
+  const [recenterTrigger, setRecenterTrigger] = useState(0);
+  const handleRecenterCamera = () => {
+    setRecenterTrigger((c) => c + 1);
+  };
 
   // Action Handlers
   const handleStartInspectionClick = (task) => {
@@ -491,6 +514,40 @@ export default function SurveyorDashboardView({
       `,
       iconSize: [32, 32],
       iconAnchor: [16, 32]
+    });
+  };
+
+  const createStatusLandIcon = (isVerified, isSelected) => {
+    const bg = isVerified ? '#10B981' : '#EF4444';
+    const border = isSelected ? '#0F291E' : '#FFFFFF';
+    const symbol = isVerified ? '✓' : '✕';
+
+    return L.divIcon({
+      className: 'land-status-marker',
+      html: `
+        <div style="
+          width: 30px;
+          height: 30px;
+          background: ${bg};
+          color: #FFFFFF;
+          border-radius: 12px 12px 12px 2px;
+          border: 2.5px solid ${border};
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: 'JetBrains Mono', monospace;
+          font-weight: 800;
+          font-size: 14px;
+          box-shadow: 0 4px 12px rgba(15,41,30,0.3);
+          cursor: pointer;
+          transform: ${isSelected ? 'scale(1.15)' : 'scale(1)'};
+          transition: transform .2s ease;
+        ">
+          ${symbol}
+        </div>
+      `,
+      iconSize: [30, 30],
+      iconAnchor: [15, 30]
     });
   };
 
@@ -695,25 +752,61 @@ export default function SurveyorDashboardView({
         <header className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <div className="min-w-0">
             <h2 className="flex items-center gap-2 text-[15px] font-bold tracking-tight text-[#0F291E]">
-              <Route className="h-5 w-5 text-emerald-600" />
-              Peta Rute Navigasi Kebun
+              {activeTab === 'completed' ? (
+                <>
+                  <BadgeCheck className="h-5 w-5 text-emerald-600" />
+                  Peta Arsip Lahan Terverifikasi
+                </>
+              ) : (
+                <>
+                  <Route className="h-5 w-5 text-emerald-600" />
+                  Peta Rute Navigasi Kebun
+                </>
+              )}
             </h2>
-            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-slate-500">
-              <span className="inline-flex items-center gap-1 font-semibold text-emerald-800">
-                <Ruler className="h-3.5 w-3.5 text-emerald-600" /> Jarak Berurutan: {routeCalculation.sequentialDistanceKm} km
-              </span>
-              <span className="text-slate-300">|</span>
-              <span className="inline-flex items-center gap-1">
-                <Timer className="h-3.5 w-3.5 text-slate-400" /> ETA: ~{routeCalculation.etaMinutes} menit (30 km/jam)
-              </span>
-              <span className="text-slate-300">|</span>
-              <span className="inline-flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5 text-slate-400" /> {activeInspectionTasks.length} petak antrean aktif
-              </span>
-            </p>
+            {activeTab === 'completed' ? (
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-slate-500">
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-800">
+                  <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" /> {completedTasks.length} Lahan Selesai Diaudit
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="inline-flex items-center gap-1 text-emerald-700">
+                  <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span> Disetujui ({completedTasks.filter(t => String(t.status || '').toLowerCase().includes('verif') || t.status === 'approved').length})
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="inline-flex items-center gap-1 text-rose-700">
+                  <span className="inline-block h-2 w-2 rounded-full bg-rose-500"></span> Ditolak ({completedTasks.filter(t => String(t.status || '').toLowerCase() === 'rejected').length})
+                </span>
+              </p>
+            ) : (
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-slate-500">
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-800">
+                  <Ruler className="h-3.5 w-3.5 text-emerald-600" /> Jarak Berurutan: {routeCalculation.sequentialDistanceKm} km
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="inline-flex items-center gap-1">
+                  <Timer className="h-3.5 w-3.5 text-slate-400" /> ETA: ~{routeCalculation.etaMinutes} menit (30 km/jam)
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5 text-slate-400" /> {activeInspectionTasks.length} petak antrean aktif
+                </span>
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Tombol Fokuskan Kamera */}
+            <button
+              type="button"
+              onClick={handleRecenterCamera}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 active:scale-[.98] cursor-pointer"
+              title="Fokuskan Kamera ke Seluruh Titik Petak Lahan"
+            >
+              <LocateFixed className="h-4 w-4 text-emerald-600" />
+              <span>Fokuskan Kamera</span>
+            </button>
+
             {/* Toggle Citra Satelit vs Peta Jalan */}
             <button
               type="button"
@@ -728,25 +821,39 @@ export default function SurveyorDashboardView({
               <span>{mapTileMode === 'satellite' ? 'Peta Jalan' : 'Citra Satelit'}</span>
             </button>
 
-            {/* Tombol Mulai Navigasi Dinamis */}
-            <button
-              type="button"
-              onClick={handleStartNavigationToSelected}
-              disabled={!selectedTask}
-              className="inline-flex items-center gap-2 rounded-xl bg-[#0F291E] px-4 py-2 text-[13px] font-semibold text-white shadow-xs transition hover:bg-[#173D2E] active:scale-[.98] cursor-pointer disabled:opacity-50"
-            >
-              <Navigation className="h-4 w-4 text-emerald-400" />
-              <span>
-                {selectedTask ? `Mulai Navigasi ke ${selectedTask.name || 'Lahan'}` : 'Mulai Navigasi'}
-              </span>
-            </button>
+            {/* Tombol Aksi Kanan Peta */}
+            {activeTab === 'completed' ? (
+              <button
+                type="button"
+                onClick={() => selectedTask && setSelectedBaTask(selectedTask)}
+                disabled={!selectedTask}
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-[13px] font-semibold text-white shadow-xs transition hover:bg-slate-900 active:scale-[.98] cursor-pointer disabled:opacity-50"
+              >
+                <FileText className="h-4 w-4 text-emerald-400" />
+                <span>
+                  {selectedTask ? `Berita Acara: ${selectedTask.name || 'Lahan'}` : 'Lihat Berita Acara'}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleStartNavigationToSelected}
+                disabled={!selectedTask}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#0F291E] px-4 py-2 text-[13px] font-semibold text-white shadow-xs transition hover:bg-[#173D2E] active:scale-[.98] cursor-pointer disabled:opacity-50"
+              >
+                <Navigation className="h-4 w-4 text-emerald-400" />
+                <span>
+                  {selectedTask ? `Mulai Navigasi ke ${selectedTask.name || 'Lahan'}` : 'Mulai Navigasi'}
+                </span>
+              </button>
+            )}
           </div>
         </header>
 
         {/* Kanvas Leaflet dengan Pinch Zoom & Touch Zoom MacBook */}
         <div id="map-route" className="relative h-[340px] w-full overflow-hidden bg-slate-900 sm:h-[420px]">
           <MapContainer
-            center={[surveyorLocation.lat, surveyorLocation.lng]}
+            center={defaultMapCenter}
             zoom={14}
             scrollWheelZoom={true}
             touchZoom={true}
@@ -767,24 +874,34 @@ export default function SurveyorDashboardView({
               />
             )}
 
-            <MapAutoFitter points={mapPoints} />
+            <MapUpdater bounds={mapBounds} triggerRecenter={recenterTrigger} />
             {flyTarget && <FlyToLocation target={flyTarget} />}
 
-            {/* Poligon Batas Lahan PostGIS untuk Setiap Tugas Antrean Aktif */}
-            {activeInspectionTasks.map((task) => {
+            {/* Poligon Batas Lahan PostGIS untuk Setiap Tugas Sesuai Tab */}
+            {displayedMapPlots.map((task) => {
               const isSelected = selectedTask?.id === task.id;
               if (!task.polygonCoords || task.polygonCoords.length === 0) return null;
+
+              const isCompleted = isCompletedPlot(task);
+              const isVerified = String(task.status || '').toLowerCase().includes('verif') || task.status === 'approved';
+
+              let polyColor = '#F59E0B';
+              if (activeTab === 'completed' || isCompleted) {
+                polyColor = isVerified ? '#10B981' : '#EF4444';
+              } else if (isSelected) {
+                polyColor = '#10B981';
+              }
 
               return (
                 <Polygon
                   key={`poly-${task.id}`}
                   positions={task.polygonCoords}
                   pathOptions={{
-                    color: isSelected ? '#10B981' : '#F59E0B',
+                    color: polyColor,
                     weight: isSelected ? 3 : 2,
-                    fillColor: isSelected ? '#10B981' : '#F59E0B',
-                    fillOpacity: isSelected ? 0.28 : 0.15,
-                    dashArray: isSelected ? 'none' : '3, 4'
+                    fillColor: polyColor,
+                    fillOpacity: isSelected ? 0.35 : 0.2,
+                    dashArray: activeTab === 'completed' ? (isVerified ? 'none' : '3, 4') : (isSelected ? 'none' : '3, 4')
                   }}
                   eventHandlers={{
                     click: () => handleSelectTask(task)
@@ -792,24 +909,44 @@ export default function SurveyorDashboardView({
                 >
                   <Popup>
                     <div className="font-sans text-xs p-1">
-                      <strong className="text-[#0F291E] block text-[13px]">{task.name}</strong>
-                      <p className="text-slate-500 mt-0.5">Petani: {task.farmer_name || 'Petani Mitra'}</p>
-                      <p className="text-emerald-700 font-semibold mt-0.5">{Number(task.area_sqm || 0).toLocaleString()} m²</p>
-                      <button
-                        type="button"
-                        onClick={() => handleStartInspectionClick(task)}
-                        className="mt-2 w-full py-1.5 px-2 bg-[#0F291E] text-white rounded-lg text-xs font-bold hover:bg-[#173D2E] transition"
-                      >
-                        Inspeksi Lahan Ini →
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-1.5 py-0.5 rounded font-mono font-bold text-[10px] ${
+                          isCompleted
+                            ? (isVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800')
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {isCompleted ? (isVerified ? '✓ Terverifikasi' : '✕ Ditolak') : 'Draft'}
+                        </span>
+                        <strong className="text-[#0F291E] block text-[13px]">{task.name}</strong>
+                      </div>
+                      <p className="text-slate-500 mt-1">Petani: {task.farmer_name || 'Petani Mitra'}</p>
+                      <p className="text-emerald-700 font-semibold mt-0.5">{Number(task.area_sqm || task.areaM2 || 0).toLocaleString()} m²</p>
+                      {isCompleted ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBaTask(task)}
+                          className="mt-2 w-full py-1.5 px-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <FileText className="h-3 w-3 text-emerald-400" />
+                          <span>Lihat Berita Acara</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleStartInspectionClick(task)}
+                          className="mt-2 w-full py-1.5 px-2 bg-[#0F291E] text-white rounded-lg text-xs font-bold hover:bg-[#173D2E] transition cursor-pointer"
+                        >
+                          Inspeksi Lahan Ini →
+                        </button>
+                      )}
                     </div>
                   </Popup>
                 </Polygon>
               );
             })}
 
-            {/* Garis Polyline Rute Antar Titik */}
-            {routeCalculation.routePoints.length > 1 && (
+            {/* Garis Polyline Rute Antar Titik: Sembunyikan jika activeTab === 'completed' */}
+            {activeTab !== 'completed' && routeCalculation.routePoints.length > 1 && (
               <Polyline
                 positions={routeCalculation.routePoints}
                 pathOptions={{
@@ -831,15 +968,22 @@ export default function SurveyorDashboardView({
               </Popup>
             </Marker>
 
-            {/* Marker Nomor Urut Lahan Antrean Aktif */}
-            {activeInspectionTasks.map((task, idx) => {
+            {/* Marker Lahan Sesuai Tab (Nomor urut untuk antrean aktif, ikon status untuk arsip selesai) */}
+            {displayedMapPlots.map((task, idx) => {
               if (!task.lat || !task.lng) return null;
               const isSelected = selectedTask?.id === task.id;
+              const isCompleted = isCompletedPlot(task);
+              const isVerified = String(task.status || '').toLowerCase().includes('verif') || task.status === 'approved';
+
+              const icon = activeTab === 'completed'
+                ? createStatusLandIcon(isVerified, isSelected)
+                : createNumberedLandIcon(idx + 1, isSelected);
+
               return (
                 <Marker
                   key={`marker-${task.id}`}
                   position={[task.lat, task.lng]}
-                  icon={createNumberedLandIcon(idx + 1, isSelected)}
+                  icon={icon}
                   eventHandlers={{
                     click: () => handleSelectTask(task)
                   }}
@@ -847,20 +991,35 @@ export default function SurveyorDashboardView({
                   <Popup>
                     <div className="font-sans text-xs p-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-mono font-bold text-[10px]">
-                          #{idx + 1}
+                        <span className={`px-1.5 py-0.5 rounded font-mono font-bold text-[10px] ${
+                          isCompleted
+                            ? (isVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800')
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {activeTab === 'completed' ? (isVerified ? '✓ Disetujui' : '✕ Ditolak') : `#${idx + 1}`}
                         </span>
                         <strong className="text-[#0F291E]">{task.name}</strong>
                       </div>
                       <p className="text-slate-500 mt-1">Petani: {task.farmer_name || 'Petani Mitra'}</p>
                       <p className="text-slate-500">Jarak: {task.computedDistance} km</p>
-                      <button
-                        type="button"
-                        onClick={() => handleStartInspectionClick(task)}
-                        className="mt-2 w-full py-1.5 px-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition"
-                      >
-                        Mulai Inspeksi Lapangan →
-                      </button>
+                      {isCompleted ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBaTask(task)}
+                          className="mt-2 w-full py-1.5 px-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <FileText className="h-3 w-3 text-emerald-400" />
+                          <span>Lihat Berita Acara</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleStartInspectionClick(task)}
+                          className="mt-2 w-full py-1.5 px-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition cursor-pointer"
+                        >
+                          Mulai Inspeksi Lapangan →
+                        </button>
+                      )}
                     </div>
                   </Popup>
                 </Marker>
@@ -868,28 +1027,37 @@ export default function SurveyorDashboardView({
             })}
           </MapContainer>
 
-          {/* Floating Chip Urutan Rute Kunjungan */}
-          {routeCalculation.stops.length > 0 && (
+          {/* Floating Chip Urutan Rute Kunjungan ATAU Arsip Lahan Selesai Diaudit */}
+          {displayedMapPlots.length > 0 && (
             <div className="no-scrollbar absolute bottom-3 inset-x-3 z-[1000] flex items-center gap-2 overflow-x-auto rounded-xl bg-white/95 p-2 shadow-sm backdrop-blur-xs border border-slate-200">
               <span className="shrink-0 px-2 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Urutan:
+                {activeTab === 'completed' ? 'Arsip Lahan:' : 'Urutan:'}
               </span>
-              {routeCalculation.stops.map((stop) => {
-                const isSelected = selectedTask?.id === stop.id;
+              {displayedMapPlots.map((plotItem, idx) => {
+                const isSelected = selectedTask?.id === plotItem.id;
+                const isVerified = String(plotItem.status || '').toLowerCase().includes('verif') || plotItem.status === 'approved';
                 return (
                   <button
-                    key={`chip-${stop.id}`}
+                    key={`chip-${plotItem.id}`}
                     type="button"
-                    onClick={() => handleSelectTask(stop)}
+                    onClick={() => handleSelectTask(plotItem)}
                     className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
                       isSelected
-                        ? 'bg-[#0F291E] text-white'
+                        ? 'bg-[#0F291E] text-white shadow-xs'
                         : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-800'
                     }`}
                   >
-                    <span className="font-mono text-[10px] font-bold">#{stop.stopNumber}</span>
-                    <span className="truncate max-w-[140px]">{stop.name}</span>
-                    <span className="font-mono text-[10px] text-emerald-400">({stop.computedDistance} km)</span>
+                    {activeTab === 'completed' ? (
+                      <span className={`h-2 w-2 rounded-full ${isVerified ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                    ) : (
+                      <span className="font-mono text-[10px] font-bold">#{idx + 1}</span>
+                    )}
+                    <span className="truncate max-w-[140px]">{plotItem.name}</span>
+                    <span className="font-mono text-[10px] text-emerald-400">
+                      {activeTab === 'completed'
+                        ? (isVerified ? '✓' : '✕')
+                        : `(${plotItem.computedDistance} km)`}
+                    </span>
                   </button>
                 );
               })}

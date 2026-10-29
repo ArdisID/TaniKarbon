@@ -114,6 +114,39 @@ export function getStoredUser() {
 }
 
 export function clearAuthSession() {
-  localStorage.removeItem('tanikarbon_token');
-  localStorage.removeItem('tanikarbon_user');
+  const authKeys = [
+    'tanikarbon_token',
+    'tanikarbon_user',
+    'token',
+    'auth_token',
+    'user_token',
+    'access_token',
+    'user_role',
+    'user_data',
+    'user',
+    'role',
+    'currentUser',
+    'farmer_token',
+    'surveyor_token',
+  ];
+  authKeys.forEach((key) => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Ignore localStorage errors
+    }
+  });
+  try {
+    sessionStorage.clear();
+  } catch (e) {
+    console.warn('Gagal membersihkan sessionStorage:', e);
+  }
+}
+
+/**
+ * Hard redirect logout: membersihkan semua sesi autentikasi dan mereload ke halaman /login
+ */
+export function logoutUser(redirectTo = '/login') {
+  clearAuthSession();
+  window.location.replace(redirectTo);
 }
