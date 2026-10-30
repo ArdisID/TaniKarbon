@@ -2,6 +2,20 @@ import { getStoredToken } from './auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 
+export function extractErrorMessage(errorData, fallbackMessage) {
+  if (!errorData) return fallbackMessage;
+  if (typeof errorData === 'string') return errorData;
+  if (typeof errorData.detail === 'string') return errorData.detail;
+  if (Array.isArray(errorData.detail)) {
+    return errorData.detail.map(err => {
+      const field = err.loc ? err.loc.filter(l => l !== 'body').join('.') : '';
+      return field ? `${field}: ${err.msg}` : err.msg;
+    }).join('; ') || fallbackMessage;
+  }
+  if (errorData.message) return errorData.message;
+  return fallbackMessage;
+}
+
 function getAuthHeaders() {
   const token = getStoredToken();
   return {
@@ -57,7 +71,8 @@ export async function registerLandPlot({
   ownership,
   document_no,
   village,
-  regency
+  regency,
+  tree_blocks
 }) {
   const finalGeojson = typeof geojson_polygon === 'string' 
     ? geojson_polygon 
@@ -74,13 +89,14 @@ export async function registerLandPlot({
       document_no: document_no || null,
       village: village || null,
       regency: regency || null,
-      polygon_boundary: polygon_boundary || (geojson_polygon ? (typeof geojson_polygon === 'string' ? JSON.parse(geojson_polygon) : geojson_polygon) : null)
+      polygon_boundary: polygon_boundary || (geojson_polygon ? (typeof geojson_polygon === 'string' ? JSON.parse(geojson_polygon) : geojson_polygon) : null),
+      tree_blocks: tree_blocks || null
     })
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Gagal mendaftarkan petak lahan');
+    throw new Error(extractErrorMessage(errorData, 'Gagal mendaftarkan petak lahan'));
   }
 
   return response.json();
@@ -99,7 +115,7 @@ export async function validateLandPolygon(polygon_boundary) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Gagal memvalidasi poligon lahan');
+    throw new Error(extractErrorMessage(errorData, 'Gagal memvalidasi poligon lahan'));
   }
 
   return response.json();
@@ -116,7 +132,7 @@ export async function getSpatialOverlay() {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Gagal memuat layer referensi spasial');
+    throw new Error(extractErrorMessage(errorData, 'Gagal memuat layer referensi spasial'));
   }
 
   return response.json();
@@ -133,7 +149,7 @@ export async function deleteLandPlot(landId) {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Gagal menghapus petak lahan');
+    throw new Error(extractErrorMessage(errorData, 'Gagal menghapus petak lahan'));
   }
 
   return response.json();
@@ -142,22 +158,36 @@ export async function deleteLandPlot(landId) {
 /**
  * Registrasi blok pohon & kalkulasi smart sampling
  */
-export async function addTreeBlock({ land_plot_id, species_name, planting_year, total_population, samples }) {
+export async function addTreeBlock({ land_plot_id, species_name, planting_year, total_population, samples, height_m }) {
+  const formattedSamples = (samples || []).map((s) => {
+    const dbh = parseFloat(s.dbh_cm || s.dbh || 0);
+    const circ = s.circumference_cm 
+      ? parseFloat(s.circumference_cm) 
+      : (dbh > 0 ? parseFloat((dbh * Math.PI).toFixed(4)) : 0);
+    return {
+      circumference_cm: circ,
+      dbh_cm: dbh > 0 ? dbh : parseFloat((circ / Math.PI).toFixed(2)),
+      height_m: s.height_m ? parseFloat(s.height_m) : undefined,
+      sample_index: s.sample_index
+    };
+  });
+
   const response = await fetch(`${API_BASE}/farmer/tree-blocks`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify({
       land_plot_id,
       species_name,
-      planting_year,
-      total_population,
-      samples
+      planting_year: parseInt(planting_year, 10),
+      total_population: parseInt(total_population, 10),
+      samples: formattedSamples,
+      height_m: height_m ? parseFloat(height_m) : undefined
     })
   });
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || 'Gagal mendaftarkan blok pohon');
+    throw new Error(extractErrorMessage(errorData, 'Gagal mendaftarkan blok pohon'));
   }
 
   return response.json();

@@ -1,5 +1,6 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field, EmailStr
+import math
+from pydantic import BaseModel, Field, EmailStr, model_validator
 from typing import Any, Dict, Optional, List, Union
 from uuid import UUID
 from datetime import datetime
@@ -19,15 +20,6 @@ class AutoBuyResponse(BaseModel):
     tco2e_retired: float
     total_cost: float
     cluster_name: str
-
-class LandPlotRequest(BaseModel):
-    name: str = Field(..., example="Kebun Mangga Baru", description="Nama lahan")
-    geojson_polygon: str = Field(..., example='{"type":"Polygon","coordinates":[[[106.835,-6.368],[106.836,-6.368],[106.836,-6.369],[106.835,-6.369],[106.835,-6.368]]]}', description="Koordinat poligon GeoJSON")
-    document_no: Optional[str] = Field(None, description="Nomor dokumen kepemilikan opsional")
-    ownership: Optional[str] = Field(None, description="Status kepemilikan")
-    village: Optional[str] = Field(None, description="Desa / Kelurahan")
-    regency: Optional[str] = Field(None, description="Kabupaten / Kota")
-    status: Optional[str] = Field("draft", description="Status plot")
 
 class PolygonValidationRequest(BaseModel):
     polygon_boundary: Union[Dict[str, Any], str] = Field(
@@ -55,15 +47,45 @@ class SpatialOverlayItem(BaseModel):
     polygon_boundary: Dict[str, Any]
 
 class TreeSampleInput(BaseModel):
-    circumference_cm: float = Field(..., gt=0, example=45.5, description="Keliling batang (cm)")
+    circumference_cm: Optional[float] = Field(None, gt=0, example=45.5, description="Keliling batang (cm)")
+    dbh_cm: Optional[float] = Field(None, gt=0, example=14.5, description="Diameter batang DBH (cm)")
+    height_m: Optional[float] = Field(None, gt=0, description="Tinggi pohon (m) opsional")
+    sample_index: Optional[int] = Field(None, description="Nomor urut sampel opsional")
+
+    @model_validator(mode="after")
+    def compute_circumference(self):
+        if self.circumference_cm is None and self.dbh_cm is not None:
+            self.circumference_cm = round(self.dbh_cm * math.pi, 4)
+        elif self.circumference_cm is not None and self.dbh_cm is None:
+            self.dbh_cm = round(self.circumference_cm / math.pi, 2)
+        if self.circumference_cm is None or self.circumference_cm <= 0:
+            raise ValueError("Harus menyertakan circumference_cm (>0) atau dbh_cm (>0)")
+        return self
 
 class TreeBlockRequest(BaseModel):
-    land_plot_id: UUID
+    land_plot_id: Optional[UUID] = Field(None, description="ID petak lahan (opsional jika dikirim nested)")
     species_name: str = Field(..., example="Sengon Laut")
     planting_year: int = Field(..., example=2021)
     total_population: int = Field(..., gt=0, example=100)
     samples: List[TreeSampleInput] = Field(..., min_length=3, description="Minimal 3 sampel pohon")
     height_m: Optional[float] = Field(None, example=14.5, description="Tinggi rata-rata pohon (m) opsional")
+
+# Aliases kontrak API
+TreeBlockCreate = TreeBlockRequest
+
+class LandPlotRequest(BaseModel):
+    name: str = Field(..., example="Kebun Mangga Baru", description="Nama lahan")
+    geojson_polygon: Union[str, Dict[str, Any]] = Field(..., example='{"type":"Polygon","coordinates":[[[106.835,-6.368],[106.836,-6.368],[106.836,-6.369],[106.835,-6.369],[106.835,-6.368]]]}', description="Koordinat poligon GeoJSON")
+    polygon_boundary: Optional[Union[str, Dict[str, Any]]] = Field(None, description="Batas poligon GeoJSON alternatif")
+    document_no: Optional[str] = Field(None, description="Nomor dokumen kepemilikan opsional")
+    ownership: Optional[str] = Field(None, description="Status kepemilikan")
+    village: Optional[str] = Field(None, description="Desa / Kelurahan")
+    regency: Optional[str] = Field(None, description="Kabupaten / Kota")
+    status: Optional[str] = Field("draft", description="Status plot")
+    tree_blocks: Optional[List[TreeBlockRequest]] = Field(None, description="Daftar blok tegakan pohon opsional")
+
+# Aliases kontrak API
+LandPlotCreate = LandPlotRequest
 
 class WithdrawRequest(BaseModel):
     amount: float = Field(..., gt=0, example=500000, description="Jumlah saldo yang ditarik (Rupiah)")

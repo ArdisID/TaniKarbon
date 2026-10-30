@@ -80,6 +80,14 @@ class TreeBlock(Base):
     estimated_tco2e_per_year = Column(Numeric(15, 4), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class TreeSample(Base):
+    __tablename__ = "tree_samples"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tree_block_id = Column(UUID(as_uuid=True), ForeignKey("tree_blocks.id", ondelete="CASCADE"), nullable=False)
+    circumference_cm = Column(Numeric(6, 2), nullable=False)
+    height_m = Column(Numeric(5, 2), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class WalletTransaction(Base):
     __tablename__ = "wallet_transactions"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

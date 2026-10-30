@@ -23,7 +23,7 @@ from sqlalchemy.future import select
 from database import get_db
 from models import (
     User, CompanyProfile, Wallet, Cluster, Transaction, Certificate,
-    TreeBlock, WalletTransaction, TreeSpecies, FarmerProfile, BankAccount, BankAccounts
+    TreeBlock, TreeSample, WalletTransaction, TreeSpecies, FarmerProfile, BankAccount, BankAccounts
 )
 from schemas import (
     AutoBuyRequest, AutoBuyResponse, LandPlotRequest, TreeBlockRequest,
@@ -745,6 +745,164 @@ async def get_land_spatial_overlay(
     return overlay
 
 
+SPECIES_ALIASES = {
+    # Sengon
+    "sengon laut": "Sengon",
+    "sengon buto": "Sengon",
+    "paraserianthes falcataria": "Sengon",
+    "falcataria moluccana": "Sengon",
+    # Jati
+    "jati emas": "Jati",
+    "jati putih": "Jati",
+    "tectona grandis": "Jati",
+    # Alpukat
+    "alpukat mentega": "Alpukat",
+    "alpukat aligator": "Alpukat",
+    "persea americana": "Alpukat",
+    # Mangga
+    "mangga arumanis": "Mangga",
+    "mangga manalagi": "Mangga",
+    "mangifera indica": "Mangga",
+    # Durian
+    "durian montong": "Durian",
+    "durian musang king": "Durian",
+    "durio zibethinus": "Durian",
+    # Kopi
+    "kopi arabika / robusta": "Kopi",
+    "kopi arabika": "Kopi",
+    "kopi robusta": "Kopi",
+    "coffea arabica": "Kopi",
+    "coffea canephora": "Kopi",
+    # Kelapa
+    "kelapa dalam": "Kelapa",
+    "kelapa hibrida": "Kelapa",
+    "kelapa sawit": "Kelapa",
+    "cocos nucifera": "Kelapa",
+    # Kakao
+    "kakao cokelat": "Kakao",
+    "theobroma cacao": "Kakao",
+    # Pisang
+    "pisang ambon": "Pisang",
+    "pisang kepok": "Pisang",
+    "musa paradisiaca": "Pisang",
+    # Mahoni
+    "mahoni daun lebar": "Mahoni",
+    "swietenia macrophylla": "Mahoni",
+}
+
+
+async def _save_tree_block_calculation(
+    db: AsyncSession,
+    land_plot_id: uuid.UUID,
+    payload: TreeBlockRequest
+) -> dict:
+    clean_species_name = payload.species_name.strip()
+    alias_target = SPECIES_ALIASES.get(clean_species_name.lower(), clean_species_name)
+
+    # 1. Query Spesies Pohon dari Master Data tree_species (Dukung nama lokal, latin, alias, dan kata kunci awal)
+    first_word = clean_species_name.split()[0] if clean_species_name else ""
+    species_query = select(TreeSpecies).where(
+        (TreeSpecies.local_name.ilike(alias_target)) |
+        (TreeSpecies.local_name.ilike(clean_species_name)) |
+        (TreeSpecies.latin_name.ilike(clean_species_name)) |
+        (TreeSpecies.local_name.ilike(f"{first_word}%"))
+    )
+    species_result = await db.execute(species_query)
+    matched_species = species_result.scalars().first()
+
+    # Fallback ke opsi 'Lainnya' jika nama tidak dikenal di master data
+    if not matched_species:
+        fallback_query = select(TreeSpecies).where(TreeSpecies.local_name.ilike("Lainnya%"))
+        fb_res = await db.execute(fallback_query)
+        matched_species = fb_res.scalars().first()
+
+    formula_type = matched_species.formula_type if matched_species else "ketterings"
+    wood_density = float(matched_species.wood_density) if (matched_species and matched_species.wood_density is not None) else 0.48
+    coeff_a = float(matched_species.coeff_a) if (matched_species and matched_species.coeff_a is not None) else 0.11
+    exp_b = float(matched_species.exp_b) if (matched_species and matched_species.exp_b is not None) else 2.62
+    requires_height = bool(matched_species.requires_height) if matched_species else False
+
+    # Validasi dan agregasi tinggi pohon dari level blok maupun sampel individual
+    sample_heights = [float(s.height_m) for s in payload.samples if s.height_m is not None and float(s.height_m) > 0]
+    avg_sample_height = (sum(sample_heights) / len(sample_heights)) if sample_heights else None
+    effective_height = float(payload.height_m) if (payload.height_m is not None and float(payload.height_m) > 0) else (avg_sample_height or 0.0)
+
+    # Validasi bahwa tanaman Monokotil (Kelapa) WAJIB menyertakan tinggi batang pohon H > 0 meter
+    if formula_type == "monocot_cylinder" or requires_height:
+        if effective_height <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Spesies Monokotil (Kelapa) wajib menyertakan parameter rata-rata tinggi batang pohon (H > 0 meter) untuk rumus silinder alometrik ICRAF."
+            )
+
+    # 2. Buat record blok pohon terlebih dahulu
+    new_block = TreeBlock(
+        land_plot_id=land_plot_id,
+        species_name=clean_species_name,
+        planting_year=payload.planting_year,
+        total_population=payload.total_population,
+        estimated_tco2e_per_year=0.0
+    )
+    db.add(new_block)
+    await db.flush()
+
+    # 3. Hitung AGB untuk setiap sampel pohon & simpan setiap sampel ke tabel tree_samples
+    sample_agb_list = []
+    dbh_list = []
+
+    for s in payload.samples:
+        d_cm = s.circumference_cm / math.pi
+        dbh_list.append(d_cm)
+        s_height = float(s.height_m) if (s.height_m is not None and float(s.height_m) > 0) else (effective_height if effective_height > 0 else None)
+
+        if formula_type == "ketterings":
+            agb_i = 0.11 * wood_density * (d_cm ** 2.62)
+        elif formula_type == "power_law":
+            agb_i = coeff_a * (d_cm ** exp_b)
+        elif formula_type == "monocot_cylinder":
+            radius_m = d_cm / 200.0
+            h_used = s_height or effective_height
+            agb_i = math.pi * (radius_m ** 2) * h_used * 730.0
+        else:
+            agb_i = 0.11 * wood_density * (d_cm ** 2.62)
+
+        sample_agb_list.append(agb_i)
+
+        # Simpan record sensus ke tabel tree_samples (terhubung ke surveyor & audit)
+        sample_record = TreeSample(
+            tree_block_id=new_block.id,
+            circumference_cm=round(s.circumference_cm, 2),
+            height_m=round(s_height, 2) if s_height is not None else None
+        )
+        db.add(sample_record)
+
+    avg_agb_kg = sum(sample_agb_list) / len(sample_agb_list)
+    avg_dbh_cm = sum(dbh_list) / len(dbh_list)
+
+    current_year = datetime.utcnow().year
+    stand_age = max(1, current_year - payload.planting_year)
+    annual_co2_per_tree = (avg_agb_kg * 0.47 * (44.0 / 12.0)) / (1000.0 * stand_age)
+    total_estimated_tco2e = annual_co2_per_tree * payload.total_population
+
+    new_block.estimated_tco2e_per_year = total_estimated_tco2e
+    await db.flush()
+
+    return {
+        "status": "success",
+        "message": f"Estimasi alometrik spesies {matched_species.local_name if matched_species else clean_species_name} ({formula_type}) berhasil dihitung dan disimpan.",
+        "tree_block_id": new_block.id,
+        "species_name": clean_species_name,
+        "matched_species": matched_species.local_name if matched_species else "Lainnya",
+        "category": matched_species.category if matched_species else "Fallback",
+        "formula_type": formula_type,
+        "wood_density": wood_density,
+        "avg_dbh_cm": round(avg_dbh_cm, 2),
+        "avg_height_m": round(effective_height, 2) if effective_height > 0 else None,
+        "avg_agb_kg": round(avg_agb_kg, 2),
+        "estimated_tco2e_per_year": round(total_estimated_tco2e, 4)
+    }
+
+
 # ------------------------------------------------------------------------------
 # 4c. Endpoint Mitra Tani (Terproteksi RBAC 'farmer')
 # ------------------------------------------------------------------------------
@@ -754,7 +912,7 @@ async def register_land_plot(
     current_user: User = Depends(require_roles(["farmer"])),
     db: AsyncSession = Depends(get_db)
 ):
-    geojson_value = _geoJSON_to_string(payload.geojson_polygon)
+    geojson_value = _geoJSON_to_string(payload.geojson_polygon or payload.polygon_boundary)
 
     # 1. Validasi geometri & batas luas (min 100 m², maks 150.000 m² / 15 Ha)
     inspection = await _inspect_polygon_geometry(db, geojson_value)
@@ -826,7 +984,6 @@ async def register_land_plot(
         "farmer_id": current_user.id, "cluster_id": DEFAULT_CLUSTER_ID,
         "name": payload.name, "geojson": geojson_value
     })
-    await db.commit()
     
     row = result.fetchone()
     if not row:
@@ -834,10 +991,22 @@ async def register_land_plot(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Gagal menyimpan petak lahan."
         )
+
+    created_blocks = []
+    if payload.tree_blocks:
+        for tb in payload.tree_blocks:
+            tb_res = await _save_tree_block_calculation(db, row.id, tb)
+            created_blocks.append(tb_res)
+
+    await db.commit()
+
     return {
-        "id": row.id, "name": row.name,
-        "area_sqm": float(row.total_area_sqm), "geojson_polygon": row.geojson_result,
-        "status": "draft"
+        "id": row.id,
+        "name": row.name,
+        "area_sqm": float(row.total_area_sqm),
+        "geojson_polygon": row.geojson_result,
+        "status": "draft",
+        "tree_blocks": created_blocks
     }
 
 @app.delete("/api/v1/farmer/lands/{land_id}")
@@ -1066,24 +1235,6 @@ async def submit_verification_revision(
     return await submit_land_revision(payload.land_plot_id, payload, current_user, db)
 
 
-SPECIES_ALIASES = {
-    "sengon laut": "Sengon",
-    "sengon buto": "Sengon",
-    "paraserianthes falcataria": "Sengon",
-    "falcataria moluccana": "Sengon",
-    "kopi arabika": "Kopi",
-    "kopi robusta": "Kopi",
-    "coffea arabica": "Kopi",
-    "coffea canephora": "Kopi",
-    "alpukat mentega": "Alpukat",
-    "kelapa dalam": "Kelapa",
-    "kelapa hibrida": "Kelapa",
-    "kelapa sawit": "Kelapa",
-    "kakao cokelat": "Kakao",
-    "pisang ambon": "Pisang",
-    "mangga manalagi": "Mangga",
-}
-
 @app.post("/api/v1/farmer/tree-blocks")
 async def calculate_smart_sampling(
     payload: TreeBlockRequest,
@@ -1097,99 +1248,14 @@ async def calculate_smart_sampling(
     2) power_law: AGB = coeff_a * (D ** exp_b)
     3) monocot_cylinder (Kelapa): AGB = pi * ((D / 200.0) ** 2) * H * 730.0 (Wajib H > 0)
     """
-    clean_species_name = payload.species_name.strip()
-    alias_target = SPECIES_ALIASES.get(clean_species_name.lower(), clean_species_name)
-
-    # 1. Query Spesies Pohon dari Master Data tree_species (Dukung nama lokal, latin, dan alias)
-    species_query = select(TreeSpecies).where(
-        (TreeSpecies.local_name.ilike(alias_target)) |
-        (TreeSpecies.local_name.ilike(clean_species_name)) |
-        (TreeSpecies.latin_name.ilike(clean_species_name))
-    )
-    species_result = await db.execute(species_query)
-    matched_species = species_result.scalars().first()
-
-    # Fallback ke opsi 'Lainnya' jika nama tidak dikenal di master data
-    if not matched_species:
-        fallback_query = select(TreeSpecies).where(TreeSpecies.local_name.ilike("Lainnya%"))
-        fb_res = await db.execute(fallback_query)
-        matched_species = fb_res.scalars().first()
-
-    formula_type = matched_species.formula_type if matched_species else "ketterings"
-    wood_density = float(matched_species.wood_density) if (matched_species and matched_species.wood_density is not None) else 0.48
-    coeff_a = float(matched_species.coeff_a) if (matched_species and matched_species.coeff_a is not None) else 0.11
-    exp_b = float(matched_species.exp_b) if (matched_species and matched_species.exp_b is not None) else 2.62
-    requires_height = bool(matched_species.requires_height) if matched_species else False
-
-    # Validasi bahwa tanaman Monokotil (Kelapa) WAJIB menyertakan tinggi batang pohon H > 0 meter
-    if formula_type == "monocot_cylinder" or requires_height:
-        if payload.height_m is None or payload.height_m <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Spesies Monokotil (Kelapa) wajib menyertakan parameter rata-rata tinggi batang pohon (H > 0 meter) untuk rumus silinder alometrik ICRAF."
-            )
-
-    # 2. Hitung AGB untuk setiap sampel pohon
-    sample_agb_list = []
-    dbh_list = []
-    height_m = float(payload.height_m) if payload.height_m else 0.0
-
-    for s in payload.samples:
-        d_cm = s.circumference_cm / math.pi
-        dbh_list.append(d_cm)
-
-        if formula_type == "ketterings":
-            agb_i = 0.11 * wood_density * (d_cm ** 2.62)
-        elif formula_type == "power_law":
-            agb_i = coeff_a * (d_cm ** exp_b)
-        elif formula_type == "monocot_cylinder":
-            # AGB = pi * (D / 200)^2 * H * 730
-            radius_m = d_cm / 200.0
-            agb_i = math.pi * (radius_m ** 2) * height_m * 730.0
-        else:
-            # Fallback konservatif ketterings
-            agb_i = 0.11 * wood_density * (d_cm ** 2.62)
-
-        sample_agb_list.append(agb_i)
-
-    avg_agb_kg = sum(sample_agb_list) / len(sample_agb_list)
-    avg_dbh_cm = sum(dbh_list) / len(dbh_list)
-
-    # 3. Konversi rata-rata AGB menjadi estimasi serapan tahunan (estimated_tco2e_per_year):
-    # - Fraksi karbon IPCC: 0.47
-    # - Rasio stoikiometri CO2 / C: 44.0 / 12.0
-    # - Umur tegakan stand_age = max(1, current_year - planting_year)
-    # - estimated_tco2e_per_year = ((avg_agb_kg * 0.47 * (44.0 / 12.0)) / (1000.0 * stand_age)) * total_population
-    current_year = datetime.utcnow().year
-    stand_age = max(1, current_year - payload.planting_year)
-    annual_co2_per_tree = (avg_agb_kg * 0.47 * (44.0 / 12.0)) / (1000.0 * stand_age)
-    total_estimated_tco2e = annual_co2_per_tree * payload.total_population
-
-    # 4. Simpan hasil kalkulasi ke Database tree_blocks
-    new_block = TreeBlock(
-        land_plot_id=payload.land_plot_id,
-        species_name=clean_species_name,
-        planting_year=payload.planting_year,
-        total_population=payload.total_population,
-        estimated_tco2e_per_year=total_estimated_tco2e
-    )
-    db.add(new_block)
+    if not payload.land_plot_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="land_plot_id wajib dicantumkan."
+        )
+    result = await _save_tree_block_calculation(db, payload.land_plot_id, payload)
     await db.commit()
-    await db.refresh(new_block)
-
-    return {
-        "status": "success",
-        "message": f"Estimasi alometrik spesies {matched_species.local_name if matched_species else clean_species_name} ({formula_type}) berhasil dihitung dan disimpan.",
-        "tree_block_id": new_block.id,
-        "species_name": clean_species_name,
-        "matched_species": matched_species.local_name if matched_species else "Lainnya",
-        "category": matched_species.category if matched_species else "Fallback",
-        "formula_type": formula_type,
-        "wood_density": wood_density,
-        "avg_dbh_cm": round(avg_dbh_cm, 2),
-        "avg_agb_kg": round(avg_agb_kg, 2),
-        "estimated_tco2e_per_year": round(total_estimated_tco2e, 4)
-    }
+    return result
 
 @app.post("/api/v1/farmer/wallet/withdraw")
 async def withdraw_balance(
@@ -1237,7 +1303,7 @@ async def withdraw_balance(
             transaction_type="debit_withdraw",
             description=f"Penarikan dana ke {bank_dest} ({acc_num})",
             status="completed",
-            created_at=datetime.utcnow()
+            created_at=datetime.now()
         )
         db.add(new_tx)
         
