@@ -1348,6 +1348,9 @@ export default function LandRegistrationWizard({
         ? parseFloat((validSamples.reduce((acc, s) => acc + s.height_m, 0) / validSamples.length).toFixed(2))
         : null;
 
+      // [INTEGRATION-HOOK: ROLE_ADMIN (DISPATCHER)]
+      // Lahan disimpan dengan status = 'draft', surveyor_id = NULL, scheduled_survey_date = NULL.
+      // Siap dibaca oleh endpoint Admin Dispatcher GET /api/v1/admin/lands untuk penugasan surveyor.
       const payload = {
         name: formData.name,
         ownership: formData.ownership,
@@ -1390,8 +1393,11 @@ export default function LandRegistrationWizard({
       showLocalToast('Lahan Berhasil Diajukan', 'Poligon masuk antrean verifikasi surveyor.');
 
       if (onComplete) onComplete(apiResponse);
-      if (onNavigateTab) onNavigateTab('timeline');
-      navigate('/mitra-tani/lacak-verifikasi');
+      if (onNavigateTab) {
+        onNavigateTab('timeline', { plotId: apiResponse?.id });
+      } else {
+        navigate(`/mitra-tani/verifikasi?plotId=${apiResponse?.id || ''}`);
+      }
     } catch (err) {
       console.error('Pendaftaran lahan gagal:', err);
       const errorMessage = err.message || 'Terjadi kesalahan saat memproses pendaftaran lahan.';

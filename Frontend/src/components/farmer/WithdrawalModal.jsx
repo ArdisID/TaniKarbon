@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Landmark, 
@@ -13,7 +13,7 @@ import {
   Info
 } from 'lucide-react';
 import { formatRupiah } from '../../data';
-import { withdrawFarmerBalance } from '../../api/farmer';
+import { withdrawFarmerBalance, getFarmerBankAccounts } from '../../api/farmer';
 
 export default function WithdrawalModal({ availableBalance = 0, onClose, onSuccess, onToast }) {
   // Pre-configured KYC Verified Accounts
@@ -38,6 +38,7 @@ export default function WithdrawalModal({ availableBalance = 0, onClose, onSucce
     }
   ];
 
+  const [savedAccounts, setSavedAccounts] = useState(defaultSavedAccounts);
   const [selectedAccountId, setSelectedAccountId] = useState('bri');
   const [useCustomAccount, setUseCustomAccount] = useState(false);
   const [customBank, setCustomBank] = useState('Bank Mandiri');
@@ -48,10 +49,36 @@ export default function WithdrawalModal({ availableBalance = 0, onClose, onSucce
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  // Sinkronisasi daftar rekening riil dari database PostgreSQL
+  useEffect(() => {
+    let mounted = true;
+    getFarmerBankAccounts()
+      .then((accs) => {
+        if (!mounted || !Array.isArray(accs) || accs.length === 0) return;
+        const mapped = accs.map((a) => ({
+          id: a.id,
+          name: a.bank_name || a.bank_code,
+          accountNumber: a.account_number,
+          accountHolder: a.account_holder_name,
+          type: (a.bank_code || '').toLowerCase().includes('gopay') || (a.bank_code || '').toLowerCase().includes('dana') ? 'ewallet' : 'bank',
+          isPrimary: Boolean(a.is_primary),
+          tag: a.is_primary ? 'Rekening Utama' : 'Rekening Bank'
+        }));
+        setSavedAccounts(mapped);
+        const primary = mapped.find((m) => m.isPrimary);
+        if (primary) setSelectedAccountId(primary.id);
+        else setSelectedAccountId(mapped[0].id);
+      })
+      .catch((err) => {
+        console.warn('Gagal memuat daftar rekening bank:', err);
+      });
+    return () => { mounted = false; };
+  }, []);
+
   const numericAmount = parseInt(amount || '0', 10);
 
   // Determine current active account details
-  const activeAccount = defaultSavedAccounts.find(a => a.id === selectedAccountId) || defaultSavedAccounts[0];
+  const activeAccount = savedAccounts.find(a => a.id === selectedAccountId) || savedAccounts[0];
   const finalBankName = useCustomAccount ? customBank : activeAccount.name;
   const finalAccountNumber = useCustomAccount ? customNumber : activeAccount.accountNumber;
   const finalAccountHolder = useCustomAccount ? customHolder : activeAccount.accountHolder;
@@ -86,6 +113,9 @@ export default function WithdrawalModal({ availableBalance = 0, onClose, onSucce
     setError('');
 
     try {
+      // [INTEGRATION-HOOK: ROLE_ADMIN (FINANCE & ESCROW PAYOUT) & ROLE_CORPORATE (CARBON BUYER)]
+      // Mengirimkan tiket penarikan dana mitra tani ke ledger PostgreSQL.
+      // Admin Finance dapat menyetujui tiket ini via PATCH /api/v1/admin/withdrawals/{tx_id}.
       const res = await withdrawFarmerBalance({
         amount: numericAmount,
         bank_name: finalBankName,
@@ -179,7 +209,7 @@ export default function WithdrawalModal({ availableBalance = 0, onClose, onSucce
             </label>
 
             <div className="space-y-2">
-              {defaultSavedAccounts.map((acc) => {
+              {savedAccounts.map((acc) => {
                 const isSelected = !useCustomAccount && selectedAccountId === acc.id;
                 return (
                   <div

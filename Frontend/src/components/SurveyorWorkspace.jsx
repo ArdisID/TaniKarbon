@@ -6,7 +6,7 @@ import SurveyorDashboardView from './surveyor/SurveyorDashboardView';
 import FieldMapNavigationView from './surveyor/FieldMapNavigationView';
 import SurveyorInspectionView from './surveyor/SurveyorInspectionView';
 import OfflineSyncAndHistoryView from './surveyor/OfflineSyncAndHistoryView';
-import { getSurveyorTasks, submitSurveyorAudit } from '../api/surveyor';
+import { getSurveyorTasks, getSurveyorHistory, submitSurveyorAudit } from '../api/surveyor';
 import { getOfflineSurveys, deleteOfflineSurvey, clearOfflineSurveys } from '../utils/offlineStorage';
 import { CheckCircle2, LogOut } from 'lucide-react';
 import TaniKarbonLogo from './common/TaniKarbonLogo';
@@ -117,6 +117,23 @@ export default function SurveyorWorkspace({
       setIsLoadingTasks(false);
     }
   }, [showToast]);
+
+  const [historyTasks, setHistoryTasks] = useState([]);
+
+  const fetchHistory = useCallback(async () => {
+    try {
+      const data = await getSurveyorHistory();
+      if (Array.isArray(data)) {
+        setHistoryTasks(data);
+      }
+    } catch (err) {
+      console.warn('Gagal memuat riwayat surveyor dari API:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
 
   const loadOfflineQueue = useCallback(async () => {
     try {
@@ -259,12 +276,16 @@ export default function SurveyorWorkspace({
   // Sync / Audit Complete Callback
   const handleAuditComplete = useCallback((decision) => {
     fetchTasks();
+    fetchHistory();
     loadOfflineQueue();
     handleSelectTab('tasks');
-  }, [fetchTasks, loadOfflineQueue, handleSelectTab]);
+  }, [fetchTasks, fetchHistory, loadOfflineQueue, handleSelectTab]);
 
   // Riwayat lahan yang sudah selesai diaudit (verified / rejected) dari database PostgreSQL
   const completedHistory = useMemo(() => {
+    if (historyTasks && historyTasks.length > 0) {
+      return historyTasks;
+    }
     return tasks
       .filter((t) => {
         const s = String(t.status || '').toLowerCase();
@@ -298,7 +319,7 @@ export default function SurveyorWorkspace({
           notes: latestLog?.notes || (isVerified ? 'Telah memenuhi standar alometrik & geofencing lapangan.' : 'Tidak memenuhi kualifikasi batas/tegakan.')
         };
       });
-  }, [tasks]);
+  }, [historyTasks, tasks]);
 
   // Mode Fokus Tanpa Sidebar (Fullscreen Execution Mode)
   const isInspectionMode = currentTab === 'inspection' && Boolean(activePlotId);

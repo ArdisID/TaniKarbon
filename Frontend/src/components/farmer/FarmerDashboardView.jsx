@@ -87,106 +87,156 @@ export default function FarmerDashboardView({
   };
 
   // ---------------------------------------------------------------------------
-  // 2. Data Metrics
+  // 2. Data Metrics Dinamis dari PostgreSQL/PostGIS
   // ---------------------------------------------------------------------------
-  const displayName = farmerSummary?.farmer_name || 'Pak Joko Widodo';
-  const rawBalance = Number(farmerSummary?.available_balance || availableBalance || 3250000);
-  const animatedBalance = useAnimatedCounter(rawBalance, 1400);
+  const displayName = farmerSummary?.farmer_name || 'Mitra Tani';
+  const rawBalance = Number(farmerSummary?.available_balance ?? availableBalance ?? 0);
+  const rawCarbon = Number(
+    farmerSummary?.total_all_carbon_tco2e ?? 
+    realLands.reduce((acc, l) => acc + (l.tree_blocks || []).reduce((bAcc, b) => bAcc + Number(b.estimated_tco2e_per_year || 0), 0), 0)
+  );
+  const rawTrees = Number(
+    farmerSummary?.total_all_trees ?? 
+    realLands.reduce((acc, l) => acc + (l.tree_blocks || []).reduce((bAcc, b) => bAcc + Number(b.total_population || 0), 0), 0)
+  );
+  const rawAreaSqm = Number(
+    farmerSummary?.total_land_area_sqm ?? 
+    realLands.reduce((acc, l) => acc + Number(l.area_sqm || 0), 0)
+  );
+  const rawAreaHa = (rawAreaSqm / 10000).toFixed(2);
+  const totalPlotsCount = Number(farmerSummary?.total_land_plots ?? realLands.length);
 
-  const rawCarbon = Number(farmerSummary?.total_all_carbon_tco2e || 14.2);
-  const rawTrees = Number(farmerSummary?.total_all_trees || 264);
-  const rawAreaHa = farmerSummary?.total_land_area_sqm 
-    ? (Number(farmerSummary.total_land_area_sqm) / 10000).toFixed(2)
-    : '1,27';
+  // Estimasi dividen bersih 88% jika saldo tersedia belum ada pencairan
+  const totalDividenValue = rawBalance > 0 
+    ? rawBalance 
+    : (rawCarbon > 0 ? Math.round(rawCarbon * 85000 * 0.88) : 0);
+  const animatedBalance = useAnimatedCounter(totalDividenValue, 1400);
 
   // State timeframe chart
   const [timeframe, setTimeframe] = useState('monthly'); // 'monthly' | 'quarterly' | 'annual'
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all'); // 'all' | 'verified' | 'pending'
 
-  // Monthly Chart Data (Jan - Dec)
+  // Dynamic Monthly Chart Data (Jan - Des) based on real carbon accumulation
   const chartData = useMemo(() => {
-    return [
-      { month: 'Jan', carbon: 1.8, revenue: 151200 },
-      { month: 'Feb', carbon: 2.6, revenue: 218400 },
-      { month: 'Mar', carbon: 4.1, revenue: 344400 },
-      { month: 'Apr', carbon: 5.4, revenue: 453600 },
-      { month: 'Mei', carbon: 7.2, revenue: 604800 },
-      { month: 'Jun', carbon: 8.9, revenue: 747600 },
-      { month: 'Jul', carbon: 10.5, revenue: 882000 },
-      { month: 'Agu', carbon: 12.3, revenue: 1033200 },
-      { month: 'Sep', carbon: 13.4, revenue: 1125600 },
-      { month: 'Okt', carbon: 14.2, revenue: 1192800 },
-      { month: 'Nov', carbon: 15.1, revenue: 1268400 },
-      { month: 'Des', carbon: 16.0, revenue: 1344000 }
-    ];
-  }, []);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const currentMonthIdx = new Date().getMonth();
+    const peakCarbon = rawCarbon > 0 ? rawCarbon : 0;
+    const estTotalDividen = Math.round(peakCarbon * 85000 * 0.88);
 
-  // Category Donut Chart Data (Spesies Pohon) - Permanent Green Theme
-  const categoryData = useMemo(() => [
-    { name: 'Sengon Laut', value: 45, carbon: '6,4 tCO2e', color: '#10B981' },
-    { name: 'Alpukat Mentega', value: 25, carbon: '3,6 tCO2e', color: '#14382C' },
-    { name: 'Jati Emas', value: 20, carbon: '2,8 tCO2e', color: '#059669' },
-    { name: 'Kopi Arabika', value: 10, carbon: '1,4 tCO2e', color: '#6EE7B7' }
-  ], []);
+    return months.map((m, idx) => {
+      const factor = idx <= currentMonthIdx ? ((idx + 1) / (currentMonthIdx + 1)) : 1;
+      const cVal = parseFloat((peakCarbon * factor).toFixed(2));
+      const rVal = Math.round(estTotalDividen * factor);
+      return {
+        month: m,
+        carbon: cVal,
+        revenue: rVal
+      };
+    });
+  }, [rawCarbon]);
 
-  // Recent Activity / Orders Table Data
-  const recentOrders = useMemo(() => [
-    {
-      id: '#ORD-8821',
-      plotCode: '#LHN-01',
-      plotName: 'Pekarangan Garung',
-      product: 'Blok Alpukat Mentega (64 Pohon)',
-      amount: 'Rp 620.000',
-      carbon: '8,4 tCO2e',
-      status: 'verified',
-      statusLabel: 'Terverifikasi / Valid',
-      date: '28 Okt 2026',
-      avatar: 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=120&q=80'
-    },
-    {
-      id: '#ORD-8820',
-      plotCode: '#LHN-01',
-      plotName: 'Pekarangan Garung',
-      product: 'Blok Sengon Laut (100 Pohon)',
-      amount: 'Rp 280.000',
-      carbon: '3,8 tCO2e',
-      status: 'verified',
-      statusLabel: 'Terverifikasi / Valid',
-      date: '22 Okt 2026',
-      avatar: 'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=120&q=80'
-    },
-    {
-      id: '#ORD-8819',
-      plotCode: '#LHN-02',
-      plotName: 'Lereng Sindoro',
-      product: 'Blok Jati Emas (150 Pohon)',
-      amount: 'Rp 258.000',
-      carbon: '3,5 tCO2e',
-      status: 'pending',
-      statusLabel: 'Menunggu Survei',
-      date: '18 Okt 2026',
-      avatar: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=120&q=80'
-    },
-    {
-      id: '#ORD-8818',
-      plotCode: '#LHN-02',
-      plotName: 'Lereng Sindoro',
-      product: 'Blok Mangga Harumanis (60 Pohon)',
-      amount: 'Rp 148.000',
-      carbon: '2,0 tCO2e',
-      status: 'scheduled',
-      statusLabel: 'Jadwal Audit Lapangan',
-      date: '15 Okt 2026',
-      avatar: 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=120&q=80'
+  // Dynamic Category Donut Chart Data (Spesies Pohon) from real tree blocks / DB breakdown
+  const categoryData = useMemo(() => {
+    const list = farmerSummary?.species_breakdown || [];
+    const palette = ['#10B981', '#14382C', '#059669', '#34D399', '#047857', '#6EE7B7'];
+
+    if (list && list.length > 0) {
+      const total = list.reduce((s, item) => s + Number(item.total_carbon_tco2e || 0), 0) || 1;
+      return list.map((item, idx) => ({
+        name: item.species_name,
+        value: Math.max(1, Math.round((Number(item.total_carbon_tco2e || 0) / total) * 100)),
+        carbon: `${Number(item.total_carbon_tco2e || 0).toFixed(1)} tCO2e`,
+        color: palette[idx % palette.length]
+      }));
     }
-  ], []);
 
-  // Filtered orders
+    // Fallback: agregasi langsung dari realLands
+    const map = {};
+    realLands.forEach((l) => {
+      (l.tree_blocks || []).forEach((tb) => {
+        const sp = tb.species_name || 'Lainnya';
+        map[sp] = (map[sp] || 0) + Number(tb.estimated_tco2e_per_year || 0);
+      });
+    });
+
+    const entries = Object.entries(map);
+    if (entries.length === 0) {
+      return [{ name: 'Belum Ada Tegakan', value: 100, carbon: '0 tCO2e', color: '#E2E8F0' }];
+    }
+
+    const total = entries.reduce((s, [, c]) => s + c, 0) || 1;
+    return entries.map(([name, carb], idx) => ({
+      name,
+      value: Math.max(1, Math.round((carb / total) * 100)),
+      carbon: `${carb.toFixed(1)} tCO2e`,
+      color: palette[idx % palette.length]
+    }));
+  }, [farmerSummary, realLands]);
+
+  // Recent Activity Table Data mapped directly from real lands & tree blocks
+  const recentOrders = useMemo(() => {
+    if (!realLands || realLands.length === 0) return [];
+    const rows = [];
+    const defaultPhotos = [
+      'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=120&q=80',
+      'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=120&q=80',
+      'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=120&q=80'
+    ];
+
+    realLands.forEach((land, landIdx) => {
+      const plotCode = `#LHN-${String(landIdx + 1).padStart(2, '0')}`;
+      const tbs = land.tree_blocks || [];
+      const photoUrl = (land.photos && land.photos.length > 0 && land.photos[0]?.photo_url)
+        ? (land.photos[0].photo_url.startsWith('http') ? land.photos[0].photo_url : `http://127.0.0.1:8000${land.photos[0].photo_url}`)
+        : defaultPhotos[landIdx % defaultPhotos.length];
+
+      const createdDt = land.created_at ? new Date(land.created_at) : new Date();
+      const dateStr = createdDt.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+
+      if (tbs.length === 0) {
+        rows.push({
+          id: `${plotCode}-00`,
+          landId: land.id,
+          plotCode,
+          plotName: land.name,
+          product: 'Belum Ada Blok Tegakan',
+          amount: 'Rp 0',
+          carbon: '0.0 tCO2e',
+          status: land.status,
+          statusLabel: land.status === 'verified' ? 'Terverifikasi' : (land.status === 'pending_survey' ? 'Dijadwalkan' : (land.status === 'revision' ? 'Perlu Revisi' : 'Draft')),
+          date: dateStr,
+          avatar: photoUrl
+        });
+      } else {
+        tbs.forEach((tb, tbIdx) => {
+          const carb = Number(tb.estimated_tco2e_per_year || 0);
+          const estDividen = Math.round(carb * 85000 * 0.88);
+          rows.push({
+            id: `${plotCode}-${String(tbIdx + 1).padStart(2, '0')}`,
+            landId: land.id,
+            plotCode,
+            plotName: land.name,
+            product: `Blok ${tb.species_name} (${tb.total_population} Pohon)`,
+            amount: formatRupiah(estDividen),
+            carbon: `${carb.toFixed(1)} tCO2e`,
+            status: land.status,
+            statusLabel: land.status === 'verified' ? 'Terverifikasi' : (land.status === 'pending_survey' ? 'Dijadwalkan' : (land.status === 'revision' ? 'Perlu Revisi' : 'Draft')),
+            date: dateStr,
+            avatar: photoUrl
+          });
+        });
+      }
+    });
+    return rows;
+  }, [realLands]);
+
+  // Filtered orders based on Search & Tabs (all | verified | pending)
   const filteredOrders = useMemo(() => {
     return recentOrders.filter(order => {
-      if (activeTabFilter === 'verified' && order.status !== 'verified') return false;
-      if (activeTabFilter === 'pending' && order.status === 'verified') return false;
+      const isVerified = order.status === 'verified' || order.status === 'clustered';
+      if (activeTabFilter === 'verified' && !isVerified) return false;
+      if (activeTabFilter === 'pending' && isVerified) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
@@ -199,41 +249,37 @@ export default function FarmerDashboardView({
     });
   }, [recentOrders, activeTabFilter, searchQuery]);
 
-  // Top Performing Products / Tree Blocks
-  const topProducts = useMemo(() => [
-    {
-      id: 'tp-1',
-      title: 'Alpukat Mentega Garung',
-      subtitle: '64 Pohon • DBH 28.4 cm',
-      sales: '8,4 tCO2e',
-      revenue: 'Rp 620.000',
-      image: 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=160&q=80'
-    },
-    {
-      id: 'tp-2',
-      title: 'Sengon Laut Agroforestri',
-      subtitle: '100 Pohon • DBH 26.5 cm',
-      sales: '3,8 tCO2e',
-      revenue: 'Rp 280.000',
-      image: 'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=160&q=80'
-    },
-    {
-      id: 'tp-3',
-      title: 'Jati Emas Sindoro',
-      subtitle: '150 Pohon • DBH 21.5 cm',
-      sales: '3,5 tCO2e',
-      revenue: 'Rp 258.000',
-      image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=160&q=80'
-    },
-    {
-      id: 'tp-4',
-      title: 'Kopi Arabika Wonosobo',
-      subtitle: '50 Pohon • DBH 16.0 cm',
-      sales: '1,2 tCO2e',
-      revenue: 'Rp 148.000',
-      image: 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=160&q=80'
-    }
-  ], []);
+  // Top Performing Tree Blocks from Real Data
+  const topProducts = useMemo(() => {
+    const allBlocks = [];
+    const defaultPhotos = [
+      'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=160&q=80',
+      'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=160&q=80',
+      'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=160&q=80',
+      'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=160&q=80'
+    ];
+
+    realLands.forEach((land, lIdx) => {
+      (land.tree_blocks || []).forEach((tb, bIdx) => {
+        const carb = Number(tb.estimated_tco2e_per_year || 0);
+        const estRev = Math.round(carb * 85000 * 0.88);
+        allBlocks.push({
+          id: `${land.id}-${tb.id || bIdx}`,
+          title: `${tb.species_name} - ${land.name}`,
+          subtitle: `${tb.total_population} Pohon • DBH ${tb.avg_dbh_cm || '-'} cm`,
+          sales: `${carb.toFixed(1)} tCO2e`,
+          revenue: formatRupiah(estRev),
+          carbonVal: carb,
+          image: (land.photos && land.photos.length > 0 && land.photos[0]?.photo_url)
+            ? (land.photos[0].photo_url.startsWith('http') ? land.photos[0].photo_url : `http://127.0.0.1:8000${land.photos[0].photo_url}`)
+            : defaultPhotos[(lIdx + bIdx) % defaultPhotos.length]
+        });
+      });
+    });
+
+    allBlocks.sort((a, b) => b.carbonVal - a.carbonVal);
+    return allBlocks.slice(0, 4);
+  }, [realLands]);
 
   return (
     <div className="space-y-6 font-sans">
@@ -416,7 +462,7 @@ export default function FarmerDashboardView({
                 <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
                 +18.2%
               </span>
-              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">2 Petak Poligon GPS</span>
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">{totalPlotsCount} Petak Terdaftar</span>
             </div>
           </div>
         </article>
@@ -449,7 +495,7 @@ export default function FarmerDashboardView({
                 <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
                 +5.1%
               </span>
-              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">100% Sensus Terdata</span>
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">{rawTrees > 0 ? `${rawTrees} Pohon Terdata` : 'Belum Ada Sensus'}</span>
             </div>
           </div>
         </article>
@@ -648,10 +694,10 @@ export default function FarmerDashboardView({
                   Total
                 </span>
                 <span className="text-xl sm:text-2xl font-extrabold font-sans text-stone-900 leading-tight tabular-nums">
-                  14,2 t
+                  {rawCarbon > 0 ? `${rawCarbon.toFixed(1)} t` : '0 t'}
                 </span>
                 <span className="text-[10px] text-emerald-600 font-semibold">
-                  100% Sehat
+                  {rawTrees > 0 ? `${rawTrees} Pohon` : '0 Pohon'}
                 </span>
               </div>
             </div>
@@ -849,7 +895,12 @@ export default function FarmerDashboardView({
 
             {/* List of Top Products */}
             <div className="divide-y divide-stone-100 mt-2">
-              {topProducts.map((prod, idx) => (
+              {topProducts.length === 0 ? (
+                <div className="py-8 text-center text-stone-400 text-xs">
+                  Belum ada data tegakan pohon terdaftar.
+                </div>
+              ) : (
+                topProducts.map((prod, idx) => (
                 <div key={prod.id} className="py-3 flex items-center justify-between gap-3 group hover:bg-stone-50/70 p-2 rounded-xl transition cursor-pointer">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="relative w-11 h-11 rounded-xl overflow-hidden shrink-0 border border-stone-200">
@@ -882,24 +933,30 @@ export default function FarmerDashboardView({
                     </p>
                   </div>
                 </div>
-              ))}
+              )))}
             </div>
           </div>
 
           {/* Kuota Klaster Progress Capsule (Frosted Glass & Ambient Glow) */}
           <div className="mt-4 p-4 rounded-2xl bg-white/70 backdrop-blur-md border border-white/90 shadow-[0_4px_16px_rgba(0,0,0,0.02),inset_0_1px_2px_rgba(255,255,255,0.85)] space-y-2.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-stone-800">Target Klaster Sukamaju</span>
-              <span className="font-sans font-bold text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded-full text-xs border border-emerald-400/20 tabular-nums">76% Tercapai</span>
+              <span className="font-bold text-stone-800">
+                {farmerSummary?.cluster_info?.cluster_name || 'Klaster Belum Ditetapkan'}
+              </span>
+              <span className="font-sans font-bold text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded-full text-xs border border-emerald-400/20 tabular-nums">
+                {farmerSummary?.cluster_info ? `${farmerSummary.cluster_info.percentage}% Tercapai` : '0%'}
+              </span>
             </div>
             <div className="w-full bg-stone-200/80 rounded-full h-2.5 overflow-hidden shadow-inner">
               <div 
                 className="h-full rounded-full transition-all duration-1000 bg-emerald-600" 
-                style={{ width: '76%' }} 
+                style={{ width: `${farmerSummary?.cluster_info ? Math.min(100, Math.max(0, farmerSummary.cluster_info.percentage)) : 0}%` }} 
               />
             </div>
             <p className="text-[11px] text-stone-500 leading-tight">
-              380 / 500 tCO2e terkumpul • Audit klaster dijadwalkan 30 Nov 2026
+              {farmerSummary?.cluster_info 
+                ? `${farmerSummary.cluster_info.current_carbon_tco2e} / ${farmerSummary.cluster_info.target_tco2e} tCO2e terkumpul • Status: ${farmerSummary.cluster_info.cluster_status}`
+                : 'Daftarkan petak lahan untuk bergabung dalam kuota klaster agregasi desa.'}
             </p>
           </div>
         </div>

@@ -28,7 +28,14 @@ import {
   CreditCard
 } from 'lucide-react';
 import { formatRupiah, formatNumber } from '../../data';
-import { getFarmerWallet } from '../../api/farmer';
+import { 
+  getFarmerWallet,
+  getFarmerBankAccounts,
+  addFarmerBankAccount,
+  deleteFarmerBankAccount,
+  setPrimaryFarmerBankAccount,
+  getFarmerWalletTransactions
+} from '../../api/farmer';
 
 // Helper hook for smooth animated number counting
 function useAnimatedCounter(endValue, duration = 1200) {
@@ -64,10 +71,11 @@ export default function FarmerWalletView({
   onOpenReceipt,
   onToast 
 }) {
+  // [INTEGRATION-HOOK: ROLE_ADMIN (FINANCE & ESCROW PAYOUT) & ROLE_CORPORATE (CARBON BUYER)]
   const [walletData, setWalletData] = useState({
-    available_balance: availableBalance || 3250000,
-    escrow_balance: escrowBalance || 1450000,
-    recent_transactions: []
+    available_balance: availableBalance || 0,
+    escrow_balance: escrowBalance || 0,
+    recent_transactions: transactions || []
   });
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState(null);
@@ -80,27 +88,8 @@ export default function FarmerWalletView({
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const [activeFaq, setActiveFaq] = useState(null);
 
-  // Saved Payout Accounts
-  const [savedAccounts, setSavedAccounts] = useState([
-    {
-      id: 'acc-1',
-      bankName: 'Bank BRI',
-      accountNumber: '0142-01-084821-50-8',
-      accountHolder: 'JOKO WIDODO',
-      isPrimary: true,
-      isKycVerified: true,
-      type: 'bank'
-    },
-    {
-      id: 'acc-2',
-      bankName: 'GoPay Petani',
-      accountNumber: '0812-4921-7890',
-      accountHolder: 'JOKO WIDODO',
-      isPrimary: false,
-      isKycVerified: true,
-      type: 'ewallet'
-    }
-  ]);
+  // Saved Payout Accounts dari PostgreSQL
+  const [savedAccounts, setSavedAccounts] = useState([]);
 
   // Form state for adding new account
   const [newAccount, setNewAccount] = useState({
@@ -110,91 +99,14 @@ export default function FarmerWalletView({
     type: 'bank'
   });
 
-  const displayAvailableBalance = walletData.available_balance || availableBalance || 3250000;
-  const displayEscrowBalance = walletData.escrow_balance || escrowBalance || 1450000;
+  const displayAvailableBalance = Number(availableBalance ?? walletData.available_balance ?? 0);
+  const displayEscrowBalance = Number(escrowBalance ?? walletData.escrow_balance ?? 0);
   const animatedAvailable = useAnimatedCounter(displayAvailableBalance, 1400);
   const animatedEscrow = useAnimatedCounter(displayEscrowBalance, 1400);
-  const lifetimeEarnings = 18250000;
-  const animatedLifetime = useAnimatedCounter(lifetimeEarnings, 1500);
-
-  const defaultMockTransactions = [
-    {
-      id: 'tx-01',
-      title: 'Bagi Hasil Klaster Sukamaju (Batch 3)',
-      method: 'Bank BRI',
-      recipient: 'Rekening BRI •••• 8821',
-      amount: 1750000,
-      transaction_type: 'credit_payout',
-      date: '25 Okt 2026, 14:30 WIB',
-      status: 'completed',
-      statusText: '• Berhasil Ditransfer',
-      refNumber: 'TRX-SKM-8821'
-    },
-    {
-      id: 'tx-02',
-      title: 'Penarikan Dana ke Rekening BRI',
-      method: 'Bank BRI',
-      recipient: 'Rekening BRI •••• 8821',
-      amount: 1500000,
-      transaction_type: 'debit_withdrawal',
-      date: '18 Okt 2026, 09:15 WIB',
-      status: 'completed',
-      statusText: '• Berhasil Ditransfer',
-      refNumber: 'TRX-WTD-4412'
-    },
-    {
-      id: 'tx-03',
-      title: 'Insentif Monitoring Bulanan Sentinel-2',
-      method: 'Bank BRI',
-      recipient: 'Dompet TaniKarbon (Kanopi Sehat)',
-      amount: 250000,
-      transaction_type: 'credit_payout',
-      date: '15 Okt 2026, 16:45 WIB',
-      status: 'completed',
-      statusText: '• Berhasil Ditransfer',
-      refNumber: 'TRX-STN-3011'
-    },
-    {
-      id: 'tx-04',
-      title: 'Bagi Hasil Klaster Sukamaju (Batch 2)',
-      method: 'GoPay',
-      recipient: 'GoPay 0812••••4491',
-      amount: 892500,
-      transaction_type: 'credit_payout',
-      date: '10 Okt 2026, 11:20 WIB',
-      status: 'completed',
-      statusText: '• Berhasil Ditransfer',
-      refNumber: 'TRX-GOP-9923'
-    },
-    {
-      id: 'tx-05',
-      title: 'Penarikan Dana ke E-Wallet GoPay',
-      method: 'GoPay',
-      recipient: 'GoPay 0812••••4491',
-      amount: 500000,
-      transaction_type: 'debit_withdrawal',
-      date: '02 Okt 2026, 13:10 WIB',
-      status: 'completed',
-      statusText: '• Berhasil Ditransfer',
-      refNumber: 'TRX-WTD-1129'
-    },
-    {
-      id: 'tx-06',
-      title: 'Insentif Sensus DBH Mandiri Awal',
-      method: 'Bank BRI',
-      recipient: 'Dompet TaniKarbon (Bonus Sensus)',
-      amount: 350000,
-      transaction_type: 'credit_payout',
-      date: '28 Sep 2026, 10:00 WIB',
-      status: 'completed',
-      statusText: '• Berhasil Ditransfer',
-      refNumber: 'TRX-DBH-5501'
-    }
-  ];
 
   const rawTransactions = (walletData?.recent_transactions && walletData.recent_transactions.length > 0)
     ? walletData.recent_transactions
-    : (transactions && transactions.length > 0 ? transactions : defaultMockTransactions);
+    : (transactions && transactions.length > 0 ? transactions : []);
 
   const allTransactions = useMemo(() => {
     return rawTransactions.map((tx) => {
@@ -207,7 +119,7 @@ export default function FarmerWalletView({
         title: tx.title || tx.description || 'Transaksi Dompet',
         method: tx.method || (tx.recipient && tx.recipient.toLowerCase().includes('gopay') ? 'GoPay' : 'Bank BRI'),
         recipient: tx.recipient || (tx.transaction_type === 'credit_payout' ? 'Dompet TaniKarbon (Bagi Hasil)' : 'Rekening Bank Terdaftar'),
-        amount: tx.amount || 0,
+        amount: Number(tx.amount || 0),
         date: tx.date || (tx.created_at ? new Date(tx.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' WIB' : '—'),
         statusText: isCompleted ? '• Berhasil Ditransfer' : isFailed ? '• Gagal' : '• Diproses Admin',
         statusColor: isCompleted 
@@ -219,6 +131,15 @@ export default function FarmerWalletView({
       };
     });
   }, [rawTransactions]);
+
+  const lifetimeEarnings = useMemo(() => {
+    const fromCredits = allTransactions
+      .filter(t => t.transaction_type === 'credit_payout' || t.transaction_type === 'credit_deposit')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    return fromCredits > 0 ? fromCredits : (displayAvailableBalance + displayEscrowBalance);
+  }, [allTransactions, displayAvailableBalance, displayEscrowBalance]);
+
+  const animatedLifetime = useAnimatedCounter(lifetimeEarnings, 1500);
 
   // Filtered transactions based on search query and filter tabs
   const filteredTransactions = useMemo(() => {
@@ -277,31 +198,79 @@ export default function FarmerWalletView({
     }
   };
 
-  // Handler: Add New Payout Account
-  const handleAddAccountSubmit = (e) => {
+  const fetchBankAccounts = useCallback(async () => {
+    try {
+      const data = await getFarmerBankAccounts();
+      if (Array.isArray(data) && data.length > 0) {
+        setSavedAccounts(data.map(acc => ({
+          id: acc.id,
+          bankName: acc.bank_name,
+          accountNumber: acc.account_number,
+          accountHolder: acc.account_holder_name,
+          isPrimary: acc.is_primary,
+          isKycVerified: true,
+          type: (acc.bank_name || '').toLowerCase().includes('gopay') || (acc.bank_name || '').toLowerCase().includes('dana') ? 'ewallet' : 'bank'
+        })));
+      } else {
+        setSavedAccounts([]);
+      }
+    } catch (e) {
+      console.warn('Gagal memuat bank accounts:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBankAccounts();
+  }, [fetchBankAccounts]);
+
+  // Handler: Add New Payout Account via API
+  const handleAddAccountSubmit = async (e) => {
     e.preventDefault();
     if (!newAccount.accountNumber.trim()) return;
 
-    const created = {
-      id: `acc-${Date.now()}`,
-      bankName: newAccount.bankName,
-      accountNumber: newAccount.accountNumber,
-      accountHolder: newAccount.accountHolder || 'JOKO WIDODO',
-      isPrimary: false,
-      isKycVerified: true,
-      type: newAccount.bankName.toLowerCase().includes('gopay') || newAccount.bankName.toLowerCase().includes('dana') ? 'ewallet' : 'bank'
-    };
+    try {
+      await addFarmerBankAccount({
+        bank_code: newAccount.bankName.slice(0, 4).toUpperCase(),
+        bank_name: newAccount.bankName,
+        account_number: newAccount.accountNumber.trim(),
+        account_holder_name: newAccount.accountHolder.trim() || 'JOKO WIDODO',
+        is_primary: savedAccounts.length === 0
+      });
+      setShowAddAccountModal(false);
+      setNewAccount({
+        bankName: 'Bank Mandiri',
+        accountNumber: '',
+        accountHolder: 'JOKO WIDODO',
+        type: 'bank'
+      });
+      await fetchBankAccounts();
+      if (onToast) {
+        onToast(`Rekening ${newAccount.bankName} berhasil ditambahkan!`);
+      }
+    } catch (err) {
+      if (onToast) {
+        onToast(err.message || 'Gagal menambahkan rekening', 'error');
+      }
+    }
+  };
 
-    setSavedAccounts(prev => [...prev, created]);
-    setShowAddAccountModal(false);
-    setNewAccount({
-      bankName: 'Bank Mandiri',
-      accountNumber: '',
-      accountHolder: 'JOKO WIDODO',
-      type: 'bank'
-    });
-    if (onToast) {
-      onToast(`Rekening ${created.bankName} berhasil ditambahkan dan diverifikasi!`);
+  const handleDeleteAccount = async (accId) => {
+    try {
+      await deleteFarmerBankAccount(accId);
+      await fetchBankAccounts();
+      if (onToast) onToast('Rekening bank berhasil dihapus.');
+    } catch (err) {
+      if (onToast) onToast(err.message || 'Gagal menghapus rekening', 'error');
+    }
+  };
+
+  const handleSetPrimaryAccount = async (accId) => {
+    try {
+      await setPrimaryFarmerBankAccount(accId);
+      await fetchBankAccounts();
+      if (onToast) onToast('Rekening utama berhasil diperbarui.');
+    } catch (err) {
+      if (onToast) onToast(err.message || 'Gagal mengatur rekening utama', 'error');
     }
   };
 
@@ -310,14 +279,16 @@ export default function FarmerWalletView({
     const fetchWalletData = async () => {
       setIsLoading(true);
       try {
-        const data = await getFarmerWallet();
-        if (isMounted && data) {
+        const [wData, txData] = await Promise.all([
+          getFarmerWallet().catch(() => null),
+          getFarmerWalletTransactions().catch(() => [])
+        ]);
+
+        if (isMounted) {
           setWalletData({
-            available_balance: data.available_balance ?? 3250000,
-            escrow_balance: data.escrow_balance ?? 1450000,
-            recent_transactions: (data.recent_transactions && data.recent_transactions.length > 0) 
-              ? data.recent_transactions 
-              : defaultMockTransactions
+            available_balance: Number(wData?.available_balance ?? availableBalance ?? 0),
+            escrow_balance: Number(wData?.escrow_balance ?? escrowBalance ?? 0),
+            recent_transactions: Array.isArray(txData) ? txData : []
           });
           setFetchError(null);
         }
@@ -336,13 +307,13 @@ export default function FarmerWalletView({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [availableBalance, escrowBalance]);
 
   useEffect(() => {
-    if (availableBalance || escrowBalance || (transactions && transactions.length > 0)) {
+    if (availableBalance !== undefined || escrowBalance !== undefined || (transactions && transactions.length > 0)) {
       setWalletData(prev => ({
-        available_balance: availableBalance || prev.available_balance,
-        escrow_balance: escrowBalance || prev.escrow_balance,
+        available_balance: availableBalance ?? prev.available_balance,
+        escrow_balance: escrowBalance ?? prev.escrow_balance,
         recent_transactions: (transactions && transactions.length > 0) ? transactions : prev.recent_transactions
       }));
     }
@@ -650,67 +621,82 @@ export default function FarmerWalletView({
 
           {/* List of Saved Accounts */}
           <div className="space-y-3">
-            {savedAccounts.map((acc) => (
-              <div 
-                key={acc.id} 
-                className={`p-4 rounded-2xl border transition-all ${
-                  acc.isPrimary 
-                    ? 'bg-gradient-to-br from-emerald-50/50 to-teal-50/30 border-emerald-200/80 shadow-xs' 
-                    : 'bg-stone-50/60 border-stone-200/70 hover:bg-stone-50'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${
-                      acc.type === 'bank' ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'
-                    }`}>
-                      {acc.type === 'bank' ? <Landmark className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-stone-900 text-xs sm:text-sm">{acc.bankName}</span>
-                        {acc.isPrimary && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            Utama
-                          </span>
-                        )}
-                        {acc.isKycVerified && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            KYC Valid
-                          </span>
-                        )}
+            {savedAccounts.length === 0 ? (
+              <div className="p-4 rounded-xl border border-dashed border-stone-200 text-center text-xs text-stone-400">
+                Belum ada rekening bank atau e-wallet terdaftar. Klik "+ Tambah" di atas untuk menambahkan rekening pencairan.
+              </div>
+            ) : (
+              savedAccounts.map((acc) => (
+                <div 
+                  key={acc.id} 
+                  className={`p-4 rounded-2xl border transition-all ${
+                    acc.isPrimary 
+                      ? 'bg-gradient-to-br from-emerald-50/50 to-teal-50/30 border-emerald-200/80 shadow-xs' 
+                      : 'bg-stone-50/60 border-stone-200/70 hover:bg-stone-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${
+                        acc.type === 'bank' ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'
+                      }`}>
+                        {acc.type === 'bank' ? <Landmark className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
                       </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="font-sans font-bold text-xs text-stone-700 tabular-nums">{acc.accountNumber}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-stone-900 text-xs sm:text-sm">{acc.bankName}</span>
+                          {acc.isPrimary && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              Utama
+                            </span>
+                          )}
+                          {acc.isKycVerified && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              KYC Valid
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="font-sans font-bold text-xs text-stone-700 tabular-nums">{acc.accountNumber}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyAccount(acc.accountNumber, acc.id)}
+                            className="p-1 text-stone-400 hover:text-stone-700 transition rounded"
+                            title="Salin nomor rekening"
+                          >
+                            {copiedAccountId === acc.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                        <span className="text-[11px] text-stone-400 block mt-0.5">a.n. {acc.accountHolder}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {!acc.isPrimary && (
                         <button
                           type="button"
-                          onClick={() => handleCopyAccount(acc.accountNumber, acc.id)}
-                          className="p-1 text-stone-400 hover:text-stone-700 transition rounded"
-                          title="Salin nomor rekening"
+                          onClick={() => handleSetPrimaryAccount(acc.id)}
+                          className="text-[11px] font-bold text-stone-500 hover:text-emerald-700 hover:underline cursor-pointer"
                         >
-                          {copiedAccountId === acc.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          Jadikan Utama
                         </button>
-                      </div>
-                      <span className="text-[11px] text-stone-400 block mt-0.5">a.n. {acc.accountHolder}</span>
+                      )}
+                      {savedAccounts.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAccount(acc.id)}
+                          className="p-1 text-stone-400 hover:text-rose-600 transition"
+                          title="Hapus rekening"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
-
-                  {!acc.isPrimary && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSavedAccounts(prev => prev.map(a => ({ ...a, isPrimary: a.id === acc.id })));
-                        if (onToast) onToast(`${acc.bankName} dijadikan rekening pencairan utama.`);
-                      }}
-                      className="text-[11px] font-bold text-stone-500 hover:text-emerald-700 hover:underline cursor-pointer"
-                    >
-                      Jadikan Utama
-                    </button>
-                  )}
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200/60 text-[11px] text-blue-900 flex items-start gap-2">

@@ -276,7 +276,7 @@ export default function LandManagementView({
 }) {
   // Main data state
   const [lands, setLands] = useState(
-    realLands && realLands.length > 0 ? realLands : DEFAULT_FALLBACK_LANDS
+    Array.isArray(realLands) ? realLands : []
   );
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -378,14 +378,14 @@ export default function LandManagementView({
     setIsLoading(true);
     try {
       const data = await getFarmerLands();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         setLands(data);
-      } else if (realLands && realLands.length > 0) {
+      } else if (Array.isArray(realLands)) {
         setLands(realLands);
       }
     } catch (err) {
-      console.warn('Pemberitahuan: Memuat data lahan fallback lokal:', err);
-      if (realLands && realLands.length > 0) {
+      console.warn('Pemberitahuan: Memuat data lahan lokal:', err);
+      if (Array.isArray(realLands)) {
         setLands(realLands);
       }
     } finally {
@@ -398,7 +398,7 @@ export default function LandManagementView({
   }, [fetchLands]);
 
   useEffect(() => {
-    if (realLands && realLands.length > 0) {
+    if (Array.isArray(realLands)) {
       setLands(realLands);
     }
   }, [realLands]);
@@ -737,11 +737,27 @@ export default function LandManagementView({
               <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mb-2" />
               <p className="text-xs font-medium">Sinkronisasi poligon PostGIS...</p>
             </div>
+          ) : lands.length === 0 ? (
+            <div className="rounded-[22px] border border-dashed border-stone-300 bg-white p-12 text-center shadow-xs">
+              <Sprout className="mx-auto h-9 w-9 text-emerald-600 mb-2" />
+              <p className="mt-2 text-base font-bold text-stone-800 font-sans">Belum ada petak lahan terdaftar</p>
+              <p className="mt-1 text-xs text-stone-500 max-w-sm mx-auto">
+                Daftarkan kebun atau lahan agroforestri Anda untuk mulai memetakan batas GPS dan menghitung potensi dividen karbon.
+              </p>
+              <button
+                type="button"
+                onClick={() => onNavigateTab?.('wizard')}
+                className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#14382C] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#1C4E3D] transition shadow-xs cursor-pointer active:scale-95"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>+ Daftarkan Lahan Pertama</span>
+              </button>
+            </div>
           ) : filteredLands.length === 0 ? (
             <div className="rounded-[22px] border border-dashed border-stone-300 bg-white p-10 text-center shadow-xs">
               <SearchX className="mx-auto h-7 w-7 text-stone-400" />
               <p className="mt-2 text-sm font-semibold text-stone-800">Petak lahan tidak ditemukan</p>
-              <p className="mt-1 text-xs text-stone-500">Coba ubah filter pencarian atau daftarkan petak baru.</p>
+              <p className="mt-1 text-xs text-stone-500">Coba ubah filter pencarian atau kata kunci.</p>
             </div>
           ) : (
             filteredLands.map((plot, plotIdx) => {

@@ -38,7 +38,7 @@ import {
 import { MapContainer, TileLayer, Polygon, Marker, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { submitSurveyorAudit } from '../../api/surveyor';
+import { submitSurveyorAudit, uploadSurveyorPhoto, deleteSurveyorPhoto } from '../../api/surveyor';
 import { saveOfflineSurvey } from '../../utils/offlineStorage';
 
 // Helper auto-fit bounds Leaflet (HANYA SEKALI saat awal load petak lahan atau saat user klik tombol fokus kamera)
@@ -418,9 +418,9 @@ export default function SurveyorInspectionView({
       }
     } catch (e) {}
     return {
-      p1_p3: true,
-      no_dispute: true,
-      polygon_match: true
+      p1_p3: false,
+      no_dispute: false,
+      polygon_match: false
     };
   });
 
@@ -440,11 +440,24 @@ export default function SurveyorInspectionView({
       const saved = localStorage.getItem(draftStorageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.photos)) return parsed.photos;
+        if (Array.isArray(parsed.photos) && parsed.photos.length > 0) return parsed.photos;
       }
     } catch (e) {}
+    if (plot?.photo_urls && Array.isArray(plot.photo_urls)) return plot.photo_urls;
+    if (plot?.photos && Array.isArray(plot.photos)) return plot.photos;
     return [];
   });
+
+  // Sinkronkan foto eksisting jika plot dimuat dari database
+  useEffect(() => {
+    const existingPhotos = plot?.photo_urls || plot?.photos;
+    if (Array.isArray(existingPhotos) && existingPhotos.length > 0) {
+      setPhotos((prev) => {
+        if (prev && prev.length > 0) return prev;
+        return existingPhotos;
+      });
+    }
+  }, [plot]);
 
   // Auto-save ke localStorage pada setiap perubahan input
   useEffect(() => {
@@ -600,31 +613,74 @@ export default function SurveyorInspectionView({
   // Upload Foto Lapangan
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  const processPhotoFile = async (file) => {
+    if (!file) return;
+    const latStr = currentPos?.lat ? currentPos.lat.toFixed(6) : centroidLatLng[0].toFixed(6);
+    const lngStr = currentPos?.lng ? currentPos.lng.toFixed(6) : centroidLatLng[1].toFixed(6);
+    const nowTimeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    const defaultTitle = photos.length === 0 ? 'Foto Patok Batas' : 'Foto Kanopi Tegakan';
+    const coordStr = `${latStr}, ${lngStr}`;
+    const timestampStr = `Hari ini · ${nowTimeStr} WIB`;
+
+    setIsUploadingPhoto(true);
+    try {
+      // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', defaultTitle);
+      formData.append('coord', coordStr);
+      formData.append('timestamp', timestampStr);
+
+      const targetLandId = plot?.id || activePlotId;
+      const res = await uploadSurveyorPhoto(targetLandId, formData);
+      const newPhoto = res.photo || {
+        id: `photo-${Date.now()}`,
+        url: res.url || res.photo_url || URL.createObjectURL(file),
+        title: defaultTitle,
+        name: file.name,
+        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+        coord: coordStr,
+        timestamp: timestampStr
+      };
+
+      setPhotos((prev) => [newPhoto, ...prev]);
+      if (onToast) onToast(`Foto "${file.name}" berhasil diunggah dengan geotag tersimpan.`, 'emerald');
+    } catch (err) {
+      console.warn('Gagal upload foto ke backend, simpan lokal sebagai fallback:', err);
+      const localPhoto = {
+        id: `photo-local-${Date.now()}`,
+        url: URL.createObjectURL(file),
+        title: defaultTitle,
+        name: file.name,
+        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+        coord: coordStr,
+        timestamp: timestampStr
+      };
+      setPhotos((prev) => [localPhoto, ...prev]);
+      if (onToast) onToast(`Foto "${file.name}" tersimpan lokal di perangkat.`, 'amber');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
 
   const handleFileUpload = (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    const file = files[0];
-    const latStr = currentPos?.lat ? currentPos.lat.toFixed(6) : centroidLatLng[0].toFixed(6);
-    const lngStr = currentPos?.lng ? currentPos.lng.toFixed(6) : centroidLatLng[1].toFixed(6);
-    const nowTimeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-
-    const newPhoto = {
-      id: `photo-${Date.now()}`,
-      title: photos.length === 0 ? 'Foto Patok Batas' : 'Foto Kanopi Tegakan',
-      name: file.name,
-      size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      coord: `${latStr}, ${lngStr}`,
-      timestamp: `Hari ini · ${nowTimeStr} WIB`,
-      type: 'evidence',
-      svgType: 'kanopi'
-    };
-    setPhotos((prev) => [newPhoto, ...prev]);
-    if (onToast) onToast(`Foto "${file.name}" berhasil diunggah dengan geotag tersimpan.`, 'emerald');
+    processPhotoFile(files[0]);
     e.target.value = '';
   };
 
-  const handleDeletePhoto = (id) => {
+  const handleDeletePhoto = async (id) => {
+    try {
+      const targetLandId = plot?.id || activePlotId;
+      if (id && !String(id).startsWith('photo-local-')) {
+        await deleteSurveyorPhoto(targetLandId, id).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('Gagal menghapus foto di server:', err);
+    }
     setPhotos((prev) => prev.filter((p) => p.id !== id));
     if (onToast) onToast('Foto berhasil dihapus.', 'emerald');
   };
@@ -1477,24 +1533,42 @@ export default function SurveyorInspectionView({
               </div>
 
               {/* Dropzone Upload */}
-              <div className="mt-3.5 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-6 py-8 text-center transition hover:border-emerald-400 hover:bg-emerald-50/20">
+              <div 
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    processPhotoFile(e.dataTransfer.files[0]);
+                  }
+                }}
+                className="mt-3.5 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-6 py-8 text-center transition hover:border-emerald-400 hover:bg-emerald-50/20"
+              >
                 <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-emerald-700 shadow-xs ring-1 ring-inset ring-slate-200">
-                  <Camera className="h-6 w-6" />
+                  {isUploadingPhoto ? (
+                    <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+                  ) : (
+                    <Camera className="h-6 w-6" />
+                  )}
                 </span>
-                <p className="mt-3 text-[14px] font-bold text-[#0F291E]">Seret &amp; lepas foto di sini</p>
+                <p className="mt-3 text-[14px] font-bold text-[#0F291E]">
+                  {isUploadingPhoto ? 'Mengunggah Berkas Foto...' : 'Seret & lepas foto di sini'}
+                </p>
                 <p className="mt-0.5 text-[12.5px] text-slate-500">atau ambil langsung dari kamera perangkat lapangan</p>
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                   <button
                     type="button"
+                    disabled={isUploadingPhoto}
                     onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#0F291E] px-4 py-2.5 text-[13px] font-semibold text-white shadow-xs transition hover:bg-[#173D2E] active:scale-[.98] cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#0F291E] px-4 py-2.5 text-[13px] font-semibold text-white shadow-xs transition hover:bg-[#173D2E] active:scale-[.98] cursor-pointer disabled:opacity-50"
                   >
                     <Upload className="h-4 w-4 text-emerald-400" /> Pilih dari Galeri
                   </button>
                   <button
                     type="button"
+                    disabled={isUploadingPhoto}
                     onClick={() => cameraInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 active:scale-[.98] cursor-pointer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800 active:scale-[.98] cursor-pointer disabled:opacity-50"
                   >
                     <Aperture className="h-4 w-4 text-emerald-600" /> Buka Kamera
                   </button>
@@ -1537,7 +1611,21 @@ export default function SurveyorInspectionView({
                       className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-xs transition hover:border-emerald-300 font-sans"
                     >
                       <div className="relative h-44 w-full overflow-hidden bg-slate-800">
-                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-emerald-900 to-[#0F291E] text-white">
+                        {photo.url ? (
+                          <img
+                            src={
+                              photo.url.startsWith('http') || photo.url.startsWith('blob:') || photo.url.startsWith('data:')
+                                ? photo.url
+                                : `http://127.0.0.1:8000${photo.url}`
+                            }
+                            alt={photo.name || photo.title}
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : null}
+                        <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br from-emerald-900 to-[#0F291E] text-white ${photo.url ? '-z-10' : ''}`}>
                           <div className="text-center p-4">
                             <Trees className="h-10 w-10 mx-auto text-emerald-400 mb-2 opacity-80" />
                             <span className="font-sans text-xs font-bold text-emerald-200 block">{photo.title}</span>

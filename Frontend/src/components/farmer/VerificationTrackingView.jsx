@@ -183,34 +183,31 @@ export default function VerificationTrackingView({
     return () => clearTimeout(timer);
   }, [toastConfig.visible]);
 
+  // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+  // [INTEGRATION-HOOK: ROLE_ADMIN (CLUSTERING & EXTERNAL AUDIT)]
+  const [isBaModalOpen, setIsBaModalOpen] = useState(false);
+
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const landsData = await getFarmerLands().catch((err) => {
-        console.warn('Gagal memuat lands dari API, menggunakan fallback:', err);
+        console.warn('Gagal memuat lands dari API:', err);
         return null;
       });
 
-      if (landsData && Array.isArray(landsData) && landsData.length > 0) {
+      if (landsData && Array.isArray(landsData)) {
         setLands(landsData);
         const qPlotId = getQueryPlotId();
         const matchedPlot = qPlotId ? landsData.find((l) => String(l.id) === String(qPlotId)) : null;
 
         if (matchedPlot) {
           setSelectedLandId(matchedPlot.id);
-        } else {
+        } else if (landsData.length > 0) {
           setSelectedLandId(landsData[0].id);
         }
-      } else {
-        setLands(FALLBACK_LANDS);
-        const qPlotId = getQueryPlotId();
-        const matchedPlot = qPlotId ? FALLBACK_LANDS.find((l) => String(l.id) === String(qPlotId)) : null;
-        setSelectedLandId(matchedPlot ? matchedPlot.id : FALLBACK_LANDS[0].id);
       }
     } catch (error) {
       console.error('Error saat fetch verification data:', error);
-      setLands(FALLBACK_LANDS);
-      setSelectedLandId(FALLBACK_LANDS[0].id);
     } finally {
       setIsLoading(false);
     }
@@ -236,16 +233,27 @@ export default function VerificationTrackingView({
     return lands.find((l) => String(l.id) === String(selectedLandId)) || lands[0];
   }, [lands, selectedLandId]);
 
-  const isVerifiedPlot = selectedLand?.status === 'verified' || selectedLand?.status === 'active';
-  const displaySurveyorName = selectedLand?.surveyor_name || (isVerifiedPlot ? 'Budi Hartono' : 'Menunggu Penugasan');
-  const displaySurveyorCode = selectedLand?.surveyor_code || (isVerifiedPlot ? 'SRV-09' : null);
+  const isVerifiedPlot = selectedLand?.status === 'verified' || selectedLand?.status === 'clustered';
+  const isPendingSurvey = selectedLand?.status === 'pending_survey';
+  const isRevisionNeeded = selectedLand?.status === 'revision' || (
+    selectedLand?.survey_logs && selectedLand.survey_logs.some(l => (l.notes || '').toUpperCase().includes('REVISI'))
+  );
+  const isAwaitingDispatcher = !selectedLand?.surveyor_id && !isVerifiedPlot;
+
+  const displaySurveyorName = selectedLand?.surveyor_name || (isVerifiedPlot ? 'Petugas Surveyor Lapangan' : (isPendingSurvey ? 'Surveyor Ditugaskan' : 'Menunggu Penjadwalan Admin'));
+  const displaySurveyorCode = selectedLand?.surveyor_code || null;
+
+  const latestSurveyLog = (selectedLand?.survey_logs && selectedLand.survey_logs.length > 0)
+    ? selectedLand.survey_logs[selectedLand.survey_logs.length - 1]
+    : null;
 
   const selectedPlotCarbon = useMemo(() => {
-    if (!selectedLand?.tree_blocks) return 42.22;
+    if (!selectedLand?.tree_blocks) return 0;
     return selectedLand.tree_blocks.reduce((acc, b) => acc + (Number(b.estimated_tco2e_per_year) || 0), 0);
   }, [selectedLand]);
 
   // Handle Revisi Batas Submit
+  // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
   const handleSubmitRevision = async (e) => {
     e.preventDefault();
     if (!revisionNote.trim()) {
@@ -262,10 +270,12 @@ export default function VerificationTrackingView({
       triggerToast('success', 'Revisi Terkirim', 'Admin & surveyor akan meninjau perubahan batas poligon.');
       setIsRevisionModalOpen(false);
       setRevisionNote('');
+      loadData();
     } catch (err) {
       triggerToast('success', 'Revisi Tercatat', 'Permintaan revisi batas berhasil disimpan ke dalam antrean.');
       setIsRevisionModalOpen(false);
       setRevisionNote('');
+      loadData();
     } finally {
       setIsSubmittingRevision(false);
     }
@@ -273,9 +283,9 @@ export default function VerificationTrackingView({
 
   const handleDownloadBa = () => {
     if (isVerifiedPlot) {
-      triggerToast('info', 'Dokumen Diunduh', 'Berita Acara MRV PDF resmi (#BA/MRV/2026/03) telah diunduh.');
+      setIsBaModalOpen(true);
     } else {
-      triggerToast('warning', 'Belum Terverifikasi', 'Dokumen Berita Acara MRV baru terbit setelah audit lapangan disetujui.');
+      triggerToast('warning', 'Belum Terverifikasi', 'Dokumen Berita Acara MRV baru terbit setelah audit lapangan disetujui surveyor.');
     }
   };
 
@@ -409,11 +419,17 @@ export default function VerificationTrackingView({
                   className={`absolute -left-8 top-0 grid h-7 w-7 place-items-center rounded-full text-white shadow-xs ${
                     isVerifiedPlot
                       ? 'bg-emerald-600'
-                      : 'ring-4 ring-emerald-500/20 bg-[#14382C]'
+                      : isRevisionNeeded
+                      ? 'bg-amber-600 ring-4 ring-amber-500/20'
+                      : isPendingSurvey
+                      ? 'bg-blue-600 ring-4 ring-blue-500/20'
+                      : 'bg-stone-400'
                   }`}
                 >
                   {isVerifiedPlot ? (
                     <Check className="h-4 w-4 stroke-[2.5]" />
+                  ) : isRevisionNeeded ? (
+                    <AlertTriangle className="h-3.5 w-3.5" />
                   ) : (
                     <Clock className="h-3.5 w-3.5" />
                   )}
@@ -428,38 +444,71 @@ export default function VerificationTrackingView({
                       className={`text-[10px] font-bold rounded-full px-2.5 py-0.5 ${
                         isVerifiedPlot
                           ? 'text-emerald-700 bg-emerald-100/70'
-                          : 'text-amber-800 bg-amber-100/80'
+                          : isRevisionNeeded
+                          ? 'text-amber-900 bg-amber-200/80 border border-amber-300'
+                          : isPendingSurvey
+                          ? 'text-blue-800 bg-blue-100/80'
+                          : 'text-stone-700 bg-stone-200/70'
                       }`}
                     >
-                      {isVerifiedPlot ? 'Tervalidasi' : 'Sedang Berjalan'}
+                      {isVerifiedPlot 
+                        ? 'Tervalidasi' 
+                        : isRevisionNeeded 
+                        ? 'Perlu Revisi Petani' 
+                        : isPendingSurvey 
+                        ? 'Dijadwalkan Survei' 
+                        : 'Menunggu Penjadwalan Admin'}
                     </span>
                   </div>
 
                   <p className="text-xs text-stone-600 leading-relaxed font-sans">
-                    Kalibrasi indeks kanopi satelit Sentinel-2 (<span className="font-sans font-semibold">NDVI 0.86</span>) dicocokkan dengan hasil pengukuran lingkar batang DBH oleh petugas di lapangan.
+                    {isAwaitingDispatcher 
+                      ? 'Petak lahan telah diajukan dan sedang menunggu Admin menetapkan petugas surveyor independen.'
+                      : isPendingSurvey 
+                      ? `Survei fisik dan kalibrasi sensor satelit dijadwalkan oleh ${displaySurveyorName} pada ${selectedLand?.scheduled_date || 'jadwal terdekat'}.`
+                      : 'Kalibrasi indeks kanopi satelit Sentinel-2 dicocokkan dengan hasil pengukuran lingkar batang DBH petugas di lapangan.'}
                   </p>
 
                   {/* SurveyorLogBox: PolicyPilot Style Alert Box */}
-                  <div className="bg-amber-50/90 border border-amber-200/70 rounded-2xl p-4 text-xs text-amber-950 space-y-2">
-                    <div className="flex items-center justify-between font-semibold">
-                      <span className="flex items-center gap-1.5">
-                        <AlertTriangle className="h-3.5 w-3.5 text-amber-700" />
-                        Catatan Resmi Petugas Lapangan
-                      </span>
-                      <span className="font-sans font-semibold text-[11px] text-amber-800 tabular-nums">
-                        {displaySurveyorName} {displaySurveyorCode && `(${displaySurveyorCode})`}
-                      </span>
-                    </div>
+                  {(latestSurveyLog || isVerifiedPlot || isRevisionNeeded) && (
+                    <div className={`${isRevisionNeeded ? 'bg-amber-100/90 border-amber-300' : 'bg-emerald-50/90 border-emerald-200'} border rounded-2xl p-4 text-xs space-y-2`}>
+                      <div className="flex items-center justify-between font-semibold">
+                        <span className="flex items-center gap-1.5">
+                          {isRevisionNeeded ? (
+                            <AlertTriangle className="h-3.5 w-3.5 text-amber-700" />
+                          ) : (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
+                          )}
+                          Catatan Resmi Petugas Lapangan
+                        </span>
+                        <span className="font-sans font-semibold text-[11px] tabular-nums">
+                          {displaySurveyorName} {displaySurveyorCode && `(${displaySurveyorCode})`}
+                        </span>
+                      </div>
 
-                    <p className="leading-relaxed text-[11px] text-amber-900 bg-white/60 p-2.5 rounded-xl border border-amber-200/50">
-                      "Populasi dikoreksi dari 100 menjadi 95 pohon hidup setelah sampling lapangan pada petak timur. 5 bibit mati telah ditandai untuk penyulaman berikutnya. Rata-rata DBH 28.4 cm terkonfirmasi."
-                    </p>
+                      <p className={`leading-relaxed text-[11px] bg-white/70 p-2.5 rounded-xl border ${isRevisionNeeded ? 'border-amber-200 text-amber-950' : 'border-emerald-200 text-emerald-950'}`}>
+                        {latestSurveyLog ? latestSurveyLog.notes : 'Data tegakan pohon dan batas poligon GPS telah tervalidasi memenuhi standar MRV.'}
+                      </p>
 
-                    <div className="flex items-center justify-between text-[11px] text-amber-800 pt-0.5 font-sans tabular-nums">
-                      <span>Waktu Audit: 08 Mar 2026 • 11:42 WIB</span>
-                      <span>Log Hash: #SRV-8821-OK</span>
+                      <div className="flex items-center justify-between text-[11px] text-stone-500 pt-0.5 font-sans tabular-nums">
+                        <span>Waktu Audit: {selectedLand?.scheduled_date || 'Terjadwal'}</span>
+                        <span>Log ID: #{String(selectedLand?.id || '').slice(0, 8).toUpperCase()}</span>
+                      </div>
+
+                      {isRevisionNeeded && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsRevisionModalOpen(true)}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs transition cursor-pointer"
+                          >
+                            <FilePenLine className="h-3.5 w-3.5" />
+                            <span>Ajukan Revisi Batas Sekarang</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -467,12 +516,12 @@ export default function VerificationTrackingView({
               <div className="relative">
                 <span
                   className={`absolute -left-8 top-0 grid h-7 w-7 place-items-center rounded-full text-white shadow-xs ${
-                    isVerifiedPlot
+                    isVerifiedPlot || selectedLand?.cluster_id
                       ? 'bg-emerald-600'
                       : 'bg-stone-300 text-stone-600'
                   }`}
                 >
-                  {isVerifiedPlot ? <Check className="h-4 w-4 stroke-[2.5]" /> : <Clock className="h-3.5 w-3.5" />}
+                  {isVerifiedPlot || selectedLand?.cluster_id ? <Check className="h-4 w-4 stroke-[2.5]" /> : <Clock className="h-3.5 w-3.5" />}
                 </span>
 
                 <div className="rounded-2xl bg-[#F4F7F5] border border-stone-200/60 p-4 space-y-1.5">
@@ -482,16 +531,16 @@ export default function VerificationTrackingView({
                     </p>
                     <span
                       className={`text-[10px] font-bold rounded-full px-2.5 py-0.5 ${
-                        isVerifiedPlot
+                        isVerifiedPlot || selectedLand?.cluster_id
                           ? 'text-emerald-700 bg-emerald-100/70'
                           : 'text-stone-500 bg-stone-200/70'
                       }`}
                     >
-                      {isVerifiedPlot ? 'Masuk Klaster' : 'Menunggu Tahap 2 Selesai'}
+                      {isVerifiedPlot || selectedLand?.cluster_id ? 'Masuk Klaster' : 'Menunggu Tahap 2 Selesai'}
                     </span>
                   </div>
                   <p className="text-xs text-stone-600 leading-relaxed font-sans">
-                    Penggabungan volume karbon ke dalam Klaster Sukamaju (Progres saat ini: <strong className="font-sans font-bold tabular-nums">76%</strong> dari target 1.000 tCO2e).
+                    Penggabungan volume serapan ke dalam <strong>{selectedLand?.cluster_name || 'Klaster Agregasi Wonosobo'}</strong> (Akumulasi: <strong className="font-sans font-bold tabular-nums">{Number(selectedLand?.cluster_tonnage || selectedPlotCarbon).toFixed(1)} tCO2e</strong>).
                   </p>
                 </div>
               </div>
@@ -658,43 +707,40 @@ export default function VerificationTrackingView({
               </button>
             </div>
 
-            {/* 3 Foto Sampel Geotagging */}
+            {/* Foto Sampel Batang Pohon Tervalidasi (Geotagged) */}
             <div>
               <p className="text-xs font-semibold text-stone-700 mb-2 font-sans">
                 Foto Sampel Batang Pohon Tervalidasi (Geotagged):
               </p>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="relative rounded-xl overflow-hidden aspect-square bg-stone-100 border border-stone-200 group">
-                  <img
-                    src="https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=400&q=80"
-                    alt="Sampel 1"
-                    className="w-full h-full object-cover group-hover:scale-105 transition"
-                  />
-                  <span className="absolute bottom-1 left-1 bg-black/60 backdrop-blur-xs text-white text-[9px] font-sans tabular-nums px-1.5 py-0.5 rounded">
-                    #1 28.4cm
-                  </span>
+              {selectedLand?.photos && selectedLand.photos.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {selectedLand.photos.slice(0, 6).map((photo, pIdx) => {
+                    const rawUrl = photo.photo_url || photo.url || (typeof photo === 'string' ? photo : '');
+                    const fullUrl = rawUrl.startsWith('http') ? rawUrl : `http://127.0.0.1:8000${rawUrl}`;
+                    return (
+                      <div key={pIdx} className="relative rounded-xl overflow-hidden aspect-square bg-stone-100 border border-stone-200 group">
+                        <img
+                          src={fullUrl}
+                          alt={photo.caption || `Sampel #${pIdx + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition"
+                        />
+                        <span className="absolute bottom-1 left-1 bg-black/60 backdrop-blur-xs text-white text-[9px] font-sans tabular-nums px-1.5 py-0.5 rounded truncate max-w-[90%]">
+                          {photo.sample_code || `#${pIdx + 1}`}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="relative rounded-xl overflow-hidden aspect-square bg-stone-100 border border-stone-200 group">
-                  <img
-                    src="https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=400&q=80"
-                    alt="Sampel 2"
-                    className="w-full h-full object-cover group-hover:scale-105 transition"
-                  />
-                  <span className="absolute bottom-1 left-1 bg-black/60 backdrop-blur-xs text-white text-[9px] font-sans tabular-nums px-1.5 py-0.5 rounded">
-                    #2 27.2cm
-                  </span>
+              ) : (
+                <div className="p-4 rounded-xl border border-dashed border-stone-200 bg-stone-50 text-center">
+                  <Camera className="w-5 h-5 mx-auto text-stone-400 mb-1" />
+                  <p className="text-[11px] text-stone-500">
+                    {isVerifiedPlot
+                      ? 'Belum ada foto geotag yang diunggah untuk petak ini.'
+                      : 'Surveyor akan mengunggah foto geotag saat kunjungan verifikasi lapangan.'}
+                  </p>
                 </div>
-                <div className="relative rounded-xl overflow-hidden aspect-square bg-stone-100 border border-stone-200 group">
-                  <img
-                    src="https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=400&q=80"
-                    alt="Sampel 3"
-                    className="w-full h-full object-cover group-hover:scale-105 transition"
-                  />
-                  <span className="absolute bottom-1 left-1 bg-black/60 backdrop-blur-xs text-white text-[9px] font-sans tabular-nums px-1.5 py-0.5 rounded">
-                    #3 29.1cm
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Paspor Digital Hash Bar */}
@@ -793,6 +839,96 @@ export default function VerificationTrackingView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL BERITA ACARA MRV */}
+      {isBaModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in"
+          onClick={() => setIsBaModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-[24px] border border-stone-200 bg-white p-6 shadow-2xl space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-stone-900 font-sans">
+                    Berita Acara MRV Lapangan
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    Sertifikat Audit Terdesentralisasi TaniKarbon
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBaModalOpen(false)}
+                className="p-1 rounded-full text-stone-400 hover:text-stone-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs bg-stone-50 p-4 rounded-2xl border border-stone-200">
+              <div className="flex justify-between py-1 border-b border-stone-200/60">
+                <span className="text-stone-500">No. Berita Acara:</span>
+                <strong className="text-stone-900 font-mono">BA/MRV/2026/{String(selectedLand?.id || '').slice(0, 8).toUpperCase()}</strong>
+              </div>
+              <div className="flex justify-between py-1 border-b border-stone-200/60">
+                <span className="text-stone-500">Nama Petak Kebun:</span>
+                <strong className="text-stone-900">{selectedLand?.name}</strong>
+              </div>
+              <div className="flex justify-between py-1 border-b border-stone-200/60">
+                <span className="text-stone-500">Luas Terukur (PostGIS):</span>
+                <strong className="text-stone-900">{Number(selectedLand?.area_sqm || 0).toLocaleString('id-ID')} m² ({((Number(selectedLand?.area_sqm) || 0) / 10000).toFixed(2)} Ha)</strong>
+              </div>
+              <div className="flex justify-between py-1 border-b border-stone-200/60">
+                <span className="text-stone-500">Petugas Surveyor:</span>
+                <strong className="text-emerald-800">{displaySurveyorName} {displaySurveyorCode && `(${displaySurveyorCode})`}</strong>
+              </div>
+              <div className="flex justify-between py-1 border-b border-stone-200/60">
+                <span className="text-stone-500">Estimasi Serapan Tahunan:</span>
+                <strong className="text-emerald-700">{selectedPlotCarbon.toFixed(2)} tCO2e / tahun</strong>
+              </div>
+              <div className="flex justify-between py-1 border-b border-stone-200/60">
+                <span className="text-stone-500">Standar Alometrik:</span>
+                <strong className="text-stone-700">ICRAF / KLHK Chave Tier-3</strong>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-stone-500">Integritas Hash:</span>
+                <strong className="text-stone-600 font-mono text-[10px]">SHA256: {String(selectedLand?.id || '').replaceAll('-', '')}</strong>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsBaModalOpen(false)}
+                className="rounded-full border border-stone-200 bg-white px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 cursor-pointer"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.print();
+                  triggerToast('success', 'Berita Acara Dicetak', 'Dokumen resmi Berita Acara siap disimpan / dicetak.');
+                }}
+                className="rounded-full bg-[#14382C] hover:bg-[#1C4E3D] text-white px-5 py-2 text-xs font-semibold shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Cetak / Simpan PDF</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

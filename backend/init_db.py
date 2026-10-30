@@ -2,7 +2,7 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timedelta
-from database import engine
+from database import unpooled_engine as engine
 from models import Base
 from security import hash_password
 from sqlalchemy import text
@@ -27,7 +27,7 @@ async def init_db():
                     ('users', 'id'), ('wallets', 'id'), ('clusters', 'id'), 
                     ('tree_blocks', 'id'), ('tree_species', 'id'), ('wallet_transactions', 'id'), 
                     ('farmer_profiles', 'id'), ('bank_accounts', 'id'), ('transactions', 'id'), 
-                    ('certificates', 'uuid')
+                    ('certificates', 'uuid'), ('tree_samples', 'id')
                 LOOP
                     BEGIN
                         EXECUTE format('ALTER TABLE %I ALTER COLUMN %I SET DEFAULT gen_random_uuid()', t, c);
@@ -44,11 +44,15 @@ async def init_db():
             DO $$
             BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'land_status') THEN
-                    CREATE TYPE land_status AS ENUM ('draft', 'pending', 'pending_survey', 'verified', 'rejected');
+                    CREATE TYPE land_status AS ENUM ('draft', 'pending', 'pending_survey', 'verified', 'rejected', 'revision');
                 END IF;
             END
             $$;
         """))
+        try:
+            await conn.execute(text("ALTER TYPE land_status ADD VALUE IF NOT EXISTS 'revision';"))
+        except Exception:
+            pass
 
         # 3. Buat tabel PostGIS & tabel spasial/log
         await conn.execute(text("""
@@ -120,6 +124,8 @@ async def init_db():
             "ALTER TABLE land_plots ADD COLUMN IF NOT EXISTS surveyor_id UUID REFERENCES users(id) ON DELETE SET NULL",
             "ALTER TABLE land_plots ADD COLUMN IF NOT EXISTS ownership VARCHAR(100)",
             "ALTER TABLE land_plots ADD COLUMN IF NOT EXISTS document_no VARCHAR(100)",
+            "ALTER TABLE land_plots ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb",
+            "ALTER TABLE land_plots ADD COLUMN IF NOT EXISTS audit_sampling JSONB DEFAULT '[]'::jsonb",
             "ALTER TABLE survey_logs ALTER COLUMN surveyor_id DROP NOT NULL"
         ]:
             try:

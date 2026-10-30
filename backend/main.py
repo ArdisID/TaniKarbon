@@ -1,7 +1,9 @@
+import os
+import shutil
 import math
 import uuid
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import List, Optional, Dict, Any, cast
 from pathlib import Path
 from pydantic import BaseModel
@@ -10,7 +12,8 @@ from dotenv import load_dotenv
 # Load environment variables
 dotenv_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=dotenv_path)
-from fastapi import FastAPI, Depends, HTTPException, Security, Request, status
+from fastapi import FastAPI, Depends, HTTPException, Security, Request, status, UploadFile, File, Form
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
 from slowapi import _rate_limit_exceeded_handler
@@ -45,6 +48,12 @@ from security import (
 )
 
 app = FastAPI(title="TaniKarbon API - Interoperabilitas UINIC 8.0")
+
+# Setup direktori penyimpanan upload foto dokumentasi lapangan surveyor
+UPLOAD_ROOT = os.path.join(os.path.dirname(__file__), "uploads")
+SURVEY_PHOTOS_DIR = os.path.join(UPLOAD_ROOT, "survey_photos")
+os.makedirs(SURVEY_PHOTOS_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_ROOT), name="uploads")
 
 # ------------------------------------------------------------------------------
 # 0. Integrasi Rate Limiter (slowapi) Anti Brute-Force
@@ -81,6 +90,7 @@ IDENTIFIER_ALIASES = {
 # ------------------------------------------------------------------------------
 # 0b. Master Data Spesies Pohon & Kerapatan Kayu (Wood Density)
 # ------------------------------------------------------------------------------
+@app.get("/api/v1/species", response_model=List[TreeSpeciesResponse])
 @app.get("/api/v1/tree-species", response_model=List[TreeSpeciesResponse])
 async def get_tree_species(db: AsyncSession = Depends(get_db)):
     """
@@ -906,6 +916,7 @@ async def _save_tree_block_calculation(
 # ------------------------------------------------------------------------------
 # 4c. Endpoint Mitra Tani (Terproteksi RBAC 'farmer')
 # ------------------------------------------------------------------------------
+# // [INTEGRATION-HOOK: ROLE_ADMIN (DISPATCHER)]
 @app.post("/api/v1/farmer/lands", status_code=status.HTTP_201_CREATED)
 async def register_land_plot(
     payload: LandPlotRequest,
@@ -1072,20 +1083,24 @@ async def get_land_plots(
         SELECT lp.id, lp.name, lp.total_area_sqm, CAST(lp.status AS TEXT) as status,
                ST_AsGeoJSON(lp.polygon_boundary) as geojson,
                lp.created_at, lp.surveyor_id, lp.scheduled_survey_date,
-               u.full_name as surveyor_name
+               u.full_name as surveyor_name,
+               lp.cluster_id, c.name as cluster_name, CAST(c.status AS TEXT) as cluster_status,
+               (
+                   SELECT COALESCE(SUM(tb2.estimated_tco2e_per_year), 0)
+                   FROM land_plots lp2
+                   JOIN tree_blocks tb2 ON lp2.id = tb2.land_plot_id
+                   WHERE lp2.cluster_id = c.id
+               ) as cluster_tonnage,
+               lp.photo_urls, lp.audit_sampling
         FROM land_plots lp
         LEFT JOIN users u ON lp.surveyor_id = u.id
+        LEFT JOIN clusters c ON lp.cluster_id = c.id
         WHERE lp.farmer_id = :farmer_id
         ORDER BY lp.created_at ASC
     """)
     result = await db.execute(query, {"farmer_id": current_user.id})
     land_rows = result.fetchall()
     
-    surveyor_query = text("SELECT full_name FROM users WHERE role = 'surveyor' LIMIT 1")
-    s_res = await db.execute(surveyor_query)
-    default_srv_row = s_res.fetchone()
-    default_surveyor_name = default_srv_row.full_name if default_srv_row else "Budi Surveyor"
-
     lands_data = []
     for row in land_rows:
         tb_query = text("""
@@ -1133,7 +1148,6 @@ async def get_land_plots(
             for sl in sl_result.fetchall()
         ]
 
-        # Dinamisasi surveyor: baca dari relasi jika ada, jangan hardcode default jika surveyor_id null
         if row.surveyor_name:
             srv_name = row.surveyor_name
             first_word = srv_name.split()[0].upper()[:4] if srv_name else "SRV"
@@ -1142,7 +1156,6 @@ async def get_land_plots(
             srv_name = None
             srv_code = None
 
-        # Penjadwalan survei diatur oleh Admin (jika belum diatur admin, return None)
         if row.scheduled_survey_date:
             scheduled_dt = row.scheduled_survey_date
             month_names_id = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
@@ -1150,6 +1163,26 @@ async def get_land_plots(
             formatted_sched_date = f"{scheduled_dt.day} {month_str} {scheduled_dt.year}"
         else:
             formatted_sched_date = None
+
+        photos_list = []
+        if row.photo_urls:
+            if isinstance(row.photo_urls, list):
+                photos_list = row.photo_urls
+            elif isinstance(row.photo_urls, str):
+                try:
+                    photos_list = json.loads(row.photo_urls)
+                except Exception:
+                    photos_list = []
+
+        audit_samples = []
+        if row.audit_sampling:
+            if isinstance(row.audit_sampling, list):
+                audit_samples = row.audit_sampling
+            elif isinstance(row.audit_sampling, str):
+                try:
+                    audit_samples = json.loads(row.audit_sampling)
+                except Exception:
+                    audit_samples = []
 
         lands_data.append({
             "id": row.id,
@@ -1164,11 +1197,21 @@ async def get_land_plots(
             "scheduled_survey_date": row.scheduled_survey_date,
             "scheduled_date": formatted_sched_date,
             "tree_blocks": tree_blocks,
-            "survey_logs": survey_logs
+            "survey_logs": survey_logs,
+            "cluster_id": row.cluster_id,
+            "cluster_name": row.cluster_name,
+            "cluster_status": row.cluster_status,
+            "cluster_tonnage": float(row.cluster_tonnage) if row.cluster_tonnage is not None else 0.0,
+            "photos": photos_list,
+            "photo_urls": photos_list,
+            "audit_sampling": audit_samples
         })
     return lands_data
 
 
+# // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+@app.put("/api/v1/farmer/lands/{land_id}/revise", status_code=status.HTTP_200_OK)
+@app.post("/api/v1/farmer/lands/{land_id}/revise", status_code=status.HTTP_200_OK)
 @app.post("/api/v1/farmer/lands/{land_id}/revisions", status_code=status.HTTP_201_CREATED)
 async def submit_land_revision(
     land_id: uuid.UUID,
@@ -1233,6 +1276,30 @@ async def submit_verification_revision(
     if not payload.land_plot_id:
         raise HTTPException(status_code=400, detail="land_plot_id harus dicantumkan")
     return await submit_land_revision(payload.land_plot_id, payload, current_user, db)
+
+
+@app.post("/api/v1/farmer/lands/{land_id}/blocks", status_code=status.HTTP_201_CREATED)
+async def add_tree_block_to_land(
+    land_id: uuid.UUID,
+    payload: TreeBlockRequest,
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Menambahkan blok tegakan pohon baru langsung ke petak lahan yang sudah ada.
+    """
+    check_query = text("SELECT id, farmer_id, name FROM land_plots WHERE id = :land_id")
+    res = await db.execute(check_query, {"land_id": land_id})
+    plot = res.fetchone()
+    if not plot:
+        raise HTTPException(status_code=404, detail="Petak lahan tidak ditemukan")
+    if plot.farmer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Akses ditolak: Anda bukan pemilik petak lahan ini")
+
+    payload.land_plot_id = land_id
+    result = await _save_tree_block_calculation(db, land_id, payload)
+    await db.commit()
+    return result
 
 
 @app.post("/api/v1/farmer/tree-blocks")
@@ -1504,6 +1571,7 @@ async def get_farmer_bank_accounts(
     return accounts
 
 
+@app.post("/api/v1/farmer/wallet/accounts", response_model=BankAccountResponse, status_code=status.HTTP_201_CREATED)
 @app.post("/api/v1/farmer/bank-accounts", response_model=BankAccountResponse, status_code=status.HTTP_201_CREATED)
 async def create_farmer_bank_account(
     payload: BankAccountCreateRequest,
@@ -1536,6 +1604,29 @@ async def create_farmer_bank_account(
     await db.commit()
     await db.refresh(new_acc)
     return new_acc
+
+
+@app.patch("/api/v1/farmer/bank-accounts/{account_id}/primary")
+async def set_primary_farmer_bank_account(
+    account_id: uuid.UUID,
+    current_user: User = Depends(require_roles(["farmer"])),
+    db: AsyncSession = Depends(get_db)
+):
+    acc_res = await db.execute(
+        select(BankAccount).where(BankAccount.id == account_id, BankAccount.user_id == current_user.id)
+    )
+    acc = acc_res.scalars().first()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Rekening bank tidak ditemukan")
+
+    await db.execute(
+        text("UPDATE bank_accounts SET is_primary = FALSE WHERE user_id = :uid"),
+        {"uid": current_user.id}
+    )
+    acc.is_primary = True
+    await db.commit()
+    await db.refresh(acc)
+    return acc
 
 
 @app.delete("/api/v1/farmer/bank-accounts/{account_id}")
@@ -2006,6 +2097,199 @@ async def distribute_revenue(
         "total_farmers_received": len(farmer_rows)
     }
 
+# // [INTEGRATION-HOOK: ROLE_ADMIN (DISPATCHER)]
+# ------------------------------------------------------------------------------
+# 5b. Endpoint Portal Authority Admin (Dispatcher & Manajemen Lahan)
+# ------------------------------------------------------------------------------
+@app.get("/api/v1/admin/lands")
+async def get_admin_lands(
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mengambil seluruh data land_plots untuk Meja Kerja Operasional Admin (Dispatcher).
+    Join dengan users (petani), users (surveyor), farmer_profiles, serta relasi tree_blocks dan survey_logs.
+    """
+    query = text("""
+        SELECT lp.id, lp.name, lp.total_area_sqm, CAST(lp.status AS TEXT) as status,
+               ST_AsGeoJSON(lp.polygon_boundary) as geojson_polygon,
+               lp.created_at, lp.surveyor_id, lp.scheduled_survey_date,
+               lp.photo_urls, lp.audit_sampling,
+               u_farmer.id as farmer_id,
+               u_farmer.full_name as farmer_name,
+               u_farmer.email as farmer_email,
+               fp.phone_number as farmer_phone,
+               u_surveyor.full_name as surveyor_name,
+               u_surveyor.email as surveyor_email
+        FROM land_plots lp
+        JOIN users u_farmer ON lp.farmer_id = u_farmer.id
+        LEFT JOIN farmer_profiles fp ON u_farmer.id = fp.user_id
+        LEFT JOIN users u_surveyor ON lp.surveyor_id = u_surveyor.id
+        ORDER BY lp.created_at DESC
+    """)
+    res = await db.execute(query)
+    rows = res.fetchall()
+
+    month_names_id = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+
+    lands = []
+    for row in rows:
+        tb_query = text("""
+            SELECT tb.id, tb.species_name, tb.planting_year, tb.total_population,
+                   tb.estimated_tco2e_per_year,
+                   (
+                       SELECT ROUND(AVG(ts.circumference_cm / 3.14159265)::numeric, 1)
+                       FROM tree_samples ts
+                       WHERE ts.tree_block_id = tb.id
+                   ) as avg_dbh_cm
+            FROM tree_blocks tb
+            WHERE tb.land_plot_id = :plot_id
+            ORDER BY tb.created_at ASC
+        """)
+        tb_res = await db.execute(tb_query, {"plot_id": row.id})
+        tbs = tb_res.fetchall()
+
+        tree_blocks_list = []
+        total_trees = 0
+        total_carbon = 0.0
+        species_names = []
+        for tb in tbs:
+            pop = tb.total_population or 0
+            total_trees += pop
+            carbon = float(tb.estimated_tco2e_per_year or 0.0)
+            total_carbon += carbon
+            species_names.append(tb.species_name)
+            tree_blocks_list.append({
+                "id": str(tb.id),
+                "species_name": tb.species_name,
+                "planting_year": tb.planting_year,
+                "total_population": pop,
+                "estimated_tco2e_per_year": carbon,
+                "avg_dbh_cm": float(tb.avg_dbh_cm) if tb.avg_dbh_cm is not None else None
+            })
+
+        sl_query = text("""
+            SELECT sl.id, sl.notes, sl.created_at, u.full_name as surveyor_name
+            FROM survey_logs sl
+            LEFT JOIN users u ON sl.surveyor_id = u.id
+            WHERE sl.land_plot_id = :plot_id
+            ORDER BY sl.created_at DESC
+        """)
+        sl_res = await db.execute(sl_query, {"plot_id": row.id})
+        sl_rows = sl_res.fetchall()
+        survey_logs_list = [
+            {
+                "id": str(sl.id),
+                "notes": sl.notes,
+                "created_at": sl.created_at.isoformat() if sl.created_at else None,
+                "surveyor_name": sl.surveyor_name
+            }
+            for sl in sl_rows
+        ]
+
+        raw_uuid = str(row.id).replace("-", "")
+        ticket_code = f"TKT-{raw_uuid[:8].upper()}"
+
+        created_dt = row.created_at
+        created_date_str = f"{created_dt.day} {month_names_id[created_dt.month - 1]} {created_dt.year}" if created_dt else "-"
+
+        sched_dt = row.scheduled_survey_date
+        sched_date_str = f"{sched_dt.day} {month_names_id[sched_dt.month - 1]} {sched_dt.year}" if sched_dt else None
+
+        area_sqm = float(row.total_area_sqm) if row.total_area_sqm else 0.0
+        area_ha = round(area_sqm / 10000.0, 2)
+
+        raw_photos = getattr(row, "photo_urls", None)
+        if isinstance(raw_photos, str):
+            try:
+                photos_list = json.loads(raw_photos)
+            except Exception:
+                photos_list = []
+        elif isinstance(raw_photos, list):
+            photos_list = raw_photos
+        else:
+            photos_list = []
+
+        raw_sampling = getattr(row, "audit_sampling", None)
+        if isinstance(raw_sampling, str):
+            try:
+                audit_sampling_list = json.loads(raw_sampling)
+            except Exception:
+                audit_sampling_list = []
+        elif isinstance(raw_sampling, list):
+            audit_sampling_list = raw_sampling
+        else:
+            audit_sampling_list = []
+
+        lands.append({
+            "id": str(row.id),
+            "ticket_code": ticket_code,
+            "name": row.name,
+            "status": row.status,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "created_date": created_date_str,
+            "farmer_id": str(row.farmer_id),
+            "farmer_name": row.farmer_name,
+            "farmer_email": row.farmer_email,
+            "farmer_phone": row.farmer_phone,
+            "total_area_sqm": area_sqm,
+            "area_sqm": area_sqm,
+            "area_ha": area_ha,
+            "tree_count": total_trees,
+            "block_count": len(tbs),
+            "species_summary": ", ".join(dict.fromkeys(species_names)) if species_names else "-",
+            "estimated_carbon": round(total_carbon, 2),
+            "surveyor_id": str(row.surveyor_id) if row.surveyor_id else None,
+            "surveyor_name": row.surveyor_name,
+            "surveyor_email": row.surveyor_email,
+            "scheduled_survey_date": row.scheduled_survey_date.isoformat() if row.scheduled_survey_date else None,
+            "scheduled_date": sched_date_str,
+            "tree_blocks": tree_blocks_list,
+            "survey_logs": survey_logs_list,
+            "photos": photos_list,
+            "photo_urls": photos_list,
+            "audit_sampling": audit_sampling_list,
+            "geojson": row.geojson_polygon
+        })
+
+    return lands
+
+
+@app.get("/api/v1/admin/surveyors")
+async def get_admin_surveyors(
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint ringan untuk dropdown modal penugasan surveyor dan monitor beban kerja.
+    Mengambil seluruh user yang memiliki role == 'surveyor'.
+    """
+    query = text("""
+        SELECT u.id, u.full_name, u.email,
+               (
+                   SELECT COUNT(*)
+                   FROM land_plots lp
+                   WHERE lp.surveyor_id = u.id AND CAST(lp.status AS TEXT) IN ('pending_survey', 'draft', 'submitted')
+               ) as active_tasks
+        FROM users u
+        WHERE u.role = 'surveyor' AND u.is_active = true
+        ORDER BY u.full_name ASC
+    """)
+    res = await db.execute(query)
+    rows = res.fetchall()
+    return [
+        {
+            "id": str(r.id),
+            "full_name": r.full_name,
+            "name": r.full_name,
+            "email": r.email,
+            "active_tasks": int(r.active_tasks or 0)
+        }
+        for r in rows
+    ]
+
+
+# // [INTEGRATION-HOOK: ROLE_ADMIN (DISPATCHER)]
 @app.patch("/api/v1/admin/lands/{land_id}/schedule", status_code=status.HTTP_200_OK)
 async def admin_schedule_land_survey(
     land_id: uuid.UUID,
@@ -2014,8 +2298,11 @@ async def admin_schedule_land_survey(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Endpoint Manajemen Admin:
+    // [INTEGRATION-HOOK: ROLE_ADMIN (DISPATCHER)]
+    Endpoint Manajemen Admin (Jantung Dispatcher):
     Mengatur alokasi surveyor dan waktu tanggal rencana inspeksi fisik untuk petak lahan tertentu.
+    Jika status lahan saat ini 'draft' atau 'submitted', ubah status menjadi 'pending_survey'.
+    Seluruh proses dijalankan dalam satu transaksi DB dan instruksi admin dicatat ke survey_logs.
     """
     check_query = text("SELECT id, name, CAST(status AS TEXT) as status, farmer_id FROM land_plots WHERE id = :land_id")
     check_res = await db.execute(check_query, {"land_id": land_id})
@@ -2032,16 +2319,36 @@ async def admin_schedule_land_survey(
             raise HTTPException(status_code=400, detail="User yang dipilih bukan seorang surveyor resmi.")
         surveyor_name = srv.full_name
 
+    # Parse tanggal dan waktu inspeksi
+    raw_date = payload.scheduled_survey_date
+    if isinstance(raw_date, str):
+        try:
+            parsed_date = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+        except Exception:
+            parsed_date = datetime.strptime(raw_date[:10], "%Y-%m-%d")
+    elif isinstance(raw_date, date) and not isinstance(raw_date, datetime):
+        parsed_date = datetime.combine(raw_date, datetime.min.time().replace(hour=8, minute=0))
+    else:
+        parsed_date = raw_date
+
+    # State Transition: Jika status 'draft' atau 'submitted', ubah menjadi 'pending_survey'
+    current_status = str(plot.status).lower() if plot.status else "draft"
+    new_status = current_status
+    if current_status in ["draft", "submitted"]:
+        new_status = "pending_survey"
+
     update_query = text("""
         UPDATE land_plots
         SET surveyor_id = :surveyor_id,
-            scheduled_survey_date = :scheduled_date
+            scheduled_survey_date = :scheduled_date,
+            status = CAST(:status AS land_status)
         WHERE id = :land_id
     """)
     await db.execute(update_query, {
         "land_id": land_id,
         "surveyor_id": payload.surveyor_id,
-        "scheduled_date": payload.scheduled_survey_date
+        "scheduled_date": parsed_date,
+        "status": new_status
     })
 
     if payload.notes:
@@ -2058,7 +2365,7 @@ async def admin_schedule_land_survey(
     await db.commit()
 
     month_names_id = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
-    dt = payload.scheduled_survey_date
+    dt = parsed_date
     formatted_date = f"{dt.day} {month_names_id[dt.month - 1]} {dt.year}"
 
     return {
@@ -2067,7 +2374,7 @@ async def admin_schedule_land_survey(
         "land_id": str(land_id),
         "surveyor_id": str(payload.surveyor_id) if payload.surveyor_id else None,
         "surveyor_name": surveyor_name,
-        "scheduled_survey_date": payload.scheduled_survey_date.isoformat(),
+        "scheduled_survey_date": parsed_date.isoformat(),
         "scheduled_date": formatted_date
     }
 
@@ -2179,10 +2486,13 @@ class AdminMintClusterRequest(BaseModel):
     approved_quota_tco2e: float
     cost_recovery_idr: float = 25000000.0
 
+# // [INTEGRATION-HOOK: ROLE_ADMIN (CLUSTERING & EXTERNAL AUDIT)]
+@app.patch("/api/v1/admin/clusters/{cluster_id}/approve-audit")
+@app.post("/api/v1/admin/clusters/{cluster_id}/approve-audit")
 @app.post("/api/v1/admin/clusters/{cluster_id}/mint")
 async def admin_mint_cluster_quota(
     cluster_id: uuid.UUID,
-    payload: AdminMintClusterRequest,
+    payload: Optional[AdminMintClusterRequest] = None,
     current_user: User = Depends(require_roles(["admin"])),
     db: AsyncSession = Depends(get_db)
 ):
@@ -2191,7 +2501,10 @@ async def admin_mint_cluster_quota(
     if not cluster:
         raise HTTPException(status_code=404, detail="Klaster tidak ditemukan.")
 
-    cluster.available_quota_tco2e = payload.approved_quota_tco2e
+    auditor_org = payload.auditor_organization if payload and payload.auditor_organization else "PT Sucofindo (Persero)"
+    approved_quota = payload.approved_quota_tco2e if payload and payload.approved_quota_tco2e else float(cluster.target_quota_tco2e or 1000.0)
+
+    cluster.available_quota_tco2e = approved_quota
     cluster.status = "available_for_sale"
 
     await db.execute(text("""
@@ -2203,7 +2516,7 @@ async def admin_mint_cluster_quota(
     await db.commit()
     return {
         "success": True,
-        "message": f"Audit {payload.auditor_organization} disahkan! Kuota {payload.approved_quota_tco2e} tCO2e berhasil diminting ke Bursa Karbon.",
+        "message": f"Audit {auditor_org} disahkan! Kuota {approved_quota} tCO2e berhasil diminting ke Bursa Karbon.",
         "cluster_id": str(cluster.id),
         "status": cluster.status,
         "available_quota": float(cluster.available_quota_tco2e)
@@ -2254,10 +2567,13 @@ class AdminApprovePayoutRequest(BaseModel):
     bank_reference_no: str
     admin_notes: Optional[str] = None
 
+# // [INTEGRATION-HOOK: ROLE_ADMIN (FINANCE & ESCROW PAYOUT) & ROLE_CORPORATE (CARBON BUYER)]
+@app.patch("/api/v1/admin/withdrawals/{payout_id}")
+@app.post("/api/v1/admin/withdrawals/{payout_id}/approve")
 @app.post("/api/v1/admin/payouts/{payout_id}/approve")
 async def approve_payout(
     payout_id: uuid.UUID,
-    payload: AdminApprovePayoutRequest,
+    payload: Optional[AdminApprovePayoutRequest] = None,
     current_user: User = Depends(require_roles(["admin"])),
     db: AsyncSession = Depends(get_db)
 ):
@@ -2266,8 +2582,9 @@ async def approve_payout(
     if not wt:
         raise HTTPException(status_code=404, detail="Tiket penarikan tidak ditemukan.")
 
+    ref_no = payload.bank_reference_no if payload and payload.bank_reference_no else f"REF-ADM-{uuid.uuid4().hex[:6].upper()}"
     wt.status = "completed"
-    wt.description = f"{wt.description} [Disetujui Admin - Ref: {payload.bank_reference_no}]"
+    wt.description = f"{wt.description} [Disetujui Admin - Ref: {ref_no}]"
     await db.commit()
     return {"success": True, "message": f"Pencairan dana sebesar Rp {float(wt.amount):,.0f} telah disetujui & dibukukan."}
 
@@ -2359,6 +2676,7 @@ async def get_surveyor_tasks(
                ST_Y(lp.centroid) as lat,
                ST_X(lp.centroid) as lng,
                lp.created_at, lp.surveyor_id, lp.scheduled_survey_date,
+               lp.photo_urls,
                u_farmer.id as farmer_id,
                u_farmer.full_name as farmer_name,
                u_farmer.email as farmer_email,
@@ -2470,6 +2788,16 @@ async def get_surveyor_tasks(
         plot_lat = float(row.lat) if row.lat is not None else -6.3686
         plot_lng = float(row.lng) if row.lng is not None else 106.8331
 
+        photos_list = []
+        if getattr(row, "photo_urls", None):
+            if isinstance(row.photo_urls, list):
+                photos_list = row.photo_urls
+            elif isinstance(row.photo_urls, str):
+                try:
+                    photos_list = json.loads(row.photo_urls)
+                except Exception:
+                    photos_list = []
+
         tasks.append({
             "id": str(row.id),
             "plot_id": str(row.id),
@@ -2506,13 +2834,175 @@ async def get_surveyor_tasks(
             "polygon": polygon_rings,
             "polygon_boundary": polygon_rings,
             "geojson": row.geojson_polygon,
-            "geojson_polygon": row.geojson_polygon
+            "geojson_polygon": row.geojson_polygon,
+            "photos": photos_list,
+            "photo_urls": photos_list
         })
 
     return tasks
 
 
+# // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+@app.get("/api/v1/surveyor/history")
+async def get_surveyor_history(
+    current_user: User = Depends(require_roles(["surveyor", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+    Mengambil riwayat petak lahan yang telah selesai diaudit (status: 'verified', 'rejected', 'revision')
+    oleh surveyor ini atau yang ditugaskan ke surveyor ini.
+    """
+    query = text("""
+        SELECT lp.id, lp.name, lp.total_area_sqm, CAST(lp.status AS TEXT) as status,
+               ST_AsGeoJSON(lp.polygon_boundary) as geojson_polygon,
+               ST_Y(lp.centroid) as lat,
+               ST_X(lp.centroid) as lng,
+               lp.created_at, lp.updated_at, lp.surveyor_id, lp.scheduled_survey_date,
+               lp.photo_urls,
+               u_farmer.id as farmer_id,
+               u_farmer.full_name as farmer_name,
+               u_farmer.email as farmer_email,
+               fp.phone_number as farmer_phone,
+               u_surveyor.full_name as surveyor_name
+        FROM land_plots lp
+        JOIN users u_farmer ON lp.farmer_id = u_farmer.id
+        LEFT JOIN farmer_profiles fp ON u_farmer.id = fp.user_id
+        LEFT JOIN users u_surveyor ON lp.surveyor_id = u_surveyor.id
+        WHERE (lp.surveyor_id = :surveyor_id OR EXISTS (
+            SELECT 1 FROM survey_logs sl WHERE sl.land_plot_id = lp.id AND sl.surveyor_id = :surveyor_id
+        ))
+        AND CAST(lp.status AS TEXT) IN ('verified', 'rejected', 'revision')
+        ORDER BY lp.updated_at DESC, lp.created_at DESC
+    """)
+    res = await db.execute(query, {"surveyor_id": current_user.id})
+    rows = res.fetchall()
+
+    history = []
+    for row in rows:
+        tb_query = text("""
+            SELECT tb.id, tb.species_name, tb.planting_year, tb.total_population,
+                   tb.estimated_tco2e_per_year
+            FROM tree_blocks tb
+            WHERE tb.land_plot_id = :plot_id
+            ORDER BY tb.created_at ASC NULLS LAST, tb.id ASC
+        """)
+        tb_res = await db.execute(tb_query, {"plot_id": row.id})
+        tbs = tb_res.fetchall()
+        tree_blocks = []
+        total_carbon = 0.0
+        total_trees = 0
+        for tb in tbs:
+            total_carbon += float(tb.estimated_tco2e_per_year or 0.0)
+            total_trees += int(tb.total_population or 0)
+            tree_blocks.append({
+                "id": str(tb.id),
+                "species_name": tb.species_name,
+                "planting_year": tb.planting_year,
+                "total_population": tb.total_population,
+                "estimated_tco2e_per_year": float(tb.estimated_tco2e_per_year or 0.0)
+            })
+
+        sl_query = text("""
+            SELECT sl.id, sl.notes, sl.created_at, u.full_name as surveyor_name
+            FROM survey_logs sl
+            LEFT JOIN users u ON sl.surveyor_id = u.id
+            WHERE sl.land_plot_id = :plot_id
+            ORDER BY sl.created_at DESC
+        """)
+        sl_res = await db.execute(sl_query, {"plot_id": row.id})
+        sl_rows = sl_res.fetchall()
+        survey_logs = [
+            {
+                "id": str(sl.id),
+                "notes": sl.notes,
+                "created_at": sl.created_at.isoformat() if sl.created_at else None,
+                "surveyor_name": sl.surveyor_name
+            }
+            for sl in sl_rows
+        ]
+        latest_log = sl_rows[0] if sl_rows else None
+
+        photos_list = []
+        if row.photo_urls:
+            if isinstance(row.photo_urls, list):
+                photos_list = row.photo_urls
+            elif isinstance(row.photo_urls, str):
+                try:
+                    photos_list = json.loads(row.photo_urls)
+                except Exception:
+                    photos_list = []
+
+        raw_uuid = str(row.id).replace("-", "")
+        ticket_id = f"TKT-{raw_uuid[:4].upper()}"
+        is_verified = (row.status == "verified")
+        is_revision = (row.status == "revision")
+
+        if is_verified:
+            decision_text = "Disahkan (Pre-Verified)"
+            cluster_status = "Selesai Lapangan"
+        elif is_revision:
+            decision_text = "Perlu Revisi"
+            cluster_status = "Menunggu Revisi Petani"
+        else:
+            decision_text = "Ditolak"
+            cluster_status = "Audit Ditolak"
+
+        lat = float(row.lat) if row.lat is not None else -6.3686
+        lng = float(row.lng) if row.lng is not None else 106.8331
+        area_sqm = float(row.total_area_sqm or 0.0)
+
+        check_in_time_str = "Tercatat di Ledger"
+        if latest_log and latest_log.created_at:
+            month_names_id = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+            c_dt = latest_log.created_at
+            check_in_time_str = f"{c_dt.day} {month_names_id[c_dt.month - 1]} {c_dt.year}, {c_dt.strftime('%H:%M')} WIB"
+
+        history.append({
+            "id": str(row.id),
+            "land_id": str(row.id),
+            "ticketId": ticket_id,
+            "ticket_code": ticket_id,
+            "farmerName": row.farmer_name or "Petani Mitra",
+            "farmer_name": row.farmer_name or "Petani Mitra",
+            "farmerPhone": row.farmer_phone or "0812-3456-7890",
+            "farmer_phone": row.farmer_phone or "0812-3456-7890",
+            "farmer_email": row.farmer_email,
+            "landName": row.name,
+            "name": row.name,
+            "areaSqm": area_sqm,
+            "area_sqm": area_sqm,
+            "area_ha": round(area_sqm / 10000, 2),
+            "treeBlocks": tree_blocks,
+            "tree_blocks": tree_blocks,
+            "treeCount": total_trees,
+            "tree_count": total_trees,
+            "status": row.status,
+            "decision": decision_text,
+            "isVerified": is_verified,
+            "is_verified": is_verified,
+            "validatedCarbon": f"{total_carbon:.1f} tCO2e/thn" if is_verified else "0 tCO2e",
+            "validated_carbon": total_carbon,
+            "checkInTime": check_in_time_str,
+            "gpsCoord": f"{lat:.4f}, {lng:.4f}",
+            "lat": lat,
+            "lng": lng,
+            "clusterStatus": cluster_status,
+            "surveyLogs": survey_logs,
+            "survey_logs": survey_logs,
+            "notes": latest_log.notes if latest_log else (
+                "Telah memenuhi standar alometrik & geofencing lapangan." if is_verified else "Audit selesai."
+            ),
+            "photos": photos_list,
+            "photo_urls": photos_list
+        })
+
+    return history
+
+
+# // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
 @app.post("/api/v1/surveyor/lands/{land_id}/audit")
+@app.patch("/api/v1/surveyor/lands/{land_id}/audit")
 async def audit_land_plot(
     land_id: uuid.UUID,
     payload: SurveyorAuditRequest,
@@ -2520,9 +3010,10 @@ async def audit_land_plot(
     db: AsyncSession = Depends(get_db)
 ):
     """
+    // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
     Mencatat keputusan audit lapangan dari surveyor:
     - approved: Ubah status menjadi 'verified', catat berita acara.
-    - revision: Kembalikan status menjadi 'draft', catat kategori & catatan revisi di survey_logs.
+    - revision: Kembalikan status menjadi 'revision' / 'draft', catat kategori & catatan revisi di survey_logs.
     - rejected: Ubah status menjadi 'rejected', catat alasan penolakan di survey_logs.
     """
     decision = payload.decision.lower().strip()
@@ -2559,7 +3050,7 @@ async def audit_land_plot(
                     except Exception:
                         pass
     elif decision == "revision":
-        new_status = "draft"
+        new_status = "revision"
         category = payload.category or "Revisi Batas / Data Lapangan"
         log_content = f"[{ticket_code} - REVISI LAPANGAN: {category}] {payload.notes}"
     else:  # rejected
@@ -2602,7 +3093,181 @@ async def audit_land_plot(
     }
 
 
+# ==============================================================================
+# // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+# ENDPOINT DOKUMENTASI FOTO SURVEI LAPANGAN (SURVEYOR & ADMIN)
+# ==============================================================================
 
+@app.post("/api/v1/surveyor/lands/{land_id}/photos")
+async def upload_surveyor_photo(
+    land_id: uuid.UUID,
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    coord: Optional[str] = Form(None),
+    timestamp: Optional[str] = Form(None),
+    current_user: User = Depends(require_roles(["surveyor", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+    Mengunggah berkas foto dokumentasi lapangan (patok batas, kanopi pohon, dll) oleh surveyor.
+    Menyimpan file ke direktori backend/uploads/survey_photos/ dan menyimpan metadata di land_plots.photo_urls.
+    """
+    check_query = text("SELECT id, name, photo_urls FROM land_plots WHERE id = :land_id")
+    res = await db.execute(check_query, {"land_id": land_id})
+    plot = res.fetchone()
+    if not plot:
+        raise HTTPException(status_code=404, detail="Petak lahan tidak ditemukan")
+
+    os.makedirs(SURVEY_PHOTOS_DIR, exist_ok=True)
+    orig_filename = file.filename or "survey_photo.jpg"
+    ext = os.path.splitext(orig_filename)[1].lower()
+    if not ext or ext not in [".jpg", ".jpeg", ".png", ".webp", ".gif"]:
+        ext = ".jpg"
+
+    photo_id = f"photo-{uuid.uuid4().hex[:10]}"
+    safe_filename = f"{land_id}_{uuid.uuid4().hex[:8]}{ext}"
+    dest_path = os.path.join(SURVEY_PHOTOS_DIR, safe_filename)
+
+    try:
+        content = await file.read()
+        with open(dest_path, "wb") as f:
+            f.write(content)
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Gagal menyimpan file foto ke server: {str(err)}")
+
+    file_size_bytes = len(content)
+    if file_size_bytes >= 1024 * 1024:
+        size_str = f"{(file_size_bytes / (1024 * 1024)):.1f} MB"
+    else:
+        size_str = f"{max(1, round(file_size_bytes / 1024))} KB"
+
+    relative_url = f"/uploads/survey_photos/{safe_filename}"
+
+    existing_photos = plot.photo_urls
+    if isinstance(existing_photos, str):
+        try:
+            existing_photos = json.loads(existing_photos)
+        except Exception:
+            existing_photos = []
+    elif not isinstance(existing_photos, list):
+        existing_photos = []
+
+    default_title = "Foto Patok Batas" if len(existing_photos) == 0 else "Foto Kanopi Tegakan"
+    now_dt = datetime.utcnow()
+    time_str = now_dt.strftime("%H:%M")
+
+    new_photo_entry = {
+        "id": photo_id,
+        "url": relative_url,
+        "filename": safe_filename,
+        "name": orig_filename,
+        "size": size_str,
+        "title": title or default_title,
+        "coord": coord or "-6.3686, 106.8331",
+        "timestamp": timestamp or f"Hari ini · {time_str} WIB",
+        "created_at": now_dt.isoformat(),
+        "uploaded_by": current_user.full_name
+    }
+
+    updated_photos = [new_photo_entry] + existing_photos
+
+    await db.execute(
+        text("UPDATE land_plots SET photo_urls = CAST(:photos AS JSONB) WHERE id = :land_id"),
+        {"photos": json.dumps(updated_photos), "land_id": land_id}
+    )
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Foto '{orig_filename}' berhasil diunggah.",
+        "photo": new_photo_entry,
+        "photo_url": relative_url,
+        "url": relative_url,
+        "photos": updated_photos
+    }
+
+
+@app.get("/api/v1/surveyor/lands/{land_id}/photos")
+@app.get("/api/v1/admin/lands/{land_id}/photos")
+async def get_land_photos(
+    land_id: uuid.UUID,
+    current_user: User = Depends(require_roles(["surveyor", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+    Mengambil seluruh daftar foto dokumentasi lapangan untuk petak lahan tertentu.
+    """
+    check_query = text("SELECT id, name, photo_urls FROM land_plots WHERE id = :land_id")
+    res = await db.execute(check_query, {"land_id": land_id})
+    plot = res.fetchone()
+    if not plot:
+        raise HTTPException(status_code=404, detail="Petak lahan tidak ditemukan")
+
+    photos = plot.photo_urls
+    if isinstance(photos, str):
+        try:
+            photos = json.loads(photos)
+        except Exception:
+            photos = []
+    elif not isinstance(photos, list):
+        photos = []
+
+    return photos
+
+
+@app.delete("/api/v1/surveyor/lands/{land_id}/photos/{photo_id}")
+@app.delete("/api/v1/admin/lands/{land_id}/photos/{photo_id}")
+async def delete_land_photo(
+    land_id: uuid.UUID,
+    photo_id: str,
+    current_user: User = Depends(require_roles(["surveyor", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    // [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+    Menghapus foto survei dari database dan disk file lokal.
+    """
+    check_query = text("SELECT id, photo_urls FROM land_plots WHERE id = :land_id")
+    res = await db.execute(check_query, {"land_id": land_id})
+    plot = res.fetchone()
+    if not plot:
+        raise HTTPException(status_code=404, detail="Petak lahan tidak ditemukan")
+
+    photos = plot.photo_urls
+    if isinstance(photos, str):
+        try:
+            photos = json.loads(photos)
+        except Exception:
+            photos = []
+    elif not isinstance(photos, list):
+        photos = []
+
+    target_photo = next((p for p in photos if p.get("id") == photo_id or p.get("filename") == photo_id), None)
+    if not target_photo:
+        raise HTTPException(status_code=404, detail="Foto tidak ditemukan")
+
+    if target_photo.get("filename"):
+        file_path = os.path.join(SURVEY_PHOTOS_DIR, target_photo["filename"])
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception:
+                pass
+
+    updated_photos = [p for p in photos if p.get("id") != target_photo.get("id")]
+    await db.execute(
+        text("UPDATE land_plots SET photo_urls = CAST(:photos AS JSONB) WHERE id = :land_id"),
+        {"photos": json.dumps(updated_photos), "land_id": land_id}
+    )
+    await db.commit()
+
+    return {"status": "success", "message": "Foto berhasil dihapus", "photos": updated_photos}
+
+
+
+@app.get("/api/v1/farmer/dashboard", response_model=FarmerDashboardSummary)
 @app.get("/api/v1/farmer/dashboard/summary", response_model=FarmerDashboardSummary)
 async def get_farmer_dashboard_summary(
     current_user: User = Depends(require_roles(["farmer"])),

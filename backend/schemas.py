@@ -3,7 +3,7 @@ import math
 from pydantic import BaseModel, Field, EmailStr, model_validator
 from typing import Any, Dict, Optional, List, Union
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, date
 
 # Skema JSON yang masuk dari ERP Pabrik
 class AutoBuyRequest(BaseModel):
@@ -196,10 +196,18 @@ class LandPlotDetail(BaseModel):
     scheduled_survey_date: Optional[datetime] = None
     scheduled_date: Optional[str] = None
     survey_logs: Optional[List[SurveyLogItem]] = []
+    cluster_id: Optional[UUID] = None
+    cluster_name: Optional[str] = None
+    cluster_status: Optional[str] = None
+    cluster_tonnage: Optional[float] = 0.0
+    photos: Optional[List[Dict[str, Any]]] = []
+    photo_urls: Optional[List[Dict[str, Any]]] = []
+    audit_sampling: Optional[Any] = []
 
 class AdminScheduleSurveyRequest(BaseModel):
     surveyor_id: Optional[UUID] = Field(None, description="ID User surveyor yang ditugaskan")
-    scheduled_survey_date: datetime = Field(..., description="Waktu dan tanggal rencana inspeksi fisik oleh surveyor")
+    scheduled_survey_date: Union[datetime, date, str] = Field(..., description="Waktu dan tanggal rencana inspeksi fisik oleh surveyor")
+    priority: Optional[str] = Field("Normal", description="Tingkat prioritas inspeksi")
     notes: Optional[str] = Field(None, description="Catatan instruksi khusus penugasan audit dari Admin")
 
 class WalletResponse(BaseModel):

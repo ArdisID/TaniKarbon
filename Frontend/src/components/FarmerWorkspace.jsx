@@ -557,18 +557,18 @@ function FarmerProfileModal({ currentUser, farmerSummary, onClose, onToast, onUs
 
 const FARMER_TAB_PATHS = {
   dashboard: '/mitra-tani/dashboard',
-  land: '/mitra-tani/manajemen-lahan',
-  wizard: '/mitra-tani/daftarkan-lahan',
-  timeline: '/mitra-tani/lacak-verifikasi',
-  wallet: '/mitra-tani/dompet-karbon',
+  land: '/mitra-tani/lahan',
+  wizard: '/mitra-tani/pendaftaran',
+  timeline: '/mitra-tani/verifikasi',
+  wallet: '/mitra-tani/dompet',
 };
 
 function getFarmerTabFromPath(pathname) {
   const normalized = (pathname || '').toLowerCase().replace(/\/$/, '');
-  if (normalized.endsWith('/manajemen-lahan')) return 'land';
-  if (normalized.endsWith('/daftarkan-lahan')) return 'wizard';
-  if (normalized.endsWith('/lacak-verifikasi')) return 'timeline';
-  if (normalized.endsWith('/dompet-karbon')) return 'wallet';
+  if (normalized.endsWith('/lahan') || normalized.endsWith('/manajemen-lahan')) return 'land';
+  if (normalized.endsWith('/pendaftaran') || normalized.endsWith('/daftarkan-lahan')) return 'wizard';
+  if (normalized.endsWith('/verifikasi') || normalized.endsWith('/lacak-verifikasi')) return 'timeline';
+  if (normalized.endsWith('/dompet') || normalized.endsWith('/dompet-karbon')) return 'wallet';
   return 'dashboard';
 }
 

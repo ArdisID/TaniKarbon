@@ -30,7 +30,7 @@ function getAuthHeaders() {
  * farmer_name, farmer_email, total_land_plots, available_balance, escrow_balance
  */
 export async function getFarmerSummary() {
-  const response = await fetch(`${API_BASE}/farmer/dashboard/summary`, {
+  const response = await fetch(`${API_BASE}/farmer/dashboard`, {
     method: 'GET',
     headers: getAuthHeaders()
   });
@@ -42,6 +42,8 @@ export async function getFarmerSummary() {
 
   return response.json();
 }
+
+export const getFarmerDashboard = getFarmerSummary;
 
 /**
  * Fetch daftar petak lahan milik petani beserta tree_blocks
@@ -340,4 +342,103 @@ export async function getFarmerBankAccounts() {
   }
 
   return response.json();
+}
+
+/**
+ * Tambah rekening bank atau e-wallet mitra tani baru
+ */
+export async function addFarmerBankAccount(accountData) {
+  const response = await fetch(`${API_BASE}/farmer/bank-accounts`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(accountData)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(errorData, 'Gagal menambahkan rekening bank'));
+  }
+
+  return response.json();
+}
+
+/**
+ * Hapus rekening bank atau e-wallet mitra tani
+ */
+export async function deleteFarmerBankAccount(accountId) {
+  const response = await fetch(`${API_BASE}/farmer/bank-accounts/${accountId}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(errorData, 'Gagal menghapus rekening bank'));
+  }
+
+  return response.json();
+}
+
+/**
+ * Jadikan rekening bank mitra tani sebagai rekening utama (primer)
+ */
+export async function setPrimaryFarmerBankAccount(accountId) {
+  const response = await fetch(`${API_BASE}/farmer/bank-accounts/${accountId}/primary`, {
+    method: 'PATCH',
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(errorData, 'Gagal mengatur rekening utama'));
+  }
+
+  return response.json();
+}
+
+/**
+ * Tambah blok pohon baru langsung ke petak lahan yang sudah ada
+ */
+export async function addTreeBlockToLand(landId, blockData) {
+  const formattedSamples = (blockData.samples || []).map((s) => {
+    const dbh = parseFloat(s.dbh_cm || s.dbh || 0);
+    const circ = s.circumference_cm 
+      ? parseFloat(s.circumference_cm) 
+      : (dbh > 0 ? parseFloat((dbh * Math.PI).toFixed(4)) : 0);
+    return {
+      circumference_cm: circ,
+      dbh_cm: dbh > 0 ? dbh : parseFloat((circ / Math.PI).toFixed(2)),
+      height_m: s.height_m ? parseFloat(s.height_m) : undefined,
+      sample_index: s.sample_index
+    };
+  });
+
+  const response = await fetch(`${API_BASE}/farmer/lands/${landId}/blocks`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      land_plot_id: landId,
+      species_name: blockData.species_name,
+      planting_year: parseInt(blockData.planting_year, 10),
+      total_population: parseInt(blockData.total_population, 10),
+      samples: formattedSamples,
+      height_m: blockData.height_m ? parseFloat(blockData.height_m) : undefined
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(errorData, 'Gagal menambahkan blok pohon'));
+  }
+
+  return response.json();
+}
+
+// [INTEGRATION-HOOK: ROLE_SURVEYOR (AUDIT & PHOTO UPLOAD)]
+export async function reviseLandPlot(landId, data) {
+  return submitLandRevision({
+    land_id: landId,
+    category: data.category || 'Revisi Batas / Sampel Pohon',
+    notes: data.detail_notes || data.notes || data.reason || 'Permintaan revisi petak oleh petani'
+  });
 }
