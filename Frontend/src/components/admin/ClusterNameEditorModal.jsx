@@ -39,20 +39,20 @@ export default function ClusterNameEditorModal({ cluster, onClose, onSave, onToa
       onClick={onClose}
     >
       <div 
-        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden relative max-h-[92vh] flex flex-col"
+        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden relative max-h-[92vh] flex flex-col animate-modal-pop"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-[#14382C] px-5 py-4 text-white flex items-center justify-between shrink-0">
+        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-5 py-4 text-white flex items-center justify-between shrink-0 shadow-sm">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-emerald-300">
+            <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-white">
               <MapPin className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[10px] font-sans font-semibold text-emerald-300 uppercase tracking-wider block">
-                EDITOR GEOSPASIAL KLASTER
+              <span className="text-[10px] font-sans font-extrabold text-amber-100 uppercase tracking-wider block">
+                Editor Geospasial Klaster
               </span>
-              <h3 className="text-sm font-bold text-white font-sans">
+              <h3 className="text-sm font-black text-white font-sans">
                 Edit Identitas &amp; Narasi Publik Klaster
               </h3>
             </div>
@@ -68,11 +68,11 @@ export default function ClusterNameEditorModal({ cluster, onClose, onSave, onToa
         {/* Content */}
         <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
           {/* Reverse Geocode Context */}
-          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs font-sans space-y-1">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">ID Klaster PostGIS:</span>
-            <div className="flex items-center justify-between">
-              <span className="font-mono font-bold text-[#14382C] text-sm">{cluster.id}</span>
-              <span className="font-mono text-slate-500 text-[11px]">{cluster.centroid ? `${cluster.centroid[0]}, ${cluster.centroid[1]}` : '-7.3639, 109.9886'}</span>
+          <div className="p-3 bg-amber-50/50 rounded-2xl border border-amber-200/70 text-xs font-sans space-y-1">
+            <span className="text-[10px] uppercase font-bold text-amber-900 block">ID Klaster PostGIS:</span>
+            <div className="flex items-center justify-between font-sans">
+              <span className="font-sans font-bold text-amber-950 text-sm tabular-nums">{cluster.id}</span>
+              <span className="font-sans text-slate-500 text-[11px] tabular-nums">{cluster.centroid ? `${cluster.centroid[0]}, ${cluster.centroid[1]}` : '-7.3639, 109.9886'}</span>
             </div>
             <p className="text-slate-500 text-[11px]">
               Reverse Geocoding Awal: <em>{cluster.rawName || 'Klaster Agro - Kec. Kejajar / Garung'}</em>
@@ -88,7 +88,7 @@ export default function ClusterNameEditorModal({ cluster, onClose, onSave, onToa
               type="text"
               value={clusterName}
               onChange={(e) => setClusterName(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-xs font-sans font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#14382C] focus:bg-white transition"
+              className="w-full px-3.5 py-2.5 text-xs font-sans font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:bg-white transition"
               required
             />
           </div>
@@ -101,7 +101,7 @@ export default function ClusterNameEditorModal({ cluster, onClose, onSave, onToa
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full p-3 text-xs font-sans bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#14382C] focus:bg-white transition"
+              className="w-full p-3 text-xs font-sans bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:bg-white transition"
               placeholder="Jelaskan dampak sosial, spesies pohon, dan komunitas petani..."
             />
           </div>
@@ -113,7 +113,7 @@ export default function ClusterNameEditorModal({ cluster, onClose, onSave, onToa
             <select
               value={coverPhoto}
               onChange={(e) => setCoverPhoto(e.target.value)}
-              className="w-full px-3.5 py-2.5 text-xs font-sans bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#14382C] focus:bg-white transition cursor-pointer"
+              className="w-full px-3.5 py-2.5 text-xs font-sans bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:bg-white transition cursor-pointer"
             >
               <option value="/hero-landscape.png">Panorama Hutan Agroforestri Wonosobo (Default)</option>
               <option value="/hero-agroforest.jpg">Lansekap Perkebunan Rakyat Lereng Sindoro</option>
@@ -133,9 +133,9 @@ export default function ClusterNameEditorModal({ cluster, onClose, onSave, onToa
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-1 py-2.5 bg-[#14382C] hover:bg-[#1a4436] text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
             >
-              <Save className="w-4 h-4 text-emerald-400" />
+              <Save className="w-4 h-4 text-white" />
               <span>{isSubmitting ? 'Menyimpan...' : 'Simpan Perubahan Klaster'}</span>
             </button>
           </div>

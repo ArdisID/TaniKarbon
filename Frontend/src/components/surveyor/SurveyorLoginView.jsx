@@ -1,21 +1,17 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Compass, 
-  ShieldCheck, 
-  Lock, 
-  UserCheck, 
-  MapPin, 
-  Wifi, 
-  ArrowRight, 
-  ArrowLeft, 
-  Zap, 
-  Leaf, 
-  Eye, 
+import {
+  Compass,
+  ArrowRight,
+  ArrowLeft,
+  Eye,
   EyeOff,
-  AlertCircle
+  AlertCircle,
+  CheckCircle2,
+  ShieldCheck
 } from 'lucide-react';
 import { loginUser } from '../../api/auth';
+import TaniKarbonLogo from '../common/TaniKarbonLogo';
 
 export default function SurveyorLoginView({ onLogin, onBack, onNavigate }) {
   const navigate = useNavigate();
@@ -73,99 +69,89 @@ export default function SurveyorLoginView({ onLogin, onBack, onNavigate }) {
   };
 
   return (
-    <div 
-      className="min-h-screen w-full relative flex flex-col justify-between p-4 sm:p-6 bg-cover bg-center font-sans antialiased"
-      style={{ backgroundImage: "url('/auth-bg.jpg')" }}
+    <div
+      className="min-h-screen w-full relative flex flex-col justify-between p-4 sm:p-6 bg-cover bg-center font-sans antialiased overflow-x-hidden"
+      style={{
+        backgroundImage: "url('/auth-bg-plantation.jpg')",
+        backgroundColor: '#14382C'
+      }}
     >
-      <div className="absolute inset-0 bg-gradient-to-b from-stone-900/60 via-[#14382C]/40 to-stone-950/80 pointer-events-none" />
+      {/* Soft atmospheric gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-emerald-950/25 to-black/60 pointer-events-none" />
 
-      {/* Top Bar */}
-      <div className="relative z-20 max-w-md w-full mx-auto flex items-center justify-between">
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/80 hover:bg-white text-stone-700 text-xs font-semibold backdrop-blur-md border border-white/60 shadow-xs transition active:scale-95 cursor-pointer font-sans"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Kembali</span>
-        </button>
-
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/85 backdrop-blur-md border border-white/60 shadow-xs">
-          <div className="w-4 h-4 rounded-full bg-teal-800 text-teal-200 flex items-center justify-center">
-            <Compass className="w-2.5 h-2.5" />
-          </div>
-          <span className="font-extrabold text-[11px] text-teal-950 tracking-tight font-sans">
-            TaniKarbon Field Staff
-          </span>
-        </div>
+      {/* Subtle Concentric Rings radiating from behind the card */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+        <div className="w-[500px] h-[500px] rounded-full border border-white/15 -translate-y-6" />
+        <div className="absolute w-[750px] h-[750px] rounded-full border border-white/10 -translate-y-6" />
+        <div className="absolute w-[1000px] h-[1000px] rounded-full border border-white/5 -translate-y-6" />
       </div>
 
-      {/* Center Mobile-First Field Card */}
-      <div className="relative z-20 my-auto py-6 flex items-center justify-center">
-        <div className="w-full max-w-[400px] bg-white/95 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 border border-white/90 shadow-2xl transition animate-fade-in space-y-4">
-          
-          {/* Header Icon & Title */}
-          <div className="text-center space-y-1.5">
-            <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200 text-teal-800 flex items-center justify-center mx-auto shadow-2xs">
-              <Compass className="w-6 h-6 text-teal-700" />
-            </div>
-            
-            <div className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-200 uppercase tracking-wider font-sans">
-              Portal Petugas Lapangan
-            </div>
-            
-            <h1 className="text-xl font-bold text-stone-900 tracking-tight font-sans">
-              Masuk Surveyor MRV
-            </h1>
-            <p className="text-xs text-slate-500 font-sans max-w-xs mx-auto">
-              Sistem verifikasi fisik geofencing, audit lingkar batang pohon, dan antrean sinkronisasi offline.
-            </p>
+      {/* Top Bar: Brand Logo & Back Button */}
+      <div className="relative z-20 max-w-6xl w-full mx-auto flex items-center justify-between">
+        {/* Brand Logo */}
+        <div className="flex items-center px-3.5 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/20 shadow-xs">
+          <TaniKarbonLogo size={26} showText={true} textVariant="light" />
+        </div>
+
+        {/* Back to Home Button */}
+        <button
+          type="button"
+          onClick={onBack}
+          className="group inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/80 hover:bg-white text-stone-800 text-xs font-semibold backdrop-blur-md border border-white/80 shadow-xs transition-all active:scale-95 cursor-pointer font-sans"
+        >
+          <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+          <span>Kembali</span>
+        </button>
+      </div>
+
+      {/* Center Floating White Card (Same as Farmer Login) */}
+      <div className="relative z-20 my-auto py-4 flex items-center justify-center">
+        <div className="w-full max-w-[400px] bg-white/95 backdrop-blur-2xl rounded-[32px] p-7 sm:p-8 border border-white shadow-[0_24px_70px_-15px_rgba(0,0,0,0.35)] text-center transition-all animate-fade-in space-y-4">
+
+          {/* Top Squircle Icon (Subtle Teal Differentiator) */}
+          <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200/80 shadow-[0_4px_16px_rgba(13,148,136,0.12)] flex items-center justify-center mx-auto text-teal-700">
+            <Compass className="w-6 h-6 text-teal-700" />
           </div>
 
-          {/* Device & GPS Status Indicator */}
-          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-[11px] font-sans">
-            <div className="flex items-center gap-1.5 text-emerald-800 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
-              <span>GPS Geofence: Aktif (&le; 50m)</span>
-            </div>
-            <div className="flex items-center gap-1 text-slate-500 font-mono text-[10px]">
-              <Wifi className="w-3 h-3 text-slate-400" />
-              <span>Siap Offline</span>
-            </div>
+          {/* Heading & Subtitle */}
+          <div>
+            <h1 className="text-xl font-bold text-stone-900 tracking-tight font-sans">
+              Masuk Portal Surveyor
+            </h1>
+            <p className="text-[11px] text-stone-500 mt-1 leading-relaxed max-w-[280px] mx-auto font-sans">
+              Audit geofencing GPS, verifikasi spesimen pohon, dan sinkronisasi data offline.
+            </p>
           </div>
 
           {/* Error Banner */}
           {errorMessage && (
-            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 text-left font-sans animate-fade-in">
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 text-left animate-fade-in font-sans">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
               <span className="leading-tight font-medium">{errorMessage}</span>
             </div>
           )}
 
-          {/* Form Login */}
+          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3 text-left">
             <div>
-              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 font-sans">
+              <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1 font-sans">
                 ID Petugas Lapangan
               </label>
-              <div className="relative">
-                <UserCheck className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  required
-                  value={surveyorId}
-                  onChange={(e) => setSurveyorId(e.target.value)}
-                  placeholder="Contoh: SRV-BUDI-09"
-                  className="w-full pl-10 pr-3 py-2.5 bg-slate-50 focus:bg-white border border-slate-200 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/10 rounded-xl text-xs sm:text-sm font-mono font-semibold text-slate-800 outline-none transition"
-                />
-              </div>
+              <input
+                type="text"
+                required
+                value={surveyorId}
+                onChange={(e) => setSurveyorId(e.target.value)}
+                placeholder="Contoh: SRV-BUDI-09"
+                className="w-full px-4 py-2.5 bg-[#F3F4F6] focus:bg-white border border-transparent focus:border-stone-300 rounded-xl text-xs text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
+              />
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 font-sans">
+              <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1 font-sans">
                 PIN Keamanan Lapangan (6 Digit)
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type={showPin ? 'text' : 'password'}
                   required
@@ -173,68 +159,75 @@ export default function SurveyorLoginView({ onLogin, onBack, onNavigate }) {
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
                   placeholder="••••••"
-                  className="w-full pl-10 pr-10 py-2.5 bg-slate-50 focus:bg-white border border-slate-200 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/10 rounded-xl text-xs sm:text-sm font-mono font-bold tracking-widest text-slate-800 outline-none transition"
+                  className="w-full px-4 pr-10 py-2.5 bg-[#F3F4F6] focus:bg-white border border-transparent focus:border-stone-300 rounded-xl text-xs font-bold tracking-widest text-stone-800 placeholder:text-stone-400 outline-none transition font-sans tabular-nums"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPin(!showPin)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition p-1"
                 >
                   {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
+            {/* Submit Button (Subtle Deep Teal / Emerald Accent) */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 py-3 px-4 bg-teal-800 hover:bg-teal-900 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 cursor-pointer font-sans disabled:opacity-50"
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-teal-700 to-emerald-800 hover:from-teal-800 hover:to-emerald-900 text-white font-bold text-xs tracking-tight shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-1"
             >
               {loading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
+                  <Compass className="w-3.5 h-3.5 text-white" />
                   <span>Buka Lembar Kerja Surveyor</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-3.5 h-3.5 text-white" />
                 </>
               )}
             </button>
           </form>
 
-          {/* 1-Click Demo Login Button (Fitur Demo Lomba) */}
-          <div className="pt-2 border-t border-slate-100">
+          {/* 1-Click Demo Login Button */}
+          <div className="pt-2 border-t border-stone-100">
             <button
               type="button"
               onClick={handleQuickDemo}
-              className="w-full py-2 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 border border-teal-200/80 text-teal-900 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer font-sans shadow-2xs"
+              className="w-full py-2 px-3 rounded-xl bg-teal-50/70 hover:bg-teal-100/80 border border-teal-200/80 text-teal-900 text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer font-sans"
             >
-              <Zap className="w-3.5 h-3.5 text-teal-600 fill-teal-600" />
-              <span>⚡ 1-Click Demo: Budi Santoso (SRV-BUDI-09)</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-teal-700" />
+              <span>Demo 1-Klik Petugas Lapangan (SRV-BUDI-09)</span>
             </button>
           </div>
 
-          {/* Navigation to Public Login */}
-          <div className="text-center pt-1 text-xs text-slate-400 font-sans">
-            Bukan staf petugas?{' '}
+          {/* Switch to Public Login */}
+          <div className="pt-1 text-center">
             <button
               type="button"
               onClick={() => onNavigate && onNavigate('auth')}
-              className="font-bold text-teal-800 hover:underline cursor-pointer"
+              className="text-xs font-medium text-stone-500 hover:text-stone-800 transition font-sans"
             >
-              Login Mitra Tani &amp; Korporat
+              Bukan Surveyor? <span className="text-emerald-700 font-bold hover:underline">Masuk Portal Petani &amp; Korporat</span>
             </button>
           </div>
 
         </div>
       </div>
 
-      {/* Footer Note */}
-      <div className="relative z-20 text-center">
-        <p className="text-[11px] text-white/70 font-sans">
-          Aplikasi Inspeksi Terakreditasi Standar ISO 14064-2 &amp; Verra VM0042
-        </p>
-      </div>
-
+      {/* Footer Security Badges */}
+      <footer className="relative z-20 text-center py-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 text-[11px] text-white/70 font-medium font-sans">
+          <span className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+            ISO 14064-2 Terstandarisasi
+          </span>
+          <span>·</span>
+          <span>Verra VM0042 Alometrik</span>
+          <span>·</span>
+          <span>SRN-PPI KLHK Validated</span>
+        </div>
+      </footer>
     </div>
   );
 }

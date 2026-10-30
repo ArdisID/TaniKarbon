@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import SurveyorSidebar from './surveyor/SurveyorSidebar';
+import SurveyorMobileNav from './surveyor/SurveyorMobileNav';
 import SurveyorDashboardView from './surveyor/SurveyorDashboardView';
+import FieldMapNavigationView from './surveyor/FieldMapNavigationView';
 import SurveyorInspectionView from './surveyor/SurveyorInspectionView';
 import OfflineSyncAndHistoryView from './surveyor/OfflineSyncAndHistoryView';
-import { getSurveyorTasks } from '../api/surveyor';
-import { CheckCircle2, Menu } from 'lucide-react';
+import { getSurveyorTasks, submitSurveyorAudit } from '../api/surveyor';
+import { getOfflineSurveys, deleteOfflineSurvey, clearOfflineSurveys } from '../utils/offlineStorage';
+import { CheckCircle2, LogOut } from 'lucide-react';
+import TaniKarbonLogo from './common/TaniKarbonLogo';
+import SurveyorProfileModal from './surveyor/SurveyorProfileModal';
+import { getStoredUser } from '../api/auth';
 
 export default function SurveyorWorkspace({ 
   currentUser,
@@ -23,9 +29,7 @@ export default function SurveyorWorkspace({
     const queryPlotId = searchParams.get('plotId');
 
     if (path.includes('/peta-rute')) {
-      // Peta rute telah terintegrasi di Dashboard, redirect ke /surveyor/tugas
-      window.history.replaceState(null, '', '/surveyor/tugas');
-      return { tab: 'tasks', plotId: null };
+      return { tab: 'map', plotId: null };
     }
     if (path.includes('/inspeksi')) {
       if (!queryPlotId || queryPlotId.trim() === '') {
@@ -46,6 +50,17 @@ export default function SurveyorWorkspace({
   const [currentTab, setCurrentTab] = useState(initialRoute.tab);
   const [activePlotId, setActivePlotId] = useState(initialRoute.plotId);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [surveyorProfile, setSurveyorProfile] = useState(() => {
+    const stored = getStoredUser();
+    return stored || currentUser || {
+      full_name: 'Budi Santoso, S.Hut',
+      email: 'surveyor@tanikarbon.com',
+      surveyor_id: 'SRV-BUDI-09',
+      region: 'Kabupaten Wonosobo, Jawa Tengah',
+      certification: 'Auditor Silvikultur Chave Tier-3 & ISO 14064'
+    };
+  });
 
   // Network State
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -54,10 +69,11 @@ export default function SurveyorWorkspace({
   const [tasks, setTasks] = useState([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(true);
 
-  // History & Offline Queue
+  // History & Offline Queue (IndexedDB Persistent)
   const [offlineQueue, setOfflineQueue] = useState([]);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Toast State
+  // Toast State (declared first so other callbacks can use it)
   const [toastMessage, setToastMessage] = useState(null);
   const showToast = useCallback((msg, tone = 'emerald') => {
     setToastMessage({ msg, tone });
@@ -68,26 +84,6 @@ export default function SurveyorWorkspace({
     const t = setTimeout(() => setToastMessage(null), 3800);
     return () => clearTimeout(t);
   }, [toastMessage]);
-
-  // Online/Offline Listeners
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      showToast('Koneksi internet pulih · Mode Sinkronisasi Aktif', 'emerald');
-    };
-    const handleOffline = () => {
-      setIsOnline(false);
-      showToast('Sinyal offline · Data disimpan lokal di IndexedDB', 'amber');
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, [showToast]);
 
   // Fetch Real Tasks from PostgreSQL (Strict Guard: DILARANG fallback ke data[0])
   const fetchTasks = useCallback(async () => {
@@ -122,9 +118,82 @@ export default function SurveyorWorkspace({
     }
   }, [showToast]);
 
+  const loadOfflineQueue = useCallback(async () => {
+    try {
+      const stored = await getOfflineSurveys();
+      setOfflineQueue(stored || []);
+    } catch (err) {
+      console.warn('Gagal memuat antrean offline dari IndexedDB:', err);
+    }
+  }, []);
+
+  // Sync / Upload All Offline Items to Backend
+  const handleSyncAll = useCallback(async () => {
+    if (isSyncing || offlineQueue.length === 0) return;
+    setIsSyncing(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const item of [...offlineQueue]) {
+      try {
+        await submitSurveyorAudit(item.landId, {
+          decision: item.decision,
+          notes: item.notes,
+          category: item.category,
+          block_adjustments: item.block_adjustments
+        });
+        await deleteOfflineSurvey(item.id);
+        successCount++;
+      } catch (err) {
+        console.error('Gagal sinkronkan item:', item, err);
+        failCount++;
+      }
+    }
+
+    await loadOfflineQueue();
+    setIsSyncing(false);
+
+    if (successCount > 0) {
+      showToast(`Berhasil menyinkronkan ${successCount} paket audit ke server!`, 'emerald');
+      fetchTasks();
+    }
+    if (failCount > 0) {
+      showToast(`${failCount} paket survei gagal disinkronkan. Tetap tersimpan di IndexedDB.`, 'amber');
+    }
+  }, [isSyncing, offlineQueue, loadOfflineQueue, showToast, fetchTasks]);
+
+  useEffect(() => {
+    loadOfflineQueue();
+  }, [loadOfflineQueue]);
+
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  // Online/Offline Listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('Koneksi internet pulih · Mode Sinkronisasi Aktif', 'emerald');
+      loadOfflineQueue().then((q) => {
+        if (q && q.length > 0) {
+          handleSyncAll();
+        }
+      });
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('Sinyal offline · Data disimpan lokal di IndexedDB', 'amber');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [showToast, loadOfflineQueue, handleSyncAll]);
 
   // Two-way URL routing binding
   const handleSelectTab = useCallback((tabId, params = {}) => {
@@ -133,12 +202,22 @@ export default function SurveyorWorkspace({
 
     if (tabId === 'inspection') {
       if (!targetPlotId) {
-        // Guard: Jika tidak ada plotId, DILARANG masuk mode inspeksi dan DILARANG fallback ke tasks[0]
-        targetPath = '/surveyor/tugas';
-        tabId = 'tasks';
+        const candidate = tasks.find(t => t.status === 'pending' || t.status === 'scheduled') || tasks[0];
+        if (candidate) {
+          targetPlotId = candidate.id;
+          targetPath = `/surveyor/inspeksi?plotId=${targetPlotId}`;
+        } else {
+          showToast('Belum ada tiket tugas yang tersedia untuk diinspeksi', 'amber');
+          targetPath = '/surveyor/tugas';
+          tabId = 'tasks';
+        }
       } else {
         targetPath = `/surveyor/inspeksi?plotId=${targetPlotId}`;
       }
+    } else if (tabId === 'map' || tabId === 'peta-rute') {
+      tabId = 'map';
+      targetPath = '/surveyor/peta-rute';
+      targetPlotId = null;
     } else if (tabId === 'sync' || tabId === 'riwayat') {
       tabId = 'sync';
       targetPath = '/surveyor/riwayat';
@@ -180,8 +259,9 @@ export default function SurveyorWorkspace({
   // Sync / Audit Complete Callback
   const handleAuditComplete = useCallback((decision) => {
     fetchTasks();
+    loadOfflineQueue();
     handleSelectTab('tasks');
-  }, [fetchTasks, handleSelectTab]);
+  }, [fetchTasks, loadOfflineQueue, handleSelectTab]);
 
   // Riwayat lahan yang sudah selesai diaudit (verified / rejected) dari database PostgreSQL
   const completedHistory = useMemo(() => {
@@ -199,7 +279,7 @@ export default function SurveyorWorkspace({
 
         return {
           id: t.id,
-          ticketId: t.ticket_code || `TKT-${t.id.slice(0, 8).toUpperCase()}`,
+          ticketId: t.ticket_code || (t.id ? `TKT-${String(t.id).slice(0, 8).toUpperCase()}` : 'TKT-001'),
           farmerName: t.farmer_name || t.farmerName || 'Petani Mitra',
           farmerPhone: t.farmer_phone || t.farmerPhone,
           landName: t.name || t.landName || 'Petak Agroforestri',
@@ -226,9 +306,6 @@ export default function SurveyorWorkspace({
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC] text-slate-800 font-sans antialiased">
-      {/* React Router Nested Outlet for surveyor subroutes */}
-      <Outlet />
-
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-[#0F291E] text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-emerald-400/30 flex items-center gap-3 animate-slide-in-right max-w-md font-sans">
@@ -242,8 +319,9 @@ export default function SurveyorWorkspace({
       {/* 1. Strict Sidebar-Only Navigation: SEMBUNYIKAN saat mode inspeksi layar penuh */}
       {!isInspectionMode && (
         <SurveyorSidebar
-          currentUser={currentUser}
+          currentUser={surveyorProfile}
           onLogout={onLogout}
+          onOpenProfile={() => setShowProfileModal(true)}
           currentTab={currentTab}
           onSelectTab={handleSelectTab}
           pendingCount={pendingCount}
@@ -255,26 +333,49 @@ export default function SurveyorWorkspace({
       )}
 
       {/* Main Content Area (Full-Width jika mode inspeksi; lg:ml-64 jika ada sidebar) */}
-      <main className={`min-w-0 flex-1 ${isInspectionMode ? 'w-full' : 'lg:ml-64'}`}>
-        {/* Mobile Header Bar (Hanya tampil pada mode dashboard ber-sidebar) */}
+      <main className={`min-w-0 flex-1 pb-28 lg:pb-8 ${isInspectionMode ? 'w-full' : 'lg:ml-64'}`}>
+        {/* Mobile Header Bar (Tanpa hamburger button) */}
         {!isInspectionMode && (
-          <div className="lg:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 sticky top-0 z-30">
-            <button
-              type="button"
-              onClick={() => setMobileOpen(true)}
-              className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition cursor-pointer"
-              aria-label="Buka menu navigasi"
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 font-sans">
+            <div 
+              onClick={() => setShowProfileModal(true)}
+              className="flex items-center cursor-pointer group"
+              title="Klik untuk edit profil surveyor"
             >
-              <Menu className="w-6 h-6" />
-            </button>
-            <div className="flex items-center gap-2">
-              <h2 className="font-extrabold text-[#0F291E] text-sm font-sans tracking-tight">TaniKarbon</h2>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                FIELD
-              </span>
+              <TaniKarbonLogo size={24} showText={true} textVariant="dark" subtitle="FIELD" />
             </div>
-            <div className="w-8" />
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(true)}
+                className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg"
+              >
+                Profil
+              </button>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                <span className="text-[11px] font-medium">{isOnline ? 'Online' : 'Offline'}</span>
+              </div>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 transition cursor-pointer"
+                title="Keluar Akun"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
+        )}
+
+        {/* Modal Profil Surveyor (Bisa Edit & Simpan) */}
+        {showProfileModal && (
+          <SurveyorProfileModal
+            currentUser={surveyorProfile}
+            onClose={() => setShowProfileModal(false)}
+            onToast={showToast}
+            onProfileUpdated={(updated) => setSurveyorProfile(updated)}
+          />
         )}
 
         {/* Render View Container */}
@@ -291,31 +392,57 @@ export default function SurveyorWorkspace({
           />
         ) : (
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
-            {/* TAB 1: Tugas & Rute Inspeksi (Dashboard) -> /surveyor/tugas */}
-            {currentTab === 'tasks' && (
-              <SurveyorDashboardView
-                currentUser={currentUser}
-                tasks={tasks}
-                onStartInspection={(task) => handleSelectTab('inspection', { plotId: task.id })}
-                onNavigateTab={handleSelectTab}
-                onToast={showToast}
-                onRefreshTasks={fetchTasks}
-              />
-            )}
+            <div key={currentTab} className="page-enter">
+              {/* TAB 1: Tugas & Rute Inspeksi (Dashboard) -> /surveyor/tugas */}
+              {currentTab === 'tasks' && (
+                <SurveyorDashboardView
+                  currentUser={currentUser}
+                  tasks={tasks}
+                  onStartInspection={(task) => handleSelectTab('inspection', { plotId: task.id })}
+                  onNavigateTab={handleSelectTab}
+                  onToast={showToast}
+                  onRefreshTasks={fetchTasks}
+                />
+              )}
 
-            {/* TAB 2: Riwayat & Sinkronisasi -> /surveyor/riwayat */}
-            {currentTab === 'sync' && (
-              <OfflineSyncAndHistoryView
-                isOnline={isOnline}
-                offlineQueue={offlineQueue}
-                onSyncAll={() => setOfflineQueue([])}
-                history={completedHistory}
-                onToast={showToast}
-              />
-            )}
+              {/* TAB 2: Peta GPS & Rute Geofencing -> /surveyor/peta-rute */}
+              {currentTab === 'map' && (
+                <FieldMapNavigationView
+                  allTickets={tasks}
+                  selectedTicket={tasks.find(t => t.id === activePlotId) || tasks[0]}
+                  onTicketChange={(ticket) => setActivePlotId(ticket.id)}
+                  onCheckInSuccess={(ticket) => {
+                    showToast(`Berhasil check-in di lahan ${ticket.farmerName}!`, 'emerald');
+                    handleSelectTab('inspection', { plotId: ticket.id });
+                  }}
+                  onToast={showToast}
+                />
+              )}
+
+              {/* TAB 3: Riwayat & Sinkronisasi -> /surveyor/riwayat */}
+              {currentTab === 'sync' && (
+                <OfflineSyncAndHistoryView
+                  isOnline={isOnline}
+                  offlineQueue={offlineQueue}
+                  onSyncAll={handleSyncAll}
+                  isSyncing={isSyncing}
+                  history={completedHistory}
+                  onToast={showToast}
+                />
+              )}
+            </div>
           </div>
         )}
       </main>
+
+      {/* Floating Minimalist Mobile Dock (4 Items: Tugas | Peta GPS | Inspeksi | Sinkronisasi + Keluar) */}
+      <SurveyorMobileNav
+        currentTab={currentTab}
+        onSelectTab={(tabId) => handleSelectTab(tabId)}
+        pendingCount={pendingCount}
+        syncQueueCount={offlineQueue.length}
+        onLogout={onLogout}
+      />
     </div>
   );
 }

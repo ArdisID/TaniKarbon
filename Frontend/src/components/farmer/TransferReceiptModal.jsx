@@ -7,7 +7,7 @@ export default function TransferReceiptModal({ transaction, onClose }) {
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in isolate"
       onClick={onClose}
     >
       <div 
@@ -41,40 +41,40 @@ export default function TransferReceiptModal({ transaction, onClose }) {
               <CheckCircle2 className="w-3 h-3 text-emerald-700" />
               <span>Dana Terkirim (Settled)</span>
             </span>
-            <div className="text-stone-500 text-[11px] font-medium">Nominal Dividen Karbon Ditransfer</div>
-            <div className="text-2xl sm:text-3xl font-black text-[#14382C] font-mono mt-0.5">
+            <div className="text-stone-500 text-[11px] font-medium font-sans">Nominal Dividen Karbon Ditransfer</div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-[#14382C] font-sans mt-0.5 tracking-tight tabular-nums">
               {formatRupiah(transaction.amount)}
             </div>
-            <div className="text-[10px] text-emerald-800 mt-1 font-semibold">
+            <div className="text-[10px] text-emerald-800 mt-1 font-semibold font-sans">
               Bebas Biaya Admin (Ditanggung Koperasi Gapoktan)
             </div>
           </div>
 
           {/* Details Card */}
-          <div className="space-y-2 bg-stone-50 p-4 rounded-2xl border border-stone-200/80 font-mono text-[11px]">
+          <div className="space-y-2 bg-stone-50 p-4 rounded-2xl border border-stone-200/80 font-sans text-xs">
             <div className="flex items-center justify-between pb-1.5 border-b border-stone-200">
               <span className="text-stone-500">ID Transaksi:</span>
-              <strong className="text-stone-900">{transaction.refNumber || transaction.id}</strong>
+              <strong className="text-stone-900 tabular-nums">{transaction.refNumber || transaction.id}</strong>
             </div>
             <div className="flex items-center justify-between pb-1.5 border-b border-stone-200">
               <span className="text-stone-500">Waktu Transfer:</span>
-              <span className="text-stone-800 font-sans">{transaction.date}</span>
+              <span className="text-stone-800 tabular-nums">{transaction.date}</span>
             </div>
             <div className="flex items-center justify-between pb-1.5 border-b border-stone-200">
               <span className="text-stone-500">Bank Penyalur:</span>
-              <span className="text-stone-800 font-sans font-bold">Bank Rakyat Indonesia (BRI)</span>
+              <span className="text-stone-800 font-bold">Bank Rakyat Indonesia (BRI)</span>
             </div>
             <div className="flex items-center justify-between pb-1.5 border-b border-stone-200">
               <span className="text-stone-500">Rekening Tujuan:</span>
-              <span className="text-stone-800 font-sans font-bold">{transaction.recipient || '0142-01-084821-50-8'}</span>
+              <span className="text-stone-800 font-bold tabular-nums">{transaction.recipient || '0142-01-084821-50-8'}</span>
             </div>
             <div className="flex items-center justify-between pb-1.5 border-b border-stone-200">
               <span className="text-stone-500">Nama Penerima:</span>
-              <span className="text-stone-800 font-sans font-bold">JOKO WIDODO</span>
+              <span className="text-stone-800 font-bold">JOKO WIDODO</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-stone-500">Keterangan:</span>
-              <span className="text-emerald-800 font-sans font-bold">Dividen Penjualan ESG Korporat</span>
+              <span className="text-emerald-800 font-bold">Dividen Penjualan ESG Korporat</span>
             </div>
           </div>
 
@@ -84,7 +84,7 @@ export default function TransferReceiptModal({ transaction, onClose }) {
               <ShieldCheck className="w-4 h-4 text-emerald-700" />
               <span>Verifikasi Kasir Platform TaniKarbon: Disetujui Otomatis</span>
             </div>
-            <span className="font-mono text-emerald-800 font-bold uppercase">LUNAS</span>
+            <span className="font-sans text-emerald-800 font-bold uppercase tracking-wider">LUNAS</span>
           </div>
         </div>
 

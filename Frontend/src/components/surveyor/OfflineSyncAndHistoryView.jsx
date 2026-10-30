@@ -23,27 +23,28 @@ export default function OfflineSyncAndHistoryView({
   const [syncProgress, setSyncProgress] = useState(0);
   const [selectedBa, setSelectedBa] = useState(null);
 
-  const handleSyncNow = () => {
+  const handleSyncNow = async () => {
     if (!isOnline) {
       if (onToast) onToast('Perangkat dalam Offline Mode. Hubungkan kembali ke internet untuk sinkronisasi.');
       return;
     }
 
     setIsSyncing(true);
-    setSyncProgress(10);
+    setSyncProgress(30);
 
-    const interval = setInterval(() => {
-      setSyncProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsSyncing(false);
-          if (onSyncAll) onSyncAll();
-          if (onToast) onToast('Semua paket survei offline berhasil diunggah ke server TaniKarbon ✔');
-          return 100;
-        }
-        return prev + 25;
-      });
-    }, 350);
+    try {
+      if (onSyncAll) {
+        await onSyncAll();
+      }
+      setSyncProgress(100);
+    } catch (err) {
+      if (onToast) onToast(`Gagal sinkronisasi: ${err.message}`, 'rose');
+    } finally {
+      setTimeout(() => {
+        setIsSyncing(false);
+        setSyncProgress(0);
+      }, 600);
+    }
   };
 
   return (
@@ -101,7 +102,7 @@ export default function OfflineSyncAndHistoryView({
               </p>
             </div>
           </div>
-          <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+          <span className="px-2.5 py-1 rounded-full text-xs font-sans font-bold bg-amber-100 text-amber-900 border border-amber-300 tabular-nums">
             {offlineQueue.length} Draf Menunggu Sinkron
           </span>
         </div>
@@ -111,7 +112,7 @@ export default function OfflineSyncAndHistoryView({
           <div className="p-4 bg-emerald-50 border-b border-emerald-200 space-y-1.5 font-sans">
             <div className="flex justify-between text-xs text-emerald-900 font-semibold">
               <span>Mengunggah payload inspeksi &amp; foto geotag...</span>
-              <span className="font-mono">{syncProgress}%</span>
+              <span className="font-sans font-bold tabular-nums">{syncProgress}%</span>
             </div>
             <div className="w-full bg-emerald-200 rounded-full h-2 overflow-hidden">
               <div 
@@ -135,7 +136,7 @@ export default function OfflineSyncAndHistoryView({
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-sm text-slate-900 font-sans">{item.farmerName}</span>
-                    <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                    <span className="font-sans text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 tabular-nums">
                       {item.ticketId}
                     </span>
                     <span className="px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-amber-50 text-amber-800 border border-amber-200">
@@ -143,7 +144,7 @@ export default function OfflineSyncAndHistoryView({
                     </span>
                   </div>
                   <p className="text-xs text-slate-600">
-                    {item.landName} • <span className="font-mono text-[11px]">{item.filesCount} Berkas ({item.totalSizeMb} MB)</span>
+                    {item.landName} • <span className="font-sans text-[11px] font-medium tabular-nums">{item.filesCount} Berkas ({item.totalSizeMb} MB)</span>
                   </p>
                 </div>
 
@@ -201,7 +202,7 @@ export default function OfflineSyncAndHistoryView({
                   <tr key={item.id} className="hover:bg-slate-50/70 transition">
                     <td className="px-5 py-4 whitespace-nowrap">
                       <span className="font-bold text-slate-900 block font-sans">{item.farmerName}</span>
-                      <span className="font-mono text-xs text-slate-500 font-medium mt-0.5 block">{item.ticketId}</span>
+                      <span className="font-sans text-xs text-slate-500 font-medium mt-0.5 block tabular-nums">{item.ticketId}</span>
                     </td>
                     <td className="px-5 py-4 whitespace-nowrap text-slate-700 font-medium">
                       {item.landName}
@@ -218,12 +219,12 @@ export default function OfflineSyncAndHistoryView({
                         <span>{item.decision}</span>
                       </span>
                     </td>
-                    <td className="px-5 py-4 whitespace-nowrap text-right font-mono font-bold text-sm text-slate-800">
+                    <td className="px-5 py-4 whitespace-nowrap text-right font-sans font-extrabold text-sm text-slate-800 tabular-nums">
                       {item.validatedCarbon}
                     </td>
                     <td className="px-5 py-4 whitespace-nowrap">
                       <span className="text-xs text-slate-600 block">{item.checkInTime}</span>
-                      <span className="font-mono text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 mt-0.5 inline-block">
+                      <span className="font-sans text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 mt-0.5 inline-block tabular-nums">
                         {item.gpsCoord}
                       </span>
                     </td>

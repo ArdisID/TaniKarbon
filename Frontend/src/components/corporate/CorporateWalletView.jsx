@@ -9,7 +9,6 @@ import {
   Bell, 
   ShieldCheck, 
   CheckCircle2, 
-  Landmark, 
   FileText, 
   CreditCard, 
   Clock, 
@@ -17,9 +16,12 @@ import {
   HelpCircle,
   TrendingDown,
   Building2,
-  Save
+  Save,
+  Copy,
+  Check
 } from 'lucide-react';
-import { formatRupiah } from '../../data';
+import { formatRupiah, formatNumber } from '../../data';
+import AnimatedNumber from '../common/AnimatedNumber';
 
 export default function CorporateWalletView({ 
   depositBalance = 250000000, 
@@ -34,6 +36,18 @@ export default function CorporateWalletView({
   const [lowBalanceThreshold, setLowBalanceThreshold] = useState('25000000');
   const [alertEmail, setAlertEmail] = useState('finance@industrihijau.co.id');
   const [isAlertSaved, setIsAlertSaved] = useState(false);
+  const [copiedVA, setCopiedVA] = useState(false);
+
+  const virtualAccountNo = '8921 4402 1920 42';
+
+  const handleCopyVA = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText('89214402192042');
+    }
+    setCopiedVA(true);
+    setTimeout(() => setCopiedVA(false), 2000);
+    if (onToast) onToast('Nomor Virtual Account Mandiri berhasil disalin.');
+  };
 
   // Default transactions if none passed
   const defaultLedger = [
@@ -115,7 +129,7 @@ export default function CorporateWalletView({
     setIsAlertSaved(true);
     setTimeout(() => setIsAlertSaved(false), 2500);
     if (onToast) {
-      onToast(`Pengaturan Low Balance Alert (${formatRupiah(parseInt(lowBalanceThreshold || '0', 10))}) tersimpan.`);
+      onToast(`Notifikasi saldo minimum (${formatRupiah(parseInt(lowBalanceThreshold || '0', 10))}) berhasil disimpan.`);
     }
   };
 
@@ -136,30 +150,30 @@ export default function CorporateWalletView({
   return (
     <div className="space-y-6 animate-fade-in pb-12 font-sans">
       {/* Top Banner Context */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 sm:p-6 bg-white rounded-3xl border border-slate-200 shadow-2xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 sm:p-7 bg-white rounded-[24px] border border-slate-200/90 shadow-[0_4px_24px_rgba(15,30,46,0.03)]">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-[#14382C] text-emerald-300">
-              ESCROW &amp; BILLING
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-sans font-bold bg-sky-50 text-sky-800 border border-sky-200 uppercase tracking-wider">
+              Rekening &amp; Billing
             </span>
             <span className="text-xs text-slate-500 font-sans">
-              Virtual Account ID: <span className="font-mono font-medium text-slate-700">ID-MDR-992140</span>
+              Mandiri Corporate VA: <span className="font-sans font-bold text-slate-800 tabular-nums">8921 4402 1920 42</span>
             </span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-[#14382C] mt-1 tracking-tight font-sans">
+          <h2 className="text-xl sm:text-2xl font-black text-[#0F1E2E] mt-1 tracking-tight font-sans">
             Dompet Korporat &amp; Pembukuan Faktur Pajak
           </h2>
           <p className="text-xs text-slate-500 mt-0.5 font-sans">
-            Kelola deposit instan untuk kelancaran eksekusi Auto-Buy API dan pembukuan resmi B2B.
+            Kelola deposit instan untuk penebusan kredit karbon bursa dan pembukuan resmi B2B.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5">
           <button
             onClick={onOpenTopUpModal}
-            className="px-5 py-2.5 bg-[#14382C] hover:bg-[#1a4436] text-white text-xs font-semibold rounded-2xl transition shadow-xs flex items-center gap-2 cursor-pointer font-sans"
+            className="px-5 py-2.5 bg-[#0F1E2E] hover:bg-[#1A2E44] text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-2 cursor-pointer font-sans"
           >
-            <Wallet className="w-4 h-4 text-emerald-400" />
+            <Wallet className="w-4 h-4 text-sky-400" />
             <span>Top-Up Saldo Deposit</span>
           </button>
         </div>
@@ -168,143 +182,184 @@ export default function CorporateWalletView({
       {/* Grid: PreFundedDepositCard + LowBalanceAlertCard */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* A. PreFundedDepositCard (2 Kolom di Desktop) */}
-        <div className="lg:col-span-2 bg-[#14382C] text-white rounded-3xl p-6 sm:p-7 relative overflow-hidden shadow-md flex flex-col justify-between">
-          {/* Subtle geometric background */}
-          <div className="absolute -right-8 -top-8 w-60 h-60 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-          <div className="absolute right-12 bottom-6 opacity-10 pointer-events-none">
-            <Landmark className="w-36 h-36 text-white" />
-          </div>
-
-          <div className="relative z-10 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-emerald-300">
+        {/* A. PreFundedDepositCard (2 Kolom di Desktop) - Bersih, Mewah, Zero AI-Slop */}
+        <div className="lg:col-span-2 bg-white rounded-[24px] p-6 sm:p-7 border border-slate-200/90 shadow-[0_4px_24px_rgba(15,30,46,0.03)] flex flex-col justify-between card-interactive">
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-sky-50 border border-sky-100 text-sky-700 flex items-center justify-center shrink-0">
                   <Wallet className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-sans font-semibold tracking-wider text-emerald-300 block">
-                    Pre-Funded Escrow Account
+                  <span className="text-[11px] uppercase font-sans font-bold tracking-wider text-sky-800 block">
+                    Rekening Pra-Pendanaan Korporat
                   </span>
-                  <h3 className="text-sm font-semibold text-white font-sans">
-                    Saldo Dana Siap Pakai (Auto-Buy Ready)
-                  </h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs font-semibold text-slate-600">Bank Mandiri VA:</span>
+                    <button
+                      type="button"
+                      onClick={handleCopyVA}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-800 tabular-nums transition cursor-pointer"
+                      title="Salin Nomor VA"
+                    >
+                      <span>{virtualAccountNo}</span>
+                      {copiedVA ? (
+                        <Check className="w-3.5 h-3.5 text-sky-700" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      )}
+                    </button>
+                    {copiedVA && (
+                      <span className="text-[11px] font-bold text-sky-700 animate-fade-in">Tersalin!</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-sans font-medium bg-emerald-400/20 text-emerald-300 border border-emerald-400/30">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                <span>Koneksi Real-Time API: Aktif</span>
+              <span className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-200">
+                <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />
+                <span>Terhubung Real-Time</span>
               </span>
             </div>
 
             <div className="py-2">
-              <span className="text-xs text-slate-300 font-sans block">Total Saldo Efektif:</span>
-              <div className="text-3xl sm:text-4xl lg:text-5xl font-black font-mono tracking-tight text-white mt-1">
-                {formatRupiah(depositBalance)}
+              <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                Total Saldo Deposit Efektif
+              </span>
+              <div className="flex items-baseline mt-1 font-sans">
+                <span className="text-xl sm:text-2xl font-bold text-slate-400 mr-2 font-sans">Rp</span>
+                <span className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-[#0F1E2E] font-sans tabular-nums">
+                  <AnimatedNumber value={depositBalance} />
+                </span>
               </div>
-              <p className="text-[11px] text-emerald-200/80 mt-1 flex items-center gap-1.5 font-sans">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Dana mengendap terproteksi rekening penampung kustodian bank rekanan resmi TaniKarbon.</span>
+              <p className="text-xs text-slate-500 mt-2 flex items-center gap-2 font-sans">
+                <ShieldCheck className="w-4 h-4 text-sky-600 shrink-0" />
+                <span>Dana siap digunakan untuk penebusan kredit karbon instan dan eksekusi otomatis API.</span>
               </p>
             </div>
           </div>
 
-          {/* Quick Metrics Bar */}
-          <div className="relative z-10 pt-5 mt-5 border-t border-white/10 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs font-sans">
-            <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-              <span className="text-[10px] text-slate-300 font-sans uppercase block">Total Top-Up Bulan Ini</span>
-              <span className="text-sm font-bold font-mono text-emerald-300 mt-0.5 block">
-                {formatRupiah(totalCredit)}
+          {/* Quick Metrics Bar - Clean White/Slate with Blue Accents */}
+          <div className="pt-5 mt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-sans">
+            <div className="p-3.5 bg-slate-50/70 rounded-2xl border border-slate-200/80">
+              <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                Top-Up Masuk Bulan Ini
+              </span>
+              <span className="text-base font-extrabold font-sans text-sky-800 mt-1 block tabular-nums">
+                +{formatRupiah(totalCredit)}
               </span>
             </div>
-            <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-              <span className="text-[10px] text-slate-300 font-sans uppercase block">Total Debet Offset Bulan Ini</span>
-              <span className="text-sm font-bold font-mono text-amber-300 mt-0.5 block">
-                {formatRupiah(totalDebit)}
+            <div className="p-3.5 bg-slate-50/70 rounded-2xl border border-slate-200/80">
+              <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                Penebusan Keluar Bulan Ini
+              </span>
+              <span className="text-base font-extrabold font-sans text-slate-800 mt-1 block tabular-nums">
+                -{formatRupiah(totalDebit)}
               </span>
             </div>
-            <div className="col-span-2 sm:col-span-1 p-3 bg-white/5 rounded-2xl border border-white/10 flex items-center justify-between sm:block">
+            <div className="p-3.5 bg-slate-50/70 rounded-2xl border border-slate-200/80 flex flex-col justify-between">
               <div>
-                <span className="text-[10px] text-slate-300 font-sans uppercase block">Status Pajak</span>
-                <span className="text-sm font-semibold text-white mt-0.5 block font-sans">Bebas PPN Karbon</span>
+                <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                  Ketentuan Perpajakan
+                </span>
+                <span className="text-xs font-bold text-[#0F1E2E] mt-1 block font-sans">
+                  Bebas PPN Karbon
+                </span>
               </div>
-              <span className="text-[10px] text-emerald-300 font-sans">PMK No. 34/2024</span>
+              <span className="text-[10px] text-sky-700 font-semibold font-sans mt-0.5">PMK No. 34/2024</span>
             </div>
           </div>
         </div>
 
-        {/* LowBalanceAlertCard (1 Kolom di Desktop) */}
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-2xs flex flex-col justify-between font-sans">
+        {/* B. LowBalanceAlertCard (1 Kolom di Desktop) - Bersih, Humanis, No Buzzwords */}
+        <div className="bg-white rounded-[24px] p-6 border border-slate-200/90 shadow-[0_4px_24px_rgba(15,30,46,0.03)] flex flex-col justify-between font-sans">
           <div className="space-y-4">
-            <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center">
-                <Bell className="w-4 h-4" />
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+              <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-700 border border-sky-100 flex items-center justify-center shrink-0">
+                <Bell className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-[#14382C] text-sm font-sans">Low Balance Alert</h3>
-                <p className="text-[11px] text-slate-400 font-sans">Otomasi Notifikasi Saldo Minimum</p>
+                <h3 className="font-extrabold text-[#0F1E2E] text-sm font-sans">Notifikasi Saldo Minimum</h3>
+                <p className="text-[11px] text-slate-500 font-sans">Peringatan otomatis saat saldo menipis</p>
               </div>
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed font-sans">
-              Kirim peringatan darurat otomatis ke tim keuangan jika saldo pra-pendanaan menyentuh ambang batas agar webhook API tidak tertahan (HTTP 402).
+              Kirim email pemberitahuan ke tim keuangan apabila saldo berada di bawah batas minimum agar proses penebusan karbon tidak tertunda.
             </p>
 
             <form onSubmit={handleSaveAlert} className="space-y-3 font-sans">
               <div>
-                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
-                  Ambang Batas Minimum (IDR)
+                <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                  Ambang Batas Minimum
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-400">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-sans font-bold text-slate-400">
                     Rp
                   </span>
                   <input
                     type="number"
                     value={lowBalanceThreshold}
                     onChange={(e) => setLowBalanceThreshold(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 text-xs font-mono font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#14382C] focus:bg-white transition"
+                    className="w-full pl-10 pr-4 py-2.5 text-xs font-sans font-bold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#0F1E2E] focus:bg-white transition tabular-nums"
                     placeholder="25000000"
                   />
+                </div>
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className="text-[10px] text-slate-400 font-medium">Preset:</span>
+                  {['10000000', '25000000', '50000000'].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setLowBalanceThreshold(val)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
+                        lowBalanceThreshold === val
+                          ? 'bg-[#0F1E2E] text-white'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {val === '10000000' ? '10 Jt' : val === '25000000' ? '25 Jt' : '50 Jt'}
+                    </button>
+                  ))}
                 </div>
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                <label className="text-[11px] font-bold text-slate-700 block mb-1">
                   Email PIC Keuangan / Treasury
                 </label>
                 <input
                   type="email"
                   value={alertEmail}
                   onChange={(e) => setAlertEmail(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-xs font-sans bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#14382C] focus:bg-white transition"
-                  placeholder="finance@company.co.id"
+                  className="w-full px-3.5 py-2.5 text-xs font-sans font-medium bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#0F1E2E] focus:bg-white transition"
+                  placeholder="finance@industrihijau.co.id"
                 />
               </div>
 
               <button
                 type="submit"
-                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+                className="w-full py-2.5 bg-[#0F1E2E] hover:bg-[#1A2E44] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer font-sans shadow-xs active:scale-98"
               >
                 {isAlertSaved ? (
                   <>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-emerald-700 font-semibold">Tersimpan!</span>
+                    <CheckCircle2 className="w-4 h-4 text-sky-400" />
+                    <span>Pengaturan Tersimpan</span>
                   </>
                 ) : (
                   <>
-                    <Save className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Simpan Pengaturan Alert</span>
+                    <Save className="w-4 h-4 text-slate-300" />
+                    <span>Simpan Pengaturan</span>
                   </>
                 )}
               </button>
             </form>
           </div>
 
-          <div className="pt-4 border-t border-slate-100 flex items-center gap-2 text-[10px] text-slate-400 font-sans">
-            <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            <span>Terintegrasi via SMTP &amp; Webhook Telegram Tim Finance</span>
+          <div className="pt-3 mt-3 border-t border-slate-100 flex items-center gap-2 text-[11px] text-slate-500 font-sans">
+            <CheckCircle2 className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+            <span>Notifikasi dikirim melalui email resmi saat saldo di bawah batas.</span>
           </div>
         </div>
 
@@ -321,7 +376,7 @@ export default function CorporateWalletView({
               </span>
               <span className="text-xs text-stone-500 font-sans">Buku Besar Digital &amp; Rekonsiliasi</span>
             </div>
-            <h3 className="font-bold text-[#14382C] text-lg mt-0.5 font-sans">
+            <h3 className="font-bold text-[#0F1E2E] text-lg mt-0.5 font-sans">
               Riwayat Mutasi Transaksi &amp; Faktur Pajak
             </h3>
           </div>
@@ -332,7 +387,7 @@ export default function CorporateWalletView({
               <button
                 onClick={() => setFilterType('all')}
                 className={`px-3 py-1.5 rounded-lg transition font-medium ${
-                  filterType === 'all' ? 'bg-white text-[#14382C] shadow-2xs font-semibold' : 'hover:text-slate-900'
+                  filterType === 'all' ? 'bg-white text-[#0F1E2E] shadow-2xs font-semibold' : 'hover:text-slate-900'
                 }`}
               >
                 Semua ({transactions.length})
@@ -340,7 +395,7 @@ export default function CorporateWalletView({
               <button
                 onClick={() => setFilterType('credit')}
                 className={`px-3 py-1.5 rounded-lg transition font-medium ${
-                  filterType === 'credit' ? 'bg-white text-emerald-700 shadow-2xs font-semibold' : 'hover:text-slate-900'
+                  filterType === 'credit' ? 'bg-white text-sky-700 shadow-2xs font-semibold' : 'hover:text-slate-900'
                 }`}
               >
                 Top-Up Masuk
@@ -363,7 +418,7 @@ export default function CorporateWalletView({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Cari referensi atau invoice..."
-                className="pl-8 pr-3 py-1.5 text-xs font-sans bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#14382C] focus:bg-white transition w-48 sm:w-56"
+                className="pl-8 pr-3 py-1.5 text-xs font-sans bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#0F1E2E] focus:bg-white transition w-48 sm:w-56"
               />
             </div>
           </div>
@@ -372,7 +427,6 @@ export default function CorporateWalletView({
         {/* Table Content (Rapi, Responsif, Lebar Minimum & Whitespace Terjaga) */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            {/* Header Kolom: font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-400 */}
             <thead className="bg-stone-50 border-b border-stone-200 text-stone-400 font-sans text-[11px] font-semibold uppercase tracking-wider">
               <tr>
                 <th className="px-5 py-3.5 whitespace-nowrap">Waktu &amp; ID Transaksi</th>
@@ -389,7 +443,7 @@ export default function CorporateWalletView({
                 <tr key={item.id} className="hover:bg-slate-50/70 transition group">
                   {/* 1. Waktu & ID Transaksi */}
                   <td className="px-5 py-4 whitespace-nowrap">
-                    <span className="font-mono font-bold text-xs text-[#14382C] block">
+                    <span className="font-sans font-bold text-xs text-[#0F1E2E] block tabular-nums">
                       {item.id}
                     </span>
                     <span className="text-xs text-stone-500 font-sans flex items-center gap-1.5 mt-0.5">
@@ -398,7 +452,7 @@ export default function CorporateWalletView({
                     </span>
                   </td>
 
-                  {/* 2. Keterangan / Aktivitas (min-w-[260px], vertikal flex-col gap-1, badge utuh) */}
+                  {/* 2. Keterangan / Aktivitas */}
                   <td className="px-5 py-4 min-w-[260px]">
                     <div className="flex flex-col gap-1">
                       <span className="font-sans text-sm font-medium text-stone-800 leading-snug">
@@ -406,7 +460,7 @@ export default function CorporateWalletView({
                       </span>
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs text-stone-400 font-sans">Ref:</span>
-                        <span className="inline-flex items-center whitespace-nowrap font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                        <span className="inline-flex items-center whitespace-nowrap font-sans text-[11px] px-2 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 font-medium tabular-nums">
                           {item.referenceId}
                         </span>
                       </div>
@@ -420,10 +474,10 @@ export default function CorporateWalletView({
                     </span>
                   </td>
 
-                  {/* 4. Nominal Arus Kas (Wajib Rata Kanan text-right) */}
-                  <td className="px-5 py-4 whitespace-nowrap text-right font-mono font-bold text-sm">
+                  {/* 4. Nominal Arus Kas */}
+                  <td className="px-5 py-4 whitespace-nowrap text-right font-sans font-bold text-sm tabular-nums">
                     {item.type === 'credit' ? (
-                      <span className="text-emerald-700 inline-flex items-center justify-end gap-1">
+                      <span className="text-sky-700 inline-flex items-center justify-end gap-1">
                         <ArrowDownLeft className="w-3.5 h-3.5" />
                         +{formatRupiah(item.amount)}
                       </span>
@@ -435,27 +489,27 @@ export default function CorporateWalletView({
                     )}
                   </td>
 
-                  {/* 5. Sisa Saldo (Wajib Rata Kanan text-right) */}
-                  <td className="px-5 py-4 whitespace-nowrap text-right font-mono font-semibold text-xs text-stone-500">
+                  {/* 5. Sisa Saldo */}
+                  <td className="px-5 py-4 whitespace-nowrap text-right font-sans font-semibold text-xs text-stone-500 tabular-nums">
                     {formatRupiah(item.balanceAfter)}
                   </td>
 
-                  {/* 6. Status (Rata Tengah text-center) */}
+                  {/* 6. Status */}
                   <td className="px-5 py-4 whitespace-nowrap text-center">
-                    <span className="font-sans text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="font-sans text-xs font-medium text-sky-800 bg-sky-50 border border-sky-200 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />
                       <span>{item.status}</span>
                     </span>
                   </td>
 
-                  {/* 7. Dokumen Pajak (Tombol Elegan Standar Linear/Stripe) */}
+                  {/* 7. Dokumen Pajak */}
                   <td className="px-5 py-4 whitespace-nowrap text-right">
                     <button
                       onClick={() => handleDownloadInvoice(item)}
-                      className="border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 px-3 py-1.5 rounded-lg text-xs font-mono inline-flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                      className="border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 px-3 py-1.5 rounded-lg text-xs font-sans font-medium inline-flex items-center gap-1.5 shadow-2xs transition cursor-pointer tabular-nums"
                       title={`Unduh Faktur ${item.invoiceNumber}`}
                     >
-                      <Download className="w-3.5 h-3.5 text-emerald-600" />
+                      <Download className="w-3.5 h-3.5 text-sky-600" />
                       <span>{item.invoiceNumber}</span>
                     </button>
                   </td>
@@ -468,7 +522,7 @@ export default function CorporateWalletView({
         {/* Footer info */}
         <div className="p-4 bg-stone-50 border-t border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-stone-500 font-sans gap-2">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <ShieldCheck className="w-4 h-4 text-sky-600 shrink-0" />
             <span>Faktur Pajak Elektronik divalidasi sesuai PMK No. 34/PMK.03/2024 terkait PPN Perdagangan Karbon.</span>
           </div>
           <span className="font-sans text-xs text-stone-400 font-medium">

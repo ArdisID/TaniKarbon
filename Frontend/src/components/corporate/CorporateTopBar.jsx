@@ -9,6 +9,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { clearAuthSession } from '../../api/auth';
+import TaniKarbonLogo from '../common/TaniKarbonLogo';
 
 export default function CorporateTopBar({ 
   currentUser,
@@ -29,30 +30,12 @@ export default function CorporateTopBar({
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-2.5 transition-all">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
-        {/* Left: Mobile Toggle & Mobile Brand, or Desktop Context */}
+        {/* Left: Mobile Brand or Desktop Context */}
         <div className="flex items-center gap-3">
-          {/* Hamburger Menu Trigger: HANYA MUNCUL DI MOBILE / TABLET (lg:hidden) */}
-          <button
-            onClick={onToggleSidebar}
-            className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition lg:hidden cursor-pointer"
-            title="Buka Navigasi"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
 
           {/* Brand Logo HANYA di Mobile (di Desktop ditangani Sidebar) */}
-          <div className="flex items-center gap-2.5 lg:hidden">
-            <div className="w-8 h-8 rounded-xl bg-[#14382C] flex items-center justify-center text-emerald-400 font-bold shadow-xs shrink-0">
-              <Building2 className="w-4.5 h-4.5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-[#14382C] text-base tracking-tight font-sans">TaniKarbon</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold bg-slate-100 text-slate-700 border border-slate-200 uppercase">
-                  CORP
-                </span>
-              </div>
-            </div>
+          <div className="flex items-center lg:hidden">
+            <TaniKarbonLogo size={28} showText={true} textVariant="dark" subtitle="CORP" />
           </div>
 
           {/* Desktop Breadcrumb Context (Bersih & Elegan Standar Linear/Stripe) */}
@@ -61,26 +44,17 @@ export default function CorporateTopBar({
             <span className="text-slate-300">/</span>
             <span className="font-semibold text-slate-800">PT Industri Hijau Nusantara (Tbk)</span>
             <span className="text-slate-300">/</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-200">
               Buku Emisi 2026 Aktif
             </span>
           </div>
         </div>
 
-        {/* Right: ERP Webhook Status & Role Switcher */}
+        {/* Right: User Profile & Role Switcher */}
         <div className="flex items-center gap-2.5 sm:gap-3">
-          {/* Indikator Koneksi API ERP (Font Sans, Monospace hanya untuk latency ms) */}
-          <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-sans font-medium bg-emerald-50 text-emerald-900 border border-emerald-200 shadow-2xs">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span>ERP Webhook: Connected <span className="font-mono text-[11px] text-emerald-700 font-semibold">(24ms)</span></span>
-          </div>
-
           {/* User Profile Info */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="w-6 h-6 rounded-lg bg-[#14382C] text-emerald-300 flex items-center justify-center text-xs font-bold font-mono">
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-2xs">
+            <div className="w-6 h-6 rounded-lg bg-[#0F1E2E] text-sky-300 flex items-center justify-center text-xs font-bold font-sans">
               {(currentUser?.full_name || 'Korporat')[0].toUpperCase()}
             </div>
             <div className="text-left font-sans">

@@ -10,10 +10,12 @@ import {
   LogOut
 } from 'lucide-react';
 import { clearAuthSession } from '../../api/auth';
+import TaniKarbonLogo from '../common/TaniKarbonLogo';
 
 export default function SurveyorTopBar({ 
   currentUser,
   onLogout,
+  onOpenProfile,
   isOnline = true, 
   onToggleOnline,
   offlinePackDownloaded = false,
@@ -35,23 +37,8 @@ export default function SurveyorTopBar({
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-2.5 transition-all font-sans">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
         {/* Left: Branding & Role Badge */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#14382C] flex items-center justify-center text-emerald-400 font-bold shadow-xs shrink-0">
-            <Compass className="w-5 h-5 text-emerald-300" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-[#14382C] text-base tracking-tight font-sans">
-                TaniKarbon
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 uppercase">
-                SURVEYOR LAPANGAN
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 font-sans hidden sm:block">
-              Field Verification &amp; Anti-Fraud Geofencing
-            </p>
-          </div>
+        <div className="flex items-center">
+          <TaniKarbonLogo size={32} showText={true} textVariant="dark" subtitle="SURVEYOR LAPANGAN" />
         </div>
 
         {/* Right: Interactive Signal Header, Offline Pack, & Role Switcher */}
@@ -99,7 +86,7 @@ export default function SurveyorTopBar({
             {isDownloadingPack ? (
               <>
                 <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                <span className="font-mono text-[11px]">{downloadProgress}%</span>
+                <span className="font-sans font-bold tabular-nums text-[11px]">{downloadProgress}%</span>
               </>
             ) : offlinePackDownloaded ? (
               <>
@@ -115,12 +102,16 @@ export default function SurveyorTopBar({
           </button>
 
           {/* User Profile Info */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="w-6 h-6 rounded-lg bg-[#14382C] text-emerald-300 flex items-center justify-center text-xs font-bold font-mono">
+          <div 
+            onClick={onOpenProfile}
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 cursor-pointer transition-all font-sans group shadow-2xs"
+            title="Klik untuk mengedit profil surveyor"
+          >
+            <div className="w-6 h-6 rounded-lg bg-[#14382C] text-emerald-300 flex items-center justify-center text-xs font-bold font-sans group-hover:scale-105 transition-transform">
               {(currentUser?.full_name || 'Surveyor')[0].toUpperCase()}
             </div>
             <div className="text-left font-sans">
-              <div className="text-xs font-bold text-slate-900 leading-none truncate max-w-[140px]">
+              <div className="text-xs font-bold text-slate-900 leading-none truncate max-w-[140px] group-hover:text-emerald-800 transition-colors">
                 {currentUser?.full_name || 'Budi Santoso, S.Hut'}
               </div>
               <div className="text-[10px] text-slate-400 font-medium leading-none mt-0.5 truncate max-w-[140px]">

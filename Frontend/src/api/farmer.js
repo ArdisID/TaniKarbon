@@ -259,3 +259,55 @@ export async function submitLandRevision({ land_id, category, notes, reason }) {
 
   return response.json();
 }
+
+/**
+ * Fetch detail profil mitra tani (NIK, phone, domisili, gapoktan)
+ */
+export async function getFarmerProfile() {
+  const response = await fetch(`${API_BASE}/farmer/profile`, {
+    method: 'GET',
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Gagal memuat profil mitra tani');
+  }
+
+  return response.json();
+}
+
+/**
+ * Perbarui profil mitra tani
+ */
+export async function updateFarmerProfile(payload) {
+  const response = await fetch(`${API_BASE}/farmer/profile`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Gagal menyimpan perubahan profil');
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch daftar rekening bank & e-wallet mitra tani
+ */
+export async function getFarmerBankAccounts() {
+  const response = await fetch(`${API_BASE}/farmer/bank-accounts`, {
+    method: 'GET',
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Gagal memuat daftar rekening bank');
+  }
+
+  return response.json();
+}

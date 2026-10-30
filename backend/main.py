@@ -2,17 +2,20 @@ import math
 import uuid
 import json
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, cast
+from pathlib import Path
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+dotenv_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=dotenv_path)
 from fastapi import FastAPI, Depends, HTTPException, Security, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import text
+from sqlalchemy import text, func
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -47,140 +50,12 @@ app = FastAPI(title="TaniKarbon API - Interoperabilitas UINIC 8.0")
 # 0. Integrasi Rate Limiter (slowapi) Anti Brute-Force
 # ------------------------------------------------------------------------------
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, cast(Any, _rate_limit_exceeded_handler))
 
 @app.on_event("startup")
 async def on_startup():
-    from database import engine
-    async with engine.begin() as conn:
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS wallet_transactions (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id),
-                amount NUMERIC(15, 2) NOT NULL,
-                transaction_type VARCHAR(50) NOT NULL,
-                description VARCHAR(255) NOT NULL,
-                status VARCHAR(50) NOT NULL DEFAULT 'completed',
-                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """))
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS farmer_profiles (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                nik VARCHAR(20),
-                phone_number VARCHAR(30),
-                address VARCHAR(255),
-                village VARCHAR(100),
-                regency VARCHAR(100),
-                province VARCHAR(100),
-                gapoktan_name VARCHAR(150),
-                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """))
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS bank_accounts (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                bank_code VARCHAR(50) NOT NULL,
-                bank_name VARCHAR(100) NOT NULL,
-                account_number VARCHAR(50) NOT NULL,
-                account_holder_name VARCHAR(150) NOT NULL,
-                is_primary BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """))
-        await conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS tree_species (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                local_name VARCHAR(150) UNIQUE NOT NULL,
-                latin_name VARCHAR(150),
-                wood_density NUMERIC(5, 3) NOT NULL
-            )
-        """))
-        for col_ddl in [
-            "ALTER TABLE tree_species ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT 'Dikotil (Umum)'",
-            "ALTER TABLE tree_species ADD COLUMN IF NOT EXISTS formula_type VARCHAR(50) DEFAULT 'ketterings'",
-            "ALTER TABLE tree_species ADD COLUMN IF NOT EXISTS coeff_a NUMERIC(10, 5)",
-            "ALTER TABLE tree_species ADD COLUMN IF NOT EXISTS exp_b NUMERIC(10, 5)",
-            "ALTER TABLE tree_species ADD COLUMN IF NOT EXISTS requires_height BOOLEAN DEFAULT FALSE",
-            "ALTER TABLE tree_species ADD COLUMN IF NOT EXISTS formula_display VARCHAR(255)",
-            "ALTER TABLE tree_species ADD COLUMN IF NOT EXISTS reference_source VARCHAR(150)"
-        ]:
-            await conn.execute(text(col_ddl))
-
-        # Pastikan kolom surveyor_id di survey_logs nullable agar pengajuan revisi/catatan petani bisa tersimpan
-        try:
-            await conn.execute(text("ALTER TABLE survey_logs ALTER COLUMN surveyor_id DROP NOT NULL;"))
-            await conn.execute(text("ALTER TABLE land_plots ADD COLUMN IF NOT EXISTS scheduled_survey_date TIMESTAMP WITHOUT TIME ZONE;"))
-            await conn.execute(text("ALTER TYPE land_status ADD VALUE IF NOT EXISTS 'rejected';"))
-            # Pastikan lahan pengujian ter-assign ke Budi Surveyor jika belum
-            await conn.execute(text("""
-                UPDATE land_plots
-                SET surveyor_id = (SELECT id FROM users WHERE email = 'surveyor@tanikarbon.com' LIMIT 1)
-                WHERE surveyor_id IS NULL AND (name ILIKE '%Karno%' OR name ILIKE '%Kebun Sengon%');
-            """))
-        except Exception:
-            pass
-
-        # Bersihkan duplikat/spesies usang lama agar master data dropdown presisi 13 spesies standar + 1 Lainnya
-        await conn.execute(text("""
-            DELETE FROM tree_species WHERE local_name IN (
-                'Alpukat Mentega', 'Kopi Arabika', 'Sengon Buto', 'Sengon Laut', 'Akasia', 'Karet'
-            );
-        """))
-
-        # Inisialisasi seeding 13 Spesies Resmi ICRAF/KLHK + 1 Fallback Lainnya
-        seed_species = [
-            ("Mangga", "Mangifera indica", "Dikotil (Umum)", 0.58, "ketterings", 0.11, 2.62, False, "AGB = 0.11 × ρ × D^2.62", "Chave et al. (2005) / Ketterings"),
-            ("Alpukat", "Persea americana", "Dikotil (Umum)", 0.43, "ketterings", 0.11, 2.62, False, "AGB = 0.11 × ρ × D^2.62", "Chave et al. (2005) / Ketterings"),
-            ("Nangka", "Artocarpus heterophyllus", "Dikotil (Umum)", 0.60, "ketterings", 0.11, 2.62, False, "AGB = 0.11 × ρ × D^2.62", "Chave et al. (2005) / Ketterings"),
-            ("Durian", "Durio zibethinus", "Dikotil (Umum)", 0.52, "ketterings", 0.11, 2.62, False, "AGB = 0.11 × ρ × D^2.62", "Chave et al. (2005) / Ketterings"),
-            ("Sengon", "Falcataria moluccana", "Dikotil (Cepat)", 0.33, "power_law", 0.1127, 2.3983, False, "AGB = 0.1127 × D^2.3983", "Litbang LHK / Siregar et al."),
-            ("Jati", "Tectona grandis", "Dikotil (Keras)", 0.67, "power_law", 0.153, 2.382, False, "AGB = 0.153 × D^2.382", "Purwanggono et al. / IPCC"),
-            ("Mahoni", "Swietenia macrophylla", "Dikotil (Keras)", 0.56, "power_law", 0.086, 2.645, False, "AGB = 0.086 × D^2.645", "C.A.S.E (Agroforestry)"),
-            ("Gamal", "Gliricidia sepium", "Dikotil (Legum)", 0.60, "power_law", 0.197, 2.21, False, "AGB = 0.197 × D^2.21", "Hairiah & Rahayu (ICRAF)"),
-            ("Turi", "Sesbania grandiflora", "Dikotil (Legum)", 0.42, "power_law", 0.166, 2.31, False, "AGB = 0.166 × D^2.31", "Hairiah & Rahayu (ICRAF)"),
-            ("Kopi", "Coffea canephora / arabica", "Agroforestri Spesifik", 0.55, "power_law", 0.281, 2.06, False, "AGB = 0.281 × D^2.06", "Arifin (2001) / ICRAF"),
-            ("Kakao", "Theobroma cacao", "Agroforestri Spesifik", 0.43, "power_law", 0.120, 2.35, False, "AGB = 0.120 × D^2.35", "Yuliasmara et al. (Puslitkoka)"),
-            ("Kelapa", "Cocos nucifera", "Monokotil", 0.73, "monocot_cylinder", 730.0, 2.0, True, "AGB = π × (D/200)^2 × H × 730", "Hairiah et al. (2001)"),
-            ("Pisang", "Musa paradisiaca", "Non-Berkayu", 0.25, "power_law", 0.030, 2.34, False, "AGB = 0.030 × D^2.34", "Arifin (2001) / ICRAF"),
-            ("Lainnya (Spesies Belum Terdaftar)", "Spesies Campuran", "Fallback", 0.48, "ketterings", 0.11, 2.62, False, "AGB = 0.11 × 0.48 × D^2.62", "Default Konservatif ICRAF")
-        ]
-        for loc, lat, cat, wd, ftype, ca, eb, req_h, fdisp, ref in seed_species:
-            await conn.execute(text("""
-                INSERT INTO tree_species (
-                    local_name, latin_name, category, wood_density, formula_type,
-                    coeff_a, exp_b, requires_height, formula_display, reference_source
-                )
-                VALUES (
-                    :local_name, :latin_name, :category, :wood_density, :formula_type,
-                    :coeff_a, :exp_b, :requires_height, :formula_display, :reference_source
-                )
-                ON CONFLICT (local_name) DO UPDATE 
-                SET latin_name = EXCLUDED.latin_name,
-                    category = EXCLUDED.category,
-                    wood_density = EXCLUDED.wood_density,
-                    formula_type = EXCLUDED.formula_type,
-                    coeff_a = EXCLUDED.coeff_a,
-                    exp_b = EXCLUDED.exp_b,
-                    requires_height = EXCLUDED.requires_height,
-                    formula_display = EXCLUDED.formula_display,
-                    reference_source = EXCLUDED.reference_source;
-            """), {
-                "local_name": loc,
-                "latin_name": lat,
-                "category": cat,
-                "wood_density": wd,
-                "formula_type": ftype,
-                "coeff_a": ca,
-                "exp_b": eb,
-                "requires_height": req_h,
-                "formula_display": fdisp,
-                "reference_source": ref
-            })
+    from init_db import init_db
+    await init_db()
 
 
 app.add_middleware(
@@ -702,7 +577,7 @@ def _assert_document_requirement(ownership: Optional[str], document_no: Optional
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 f"Nomor Dokumen / Bukti Hak wajib diisi untuk status kepemilikan "
-                f"'{ownership.strip()}'."
+                f"'{(ownership or '').strip()}'."
             )
         )
 
@@ -954,6 +829,11 @@ async def register_land_plot(
     await db.commit()
     
     row = result.fetchone()
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Gagal menyimpan petak lahan."
+        )
     return {
         "id": row.id, "name": row.name,
         "area_sqm": float(row.total_area_sqm), "geojson_polygon": row.geojson_result,
@@ -1050,7 +930,7 @@ async def get_land_plots(
             FROM tree_blocks tb
             LEFT JOIN tree_species ts_spec ON LOWER(tb.species_name) = LOWER(ts_spec.local_name)
             WHERE tb.land_plot_id = :plot_id
-            ORDER BY tb.created_at ASC
+            ORDER BY tb.created_at ASC NULLS LAST, tb.id ASC
         """)
         tb_result = await db.execute(tb_query, {"plot_id": row.id})
         tree_blocks = [
@@ -1632,6 +1512,380 @@ async def delete_farmer_bank_account(
 
 
 # ------------------------------------------------------------------------------
+# 4f. Profil Entitas Korporat (B2B ESG Buyer Profile)
+# ------------------------------------------------------------------------------
+class CorporateProfileUpdateRequest(BaseModel):
+    company_name: Optional[str] = None
+    industry_type: Optional[str] = None
+    idx_code: Optional[str] = None
+    srn_id: Optional[str] = None
+    net_zero_target: Optional[str] = None
+    pic_name: Optional[str] = None
+    pic_phone: Optional[str] = None
+    address: Optional[str] = None
+    webhook_url: Optional[str] = None
+
+class CorporateProfileResponse(BaseModel):
+    user_id: uuid.UUID
+    company_name: str
+    email: str
+    industry_type: Optional[str] = None
+    idx_code: Optional[str] = None
+    srn_id: Optional[str] = None
+    net_zero_target: Optional[str] = None
+    pic_name: Optional[str] = None
+    pic_phone: Optional[str] = None
+    address: Optional[str] = None
+    api_key: Optional[str] = None
+    webhook_url: Optional[str] = None
+
+@app.get("/api/v1/corporate/profile", response_model=CorporateProfileResponse)
+async def get_corporate_profile(
+    current_user: User = Depends(require_roles(["company", "corporate", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(CompanyProfile).where(CompanyProfile.user_id == current_user.id)
+    )
+    profile = result.scalars().first()
+    if not profile:
+        profile = CompanyProfile(
+            user_id=current_user.id,
+            company_name=current_user.full_name or "PT Industri Hijau Nusantara (Tbk)",
+            industry_type="Manufaktur & Energi",
+            api_key=f"tk_live_{uuid.uuid4().hex[:24]}"
+        )
+        db.add(profile)
+        await db.commit()
+        await db.refresh(profile)
+
+    return CorporateProfileResponse(
+        user_id=current_user.id,
+        company_name=profile.company_name or current_user.full_name,
+        email=current_user.email,
+        industry_type=profile.industry_type or "Manufaktur & Energi",
+        idx_code="IDX: IHN",
+        srn_id="ID-SRN-CORP-0182",
+        net_zero_target="Scope 1 & 2 (2030)",
+        pic_name="Ir. Budi Santoso, M.Env.",
+        pic_phone="+62 21-5290-8800",
+        address="SCBD Lot 28, Jl. Jend. Sudirman Kav. 52-53, Jakarta Selatan",
+        api_key=profile.api_key or "tk_live_89a1f4c290be471b8219003847ac",
+        webhook_url=profile.webhook_url
+    )
+
+@app.put("/api/v1/corporate/profile", response_model=CorporateProfileResponse)
+@app.patch("/api/v1/corporate/profile", response_model=CorporateProfileResponse)
+async def update_corporate_profile(
+    payload: CorporateProfileUpdateRequest,
+    current_user: User = Depends(require_roles(["company", "corporate", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(CompanyProfile).where(CompanyProfile.user_id == current_user.id)
+    )
+    profile = result.scalars().first()
+    if not profile:
+        profile = CompanyProfile(
+            user_id=current_user.id,
+            company_name=current_user.full_name or "PT Industri Hijau Nusantara (Tbk)",
+            api_key=f"tk_live_{uuid.uuid4().hex[:24]}"
+        )
+        db.add(profile)
+
+    if payload.company_name and payload.company_name.strip():
+        profile.company_name = payload.company_name.strip()
+        current_user.full_name = payload.company_name.strip()
+
+    if payload.industry_type is not None:
+        profile.industry_type = payload.industry_type.strip()
+    if payload.webhook_url is not None:
+        profile.webhook_url = payload.webhook_url.strip()
+
+    await db.commit()
+    await db.refresh(profile)
+
+    return CorporateProfileResponse(
+        user_id=current_user.id,
+        company_name=profile.company_name or current_user.full_name,
+        email=current_user.email,
+        industry_type=profile.industry_type or "Manufaktur & Energi",
+        idx_code=payload.idx_code or "IDX: IHN",
+        srn_id=payload.srn_id or "ID-SRN-CORP-0182",
+        net_zero_target=payload.net_zero_target or "Scope 1 & 2 (2030)",
+        pic_name=payload.pic_name or "Ir. Budi Santoso, M.Env.",
+        pic_phone=payload.pic_phone or "+62 21-5290-8800",
+        address=payload.address or "SCBD Lot 28, Jl. Jend. Sudirman Kav. 52-53, Jakarta Selatan",
+        api_key=profile.api_key or "tk_live_89a1f4c290be471b8219003847ac",
+        webhook_url=profile.webhook_url
+    )
+
+
+# ------------------------------------------------------------------------------
+# 4g. Bursa & Transaksi Korporat (B2B Carbon Marketplace & Escrow Wallet)
+# ------------------------------------------------------------------------------
+
+@app.get("/api/v1/corporate/clusters")
+async def get_corporate_clusters(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Katalog klaster bursa karbon yang tersedia untuk korporat.
+    """
+    result = await db.execute(
+        select(Cluster).order_by(Cluster.status.asc(), Cluster.vintage_year.desc())
+    )
+    clusters = result.scalars().all()
+
+    output = []
+    for c in clusters:
+        lp_query = text("""
+            SELECT COUNT(DISTINCT farmer_id) as total_farmers,
+                   COALESCE(SUM(total_area_sqm), 0) / 10000.0 as total_ha
+            FROM land_plots
+            WHERE cluster_id = :cid
+        """)
+        lp_res = (await db.execute(lp_query, {"cid": c.id})).fetchone()
+        output.append({
+            "id": str(c.id),
+            "name": c.name,
+            "vintage_year": c.vintage_year,
+            "available_quota_tco2e": float(c.available_quota_tco2e),
+            "target_quota_tco2e": float(c.target_quota_tco2e or 1000.0),
+            "price_per_tco2e": float(c.price_per_tco2e),
+            "status": str(c.status),
+            "total_farmers": int(lp_res.total_farmers or 0) if lp_res else 0,
+            "total_area_ha": round(float(lp_res.total_ha or 0.0), 2) if lp_res else 0.0,
+            "srn_id": f"ID-SRN-CL-{str(c.id)[:6].upper()}",
+            "certification": "SRN-PPI / Sucofindo"
+        })
+    return output
+
+class CorporateTopUpRequest(BaseModel):
+    amount: float
+    bank_method: str = "Mandiri Corporate VA"
+
+@app.get("/api/v1/corporate/wallet")
+async def get_corporate_wallet(
+    current_user: User = Depends(require_roles(["company", "corporate", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Cek saldo pre-funded deposit dan mutasi kas korporat.
+    """
+    wallet_res = await db.execute(select(Wallet).where(Wallet.user_id == current_user.id))
+    wallet = wallet_res.scalars().first()
+    if not wallet:
+        wallet = Wallet(user_id=current_user.id, available_balance=250000000.0, escrow_balance=0.0)
+        db.add(wallet)
+        await db.commit()
+        await db.refresh(wallet)
+
+    tx_query = text("""
+        SELECT id, amount, transaction_type, description, status, created_at
+        FROM wallet_transactions
+        WHERE user_id = :uid
+        ORDER BY created_at DESC
+        LIMIT 50
+    """)
+    tx_res = await db.execute(tx_query, {"uid": current_user.id})
+    tx_rows = tx_res.fetchall()
+
+    transactions = [
+        {
+            "id": str(row.id),
+            "date": row.created_at.strftime("%d %b %Y, %H:%M WIB") if row.created_at else "Hari Ini",
+            "description": row.description,
+            "type": "credit" if "top-up" in row.description.lower() or "deposit" in row.description.lower() else "debit",
+            "amount": float(row.amount),
+            "status": "Terverifikasi Bank" if row.status == "completed" else "Diproses",
+            "method": "Virtual Account" if "top-up" in row.description.lower() else "Pre-funded Escrow"
+        }
+        for row in tx_rows
+    ]
+
+    return {
+        "available_balance": float(wallet.available_balance),
+        "escrow_balance": float(wallet.escrow_balance),
+        "currency": "IDR",
+        "transactions": transactions
+    }
+
+@app.post("/api/v1/corporate/wallet/topup")
+async def topup_corporate_wallet(
+    payload: CorporateTopUpRequest,
+    current_user: User = Depends(require_roles(["company", "corporate", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Nominal deposit harus lebih dari 0.")
+
+    wallet_res = await db.execute(select(Wallet).where(Wallet.user_id == current_user.id))
+    wallet = wallet_res.scalars().first()
+    if not wallet:
+        wallet = Wallet(user_id=current_user.id, available_balance=payload.amount, escrow_balance=0.0)
+        db.add(wallet)
+    else:
+        wallet.available_balance = float(wallet.available_balance) + payload.amount
+        wallet.updated_at = datetime.utcnow()
+
+    tx = WalletTransaction(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        amount=payload.amount,
+        transaction_type="credit_deposit",
+        description=f"Top-Up Pre-Funded Deposit via {payload.bank_method}",
+        status="completed",
+        created_at=datetime.utcnow()
+    )
+    db.add(tx)
+    await db.commit()
+    await db.refresh(wallet)
+
+    return {
+        "success": True,
+        "message": f"Berhasil menambahkan deposit sebesar Rp {payload.amount:,.0f}",
+        "new_balance": float(wallet.available_balance),
+        "transaction_id": str(tx.id)
+    }
+
+class CorporateCheckoutRequest(BaseModel):
+    cluster_id: uuid.UUID
+    quantity_tco2e: float
+    target_emission_year: int = 2026
+    notes: Optional[str] = None
+
+@app.post("/api/v1/corporate/checkout")
+async def corporate_checkout(
+    payload: CorporateCheckoutRequest,
+    current_user: User = Depends(require_roles(["company", "corporate", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    if payload.quantity_tco2e <= 0:
+        raise HTTPException(status_code=400, detail="Jumlah pembelian harus lebih dari 0 tCO2e.")
+
+    c_res = await db.execute(select(Cluster).where(Cluster.id == payload.cluster_id))
+    cluster = c_res.scalars().first()
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Klaster karbon tidak ditemukan.")
+
+    if float(cluster.available_quota_tco2e) < payload.quantity_tco2e:
+        raise HTTPException(status_code=400, detail=f"Sisa kuota klaster tidak mencukupi (Tersedia: {cluster.available_quota_tco2e} tCO2e).")
+
+    w_res = await db.execute(select(Wallet).where(Wallet.user_id == current_user.id))
+    wallet = w_res.scalars().first()
+    total_cost = payload.quantity_tco2e * float(cluster.price_per_tco2e)
+
+    if not wallet or float(wallet.available_balance) < total_cost:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Saldo deposit tidak mencukupi. Diperlukan Rp {total_cost:,.0f}, saldo Anda Rp {float(wallet.available_balance if wallet else 0):,.0f}."
+        )
+
+    cluster.available_quota_tco2e = float(cluster.available_quota_tco2e) - payload.quantity_tco2e
+    if cluster.available_quota_tco2e <= 0.0001:
+        cluster.status = "sold_out"
+
+    wallet.available_balance = float(wallet.available_balance) - total_cost
+    wallet.updated_at = datetime.utcnow()
+
+    trx = Transaction(
+        id=uuid.uuid4(),
+        company_id=current_user.id,
+        cluster_id=cluster.id,
+        tco2e_purchased=payload.quantity_tco2e,
+        total_price=total_cost,
+        transaction_type="manual_checkout",
+        target_emission_year=payload.target_emission_year
+    )
+    db.add(trx)
+
+    cert = Certificate(
+        uuid=uuid.uuid4(),
+        transaction_id=trx.id,
+        company_id=current_user.id,
+        cluster_id=cluster.id,
+        tco2e_retired=payload.quantity_tco2e,
+        vintage_year=cluster.vintage_year
+    )
+    db.add(cert)
+
+    wt = WalletTransaction(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        amount=total_cost,
+        transaction_type="debit_purchase",
+        description=f"Manual Checkout: {payload.quantity_tco2e} tCO2e {cluster.name}",
+        status="completed",
+        created_at=datetime.utcnow()
+    )
+    db.add(wt)
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Berhasil membeli dan memensiunkan {payload.quantity_tco2e} tCO2e dari {cluster.name}.",
+        "certificate": {
+            "uuid": str(cert.uuid),
+            "serialNumber": f"SRN-ID-2026-{str(cert.uuid)[:8].upper()}",
+            "clusterId": str(cluster.id),
+            "clusterName": cluster.name,
+            "quantity": payload.quantity_tco2e,
+            "totalCost": total_cost,
+            "retiredAt": datetime.utcnow().strftime("%d %b %Y, %H:%M WIB"),
+            "beneficiary": current_user.full_name or "PT Industri Hijau Nusantara",
+            "vintageYear": cluster.vintage_year,
+            "status": "RETIRED",
+            "registry": "SRN-PPI KLHK & ISO 14064-2"
+        },
+        "new_balance": float(wallet.available_balance)
+    }
+
+@app.get("/api/v1/corporate/certificates")
+async def get_corporate_certificates(
+    current_user: User = Depends(require_roles(["company", "corporate", "admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Daftar buku besar sertifikat pensiun milik perusahaan.
+    """
+    query = text("""
+        SELECT cert.uuid, cert.tco2e_retired, cert.vintage_year,
+               c.id as cluster_id, c.name as cluster_name, c.price_per_tco2e,
+               t.total_price, t.target_emission_year,
+               u.full_name as company_name
+        FROM certificates cert
+        JOIN clusters c ON cert.cluster_id = c.id
+        LEFT JOIN transactions t ON cert.transaction_id = t.id
+        JOIN users u ON cert.company_id = u.id
+        WHERE cert.company_id = :uid
+        ORDER BY cert.uuid DESC
+    """)
+    res = await db.execute(query, {"uid": current_user.id})
+    rows = res.fetchall()
+
+    certificates = [
+        {
+            "uuid": str(r.uuid),
+            "serialNumber": f"SRN-ID-2026-{str(r.uuid)[:8].upper()}",
+            "clusterId": str(r.cluster_id),
+            "clusterName": r.cluster_name,
+            "quantity": float(r.tco2e_retired),
+            "totalCost": float(r.total_price or (float(r.tco2e_retired) * float(r.price_per_tco2e))),
+            "retiredAt": datetime.utcnow().strftime("%d %b %Y"),
+            "beneficiary": r.company_name or "PT Industri Hijau Nusantara",
+            "vintageYear": r.vintage_year,
+            "status": "RETIRED",
+            "registry": "SRN-PPI KLHK & ISO 14064-2"
+        }
+        for r in rows
+    ]
+    return certificates
+
+
+
+# ------------------------------------------------------------------------------
 # 5. Endpoint Admin Authority (Terproteksi RBAC 'admin')
 # ------------------------------------------------------------------------------
 @app.post("/api/v1/admin/distribute-revenue")
@@ -1752,6 +2006,276 @@ async def admin_schedule_land_survey(
     }
 
 
+# ------------------------------------------------------------------------------
+# 5b. Modul API Manajemen Admin Authority (Full Ecosystem Monitoring & Control)
+# ------------------------------------------------------------------------------
+
+@app.get("/api/v1/admin/stats")
+async def get_admin_ecosystem_stats(
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Ringkasan metrik ekosistem untuk Command Center Admin.
+    """
+    farmers_count = (await db.execute(select(func.count(User.id)).where(User.role == "farmer"))).scalar() or 0
+    surveyors_count = (await db.execute(select(func.count(User.id)).where(User.role == "surveyor"))).scalar() or 0
+    corporates_count = (await db.execute(select(func.count(User.id)).where(User.role.in_(["corporate", "company"])))).scalar() or 0
+
+    tree_res = (await db.execute(select(func.coalesce(func.sum(TreeBlock.estimated_tco2e_per_year), 0.0)))).scalar() or 0.0
+    quota_res = (await db.execute(select(func.coalesce(func.sum(Cluster.available_quota_tco2e), 0.0)))).scalar() or 0.0
+    gmv_res = (await db.execute(select(func.coalesce(func.sum(Transaction.total_price), 0.0)))).scalar() or 0.0
+
+    pending_survey_lands = (await db.execute(
+        text("SELECT COUNT(*) FROM land_plots WHERE status IN ('pending', 'pending_survey')")
+    )).scalar() or 0
+
+    pending_payouts = (await db.execute(
+        text("SELECT COUNT(*) FROM wallet_transactions WHERE transaction_type = 'debit_withdraw' AND status IN ('processing', 'pending')")
+    )).scalar() or 0
+
+    clusters_count = (await db.execute(select(func.count(Cluster.id)))).scalar() or 0
+
+    return {
+        "pipeline_tco2e": round(float(tree_res), 2),
+        "available_quota_tco2e": round(float(quota_res), 2),
+        "gmv_idr": float(gmv_res),
+        "total_farmers": farmers_count,
+        "total_surveyors": surveyors_count,
+        "total_corporates": corporates_count,
+        "active_clusters": clusters_count,
+        "pending_inspections": pending_survey_lands,
+        "pending_payouts": pending_payouts
+    }
+
+@app.get("/api/v1/admin/clusters")
+async def get_admin_clusters(
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(select(Cluster).order_by(Cluster.vintage_year.desc()))
+    clusters = result.scalars().all()
+
+    items = []
+    for c in clusters:
+        lp_query = text("""
+            SELECT COUNT(id) as plot_count,
+                   COUNT(DISTINCT farmer_id) as farmer_count,
+                   COALESCE(SUM(total_area_sqm), 0) / 10000.0 as total_ha
+            FROM land_plots WHERE cluster_id = :cid
+        """)
+        lp_res = (await db.execute(lp_query, {"cid": c.id})).fetchone()
+
+        items.append({
+            "id": str(c.id),
+            "name": c.name,
+            "vintage_year": c.vintage_year,
+            "available_quota_tco2e": float(c.available_quota_tco2e),
+            "target_quota_tco2e": float(c.target_quota_tco2e or 1000.0),
+            "price_per_tco2e": float(c.price_per_tco2e),
+            "status": str(c.status),
+            "total_plots": int(lp_res.plot_count or 0) if lp_res else 0,
+            "total_farmers": int(lp_res.farmer_count or 0) if lp_res else 0,
+            "total_area_ha": round(float(lp_res.total_ha or 0.0), 2) if lp_res else 0.0
+        })
+    return items
+
+class AdminCreateClusterRequest(BaseModel):
+    name: str
+    vintage_year: int = 2026
+    target_quota_tco2e: float = 1000.0
+    price_per_tco2e: float = 85000.0
+    status: str = "gathering"
+
+@app.post("/api/v1/admin/clusters")
+async def create_admin_cluster(
+    payload: AdminCreateClusterRequest,
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    new_c = Cluster(
+        id=uuid.uuid4(),
+        name=payload.name,
+        vintage_year=payload.vintage_year,
+        available_quota_tco2e=0.0,
+        target_quota_tco2e=payload.target_quota_tco2e,
+        price_per_tco2e=payload.price_per_tco2e,
+        status=payload.status
+    )
+    db.add(new_c)
+    await db.commit()
+    await db.refresh(new_c)
+    return {"success": True, "cluster_id": str(new_c.id), "message": f"Klaster '{new_c.name}' berhasil dibuat."}
+
+class AdminMintClusterRequest(BaseModel):
+    auditor_organization: str = "PT Sucofindo (Persero)"
+    audit_report_no: str = "BAP-SUCOFINDO-2026-091"
+    approved_quota_tco2e: float
+    cost_recovery_idr: float = 25000000.0
+
+@app.post("/api/v1/admin/clusters/{cluster_id}/mint")
+async def admin_mint_cluster_quota(
+    cluster_id: uuid.UUID,
+    payload: AdminMintClusterRequest,
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    c_res = await db.execute(select(Cluster).where(Cluster.id == cluster_id))
+    cluster = c_res.scalars().first()
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Klaster tidak ditemukan.")
+
+    cluster.available_quota_tco2e = payload.approved_quota_tco2e
+    cluster.status = "available_for_sale"
+
+    await db.execute(text("""
+        UPDATE land_plots
+        SET status = 'verified'
+        WHERE cluster_id = :cid AND status IN ('pending', 'pending_survey')
+    """), {"cid": cluster.id})
+
+    await db.commit()
+    return {
+        "success": True,
+        "message": f"Audit {payload.auditor_organization} disahkan! Kuota {payload.approved_quota_tco2e} tCO2e berhasil diminting ke Bursa Karbon.",
+        "cluster_id": str(cluster.id),
+        "status": cluster.status,
+        "available_quota": float(cluster.available_quota_tco2e)
+    }
+
+@app.get("/api/v1/admin/payouts")
+async def get_admin_payout_queue(
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Daftar antrean pencairan dana petani untuk diverifikasi admin.
+    """
+    query = text("""
+        SELECT wt.id, wt.user_id, wt.amount, wt.description, wt.status, wt.created_at,
+               u.full_name as farmer_name, u.email as farmer_email,
+               fp.phone_number, fp.village, fp.regency,
+               ba.bank_name, ba.account_number, ba.account_holder_name
+        FROM wallet_transactions wt
+        JOIN users u ON wt.user_id = u.id
+        LEFT JOIN farmer_profiles fp ON u.id = fp.user_id
+        LEFT JOIN bank_accounts ba ON u.id = ba.user_id AND ba.is_primary = TRUE
+        WHERE wt.transaction_type = 'debit_withdraw'
+        ORDER BY wt.created_at DESC
+    """)
+    res = await db.execute(query)
+    rows = res.fetchall()
+
+    payouts = [
+        {
+            "id": str(r.id),
+            "farmer_id": str(r.user_id),
+            "farmer_name": r.farmer_name,
+            "farmer_phone": r.phone_number or "-",
+            "location": f"{r.village or '-'}, {r.regency or '-'}",
+            "amount": float(r.amount),
+            "bank_name": r.bank_name or "BRI",
+            "account_number": r.account_number or "-",
+            "account_holder": r.account_holder_name or r.farmer_name,
+            "status": r.status,
+            "created_at": r.created_at.strftime("%d %b %Y, %H:%M WIB") if r.created_at else "-"
+        }
+        for r in rows
+    ]
+    return payouts
+
+class AdminApprovePayoutRequest(BaseModel):
+    bank_reference_no: str
+    admin_notes: Optional[str] = None
+
+@app.post("/api/v1/admin/payouts/{payout_id}/approve")
+async def approve_payout(
+    payout_id: uuid.UUID,
+    payload: AdminApprovePayoutRequest,
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    wt_res = await db.execute(select(WalletTransaction).where(WalletTransaction.id == payout_id))
+    wt = wt_res.scalars().first()
+    if not wt:
+        raise HTTPException(status_code=404, detail="Tiket penarikan tidak ditemukan.")
+
+    wt.status = "completed"
+    wt.description = f"{wt.description} [Disetujui Admin - Ref: {payload.bank_reference_no}]"
+    await db.commit()
+    return {"success": True, "message": f"Pencairan dana sebesar Rp {float(wt.amount):,.0f} telah disetujui & dibukukan."}
+
+class AdminRejectPayoutRequest(BaseModel):
+    rejection_reason: str
+
+@app.post("/api/v1/admin/payouts/{payout_id}/reject")
+async def reject_payout(
+    payout_id: uuid.UUID,
+    payload: AdminRejectPayoutRequest,
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    wt_res = await db.execute(select(WalletTransaction).where(WalletTransaction.id == payout_id))
+    wt = wt_res.scalars().first()
+    if not wt:
+        raise HTTPException(status_code=404, detail="Tiket penarikan tidak ditemukan.")
+
+    wt.status = "rejected"
+    wt.description = f"{wt.description} [Ditolak: {payload.rejection_reason}]"
+
+    w_res = await db.execute(select(Wallet).where(Wallet.user_id == wt.user_id))
+    wallet = w_res.scalars().first()
+    if wallet:
+        wallet.available_balance = float(wallet.available_balance) + float(wt.amount)
+        wallet.updated_at = datetime.utcnow()
+
+    await db.commit()
+    return {"success": True, "message": f"Penarikan dana ditolak. Saldo Rp {float(wt.amount):,.0f} telah dikembalikan ke dompet petani."}
+
+@app.get("/api/v1/admin/species")
+async def get_admin_species(
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(TreeSpecies).order_by(TreeSpecies.local_name.asc()))
+    species = res.scalars().all()
+    return [
+        {
+            "id": str(s.id),
+            "local_name": s.local_name,
+            "latin_name": s.latin_name,
+            "category": s.category,
+            "wood_density": float(s.wood_density),
+            "formula_type": s.formula_type,
+            "coeff_a": float(s.coeff_a) if s.coeff_a is not None else None,
+            "exp_b": float(s.exp_b) if s.exp_b is not None else None,
+            "requires_height": s.requires_height,
+            "formula_display": s.formula_display,
+            "reference_source": s.reference_source
+        }
+        for s in species
+    ]
+
+@app.get("/api/v1/admin/users")
+async def get_admin_users(
+    current_user: User = Depends(require_roles(["admin"])),
+    db: AsyncSession = Depends(get_db)
+):
+    res = await db.execute(select(User).order_by(User.created_at.desc()))
+    users = res.scalars().all()
+    return [
+        {
+            "id": str(u.id),
+            "full_name": u.full_name,
+            "email": u.email,
+            "role": u.role,
+            "is_active": u.is_active,
+            "created_at": u.created_at.strftime("%d %b %Y") if u.created_at else "-"
+        }
+        for u in users
+    ]
+
+
 @app.get("/api/v1/surveyor/tasks")
 async def get_surveyor_tasks(
     current_user: User = Depends(require_roles(["surveyor", "admin"])),
@@ -1807,7 +2331,7 @@ async def get_surveyor_tasks(
                    ) as avg_height_m
             FROM tree_blocks tb
             WHERE tb.land_plot_id = :plot_id
-            ORDER BY tb.created_at ASC
+            ORDER BY tb.created_at ASC NULLS LAST, tb.id ASC
         """)
         tb_res = await db.execute(tb_query, {"plot_id": row.id})
         tbs = tb_res.fetchall()
@@ -2135,7 +2659,7 @@ async def get_farmer_dashboard_summary(
             "amount": float(row.amount),
             "transaction_type": str(row.transaction_type),
             "status": str(row.status),
-            "timestamp": row.created_at
+            "timestamp": row.created_at or datetime.utcnow()
         }
         for row in tx_rows
     ]
@@ -2190,3 +2714,13 @@ async def get_farmer_dashboard_summary(
         "recent_wallet_activities": recent_wallet_activities,
         "cluster_info": cluster_info
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

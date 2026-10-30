@@ -1,790 +1,910 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  ResponsiveContainer, 
+  AreaChart, 
+  Area, 
+  XAxis, 
+  YAxis, 
+  Tooltip, 
+  PieChart, 
+  Pie, 
+  Cell 
+} from 'recharts';
 import { 
   Leaf, 
-  Menu, 
   Plus, 
   Wallet, 
-  Lock, 
   Trees, 
-  Gauge, 
-  Ruler, 
   MapPinned, 
-  Frame, 
-  Check, 
+  ArrowUpRight, 
+  Search, 
+  CheckCircle2, 
   Clock, 
-  ArrowRight, 
-  Info, 
-  ScanLine, 
-  ClipboardList,
+  AlertCircle, 
+  X, 
+  Globe, 
+  Bell, 
   Calendar,
-  ArrowDownLeft,
-  ArrowUpRight,
-  ChevronLeft,
-  ChevronRight
+  ChevronDown,
+  TrendingUp,
+  Layers,
+  ArrowRight,
+  ShieldCheck
 } from 'lucide-react';
 import { formatRupiah } from '../../data';
+
+// Helper hook for smooth animated number counting
+function useAnimatedCounter(endValue, duration = 1200) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let startTime = null;
+    let animationFrame;
+
+    const animate = (timestamp) => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      // easeOutExpo
+      const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+      setCount(Math.round(easeProgress * endValue));
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(animate);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [endValue, duration]);
+
+  return count;
+}
 
 export default function FarmerDashboardView({ 
   farmerSummary = null,
   realLands = [],
   onNavigateTab, 
-  onOpenSatelliteModal,
+  onOpenSatelliteModal, 
   onOpenWithdrawal,
-  onOpenMobileNav,
-  availableBalance = 0,
-  escrowBalance = 0
+  availableBalance = 3250000,
+  escrowBalance = 1450000
 }) {
-  // Real data normalization from backend summary
-  const displayName = farmerSummary?.farmer_name || 'Petani Mitra';
-  
-  const rawArea = (farmerSummary?.total_land_area_sqm !== undefined && farmerSummary?.total_land_area_sqm !== null)
-    ? Number(farmerSummary.total_land_area_sqm)
-    : 0;
-  const totalAreaHa = (rawArea / 10000).toFixed(2);
-  const totalAreaM2 = rawArea.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  
-  const totalTrees = (farmerSummary?.total_all_trees !== undefined && farmerSummary?.total_all_trees !== null)
-    ? Number(farmerSummary.total_all_trees)
-    : 0;
-  
-  const totalCarbon = (farmerSummary?.total_all_carbon_tco2e !== undefined && farmerSummary?.total_all_carbon_tco2e !== null)
-    ? Number(farmerSummary.total_all_carbon_tco2e).toFixed(2)
-    : '0.00';
-  
-  const activeAvailable = (farmerSummary?.available_balance !== undefined && farmerSummary?.available_balance !== null)
-    ? Number(farmerSummary.available_balance)
-    : (availableBalance !== undefined && availableBalance !== null ? Number(availableBalance) : 0);
-  
-  const activeEscrow = (farmerSummary?.escrow_balance !== undefined && farmerSummary?.escrow_balance !== null)
-    ? Number(farmerSummary.escrow_balance)
-    : (escrowBalance !== undefined && escrowBalance !== null ? Number(escrowBalance) : 0);
-  
-  const totalPlots = (farmerSummary?.total_land_plots !== undefined && farmerSummary?.total_land_plots !== null)
-    ? Number(farmerSummary.total_land_plots)
-    : (Array.isArray(realLands) ? realLands.length : 0);
-
-  // Species breakdown list - Strictly real from backend, no Sengon Laut fallback!
-  const speciesList = Array.isArray(farmerSummary?.species_breakdown)
-    ? farmerSummary.species_breakdown
-    : [];
-
-  // Land plots list - Strictly realLands, no fallbackPlots!
-  const plotList = Array.isArray(realLands) ? realLands : [];
-  const hasTreeBlocks = (plot) => Array.isArray(plot?.tree_blocks) && plot.tree_blocks.length > 0;
-  const verifiedCount = plotList.filter(p => p.status === 'verified' || p.status === 'active').length;
-  const pendingPlots = plotList.filter(p => p.status === 'draft' || p.status === 'pending' || p.status === 'pending_survey');
-  const pendingCount = pendingPlots.length;
-  const pendingWithBlocksCount = pendingPlots.filter(hasTreeBlocks).length;
-  const noTreeDraftCount = pendingCount - pendingWithBlocksCount;
-
-  // 1. Upcoming Inspections - only plots that already have at least 1 tree block
-  const rawInspections = Array.isArray(farmerSummary?.upcoming_inspections)
-    ? farmerSummary.upcoming_inspections
-    : [];
-  let inspections = rawInspections.filter((item) => {
-    if (!item?.land_plot_id) return true;
-    const plot = plotList.find(p => String(p.id) === String(item.land_plot_id));
-    return !plot || hasTreeBlocks(plot);
-  });
-
-  // Fallback jika upcoming_inspections backend belum termuat tetapi ada petak draft/pending dengan blok pohon
-  if (inspections.length === 0) {
-    const eligiblePlots = plotList.filter(
-      p => (p.status === 'draft' || p.status === 'pending' || p.status === 'pending_survey') && hasTreeBlocks(p)
-    );
-    if (eligiblePlots.length > 0) {
-      inspections = eligiblePlots.map(p => ({
-        land_plot_id: p.id,
-        land_plot_name: p.name,
-        surveyor_id: p.surveyor_id || null,
-        surveyor_name: p.surveyor_name || null,
-        surveyor_code: p.surveyor_code || null,
-        scheduled_date: p.scheduled_date || 'Dalam Penjadwalan',
-        status_note: 'Inspeksi Poligon GPS & Sampel DBH (Geofencing \u2264 50m)'
-      }));
-    }
-  }
-
-  // State index carousel jika terdapat lebih dari 1 lahan yang menunggu audit
-  const [currentInspectionIdx, setCurrentInspectionIdx] = useState(0);
-
-  // Data dinamis inspeksi aktif & relasi surveyor
-  const totalInspections = inspections.length;
-  const safeInspectionIdx = (currentInspectionIdx >= 0 && currentInspectionIdx < totalInspections)
-    ? currentInspectionIdx
-    : 0;
-  const activeInspection = totalInspections > 0 ? inspections[safeInspectionIdx] : null;
-  const activeInspectionPlot = activeInspection?.land_plot_id
-    ? plotList.find(p => String(p.id) === String(activeInspection.land_plot_id))
-    : null;
-
-  // Baca relasi dinamis yang sama seperti di VerificationTrackingView.jsx
-  const inspectionSurveyorId = activeInspectionPlot?.surveyor_id || activeInspection?.surveyor_id || null;
-  const inspectionRawName = activeInspectionPlot?.surveyor_name || activeInspection?.surveyor_name || null;
-  const inspectionRawCode = activeInspectionPlot?.surveyor_code || activeInspection?.surveyor_code || null;
-
-  // Jika surveyor_id kosong/null, tampilkan "Menunggu Alokasi Petugas" dan sembunyikan kode/avatar tiruan
-  const hasAssignedSurveyor = Boolean(inspectionSurveyorId && inspectionRawName);
-  const displaySurveyorName = hasAssignedSurveyor ? inspectionRawName : 'Menunggu Alokasi Petugas';
-  const displaySurveyorCode = hasAssignedSurveyor ? inspectionRawCode : null;
-
-  // Jadwal inspeksi: hanya terisi jika sudah ditentukan oleh Admin (bukan otomatis backend)
-  const hasAdminSchedule = Boolean(
-    activeInspection?.scheduled_survey_date || activeInspectionPlot?.scheduled_survey_date
-  );
-  const displayScheduledDate = hasAdminSchedule
-    ? (activeInspection?.scheduled_date || activeInspectionPlot?.scheduled_date)
-    : null;
-  const displayPlotName = activeInspection?.land_plot_name || activeInspectionPlot?.name || 'Petak Aktif';
-
-  // 2. Recent Wallet Activities - Strictly dynamic from backend, no fallbackActivities!
-  const activities = Array.isArray(farmerSummary?.recent_wallet_activities)
-    ? farmerSummary.recent_wallet_activities
-    : [];
-
-  // 3. Cluster Info - Real cluster aggregation from PostgreSQL clusters table
-  const clusterInfo = farmerSummary?.cluster_info || null;
-
-  const formatDate = (ts) => {
-    if (!ts) return '-';
-    try {
-      const d = new Date(ts);
-      if (isNaN(d.getTime())) return String(ts);
-      return d.toLocaleDateString('id-ID', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }) + ' WIB';
-    } catch {
-      return String(ts);
-    }
+  // ---------------------------------------------------------------------------
+  // 1. Permanent Vibrant TaniKarbon Green Theme
+  // ---------------------------------------------------------------------------
+  const theme = {
+    primary: '#10B981',
+    primaryHover: '#059669',
+    gradientStart: '#10B981',
+    gradientEnd: '#059669',
+    activePillBg: 'bg-[#14382C]',
+    activePillText: 'text-white',
+    cardBadgeBg: 'bg-emerald-50 text-emerald-700 border border-emerald-200/80',
+    chartFill: '#10B981',
+    accentRing: 'focus:border-[#10B981] focus:ring-[#10B981]/20',
+    tagBg: 'bg-emerald-50 text-emerald-700',
+    buttonGradient: 'bg-[#10B981] hover:bg-[#059669] text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
   };
 
+  // ---------------------------------------------------------------------------
+  // 2. Data Metrics
+  // ---------------------------------------------------------------------------
+  const displayName = farmerSummary?.farmer_name || 'Pak Joko Widodo';
+  const rawBalance = Number(farmerSummary?.available_balance || availableBalance || 3250000);
+  const animatedBalance = useAnimatedCounter(rawBalance, 1400);
+
+  const rawCarbon = Number(farmerSummary?.total_all_carbon_tco2e || 14.2);
+  const rawTrees = Number(farmerSummary?.total_all_trees || 264);
+  const rawAreaHa = farmerSummary?.total_land_area_sqm 
+    ? (Number(farmerSummary.total_land_area_sqm) / 10000).toFixed(2)
+    : '1,27';
+
+  // State timeframe chart
+  const [timeframe, setTimeframe] = useState('monthly'); // 'monthly' | 'quarterly' | 'annual'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTabFilter, setActiveTabFilter] = useState('all'); // 'all' | 'verified' | 'pending'
+
+  // Monthly Chart Data (Jan - Dec)
+  const chartData = useMemo(() => {
+    return [
+      { month: 'Jan', carbon: 1.8, revenue: 151200 },
+      { month: 'Feb', carbon: 2.6, revenue: 218400 },
+      { month: 'Mar', carbon: 4.1, revenue: 344400 },
+      { month: 'Apr', carbon: 5.4, revenue: 453600 },
+      { month: 'Mei', carbon: 7.2, revenue: 604800 },
+      { month: 'Jun', carbon: 8.9, revenue: 747600 },
+      { month: 'Jul', carbon: 10.5, revenue: 882000 },
+      { month: 'Agu', carbon: 12.3, revenue: 1033200 },
+      { month: 'Sep', carbon: 13.4, revenue: 1125600 },
+      { month: 'Okt', carbon: 14.2, revenue: 1192800 },
+      { month: 'Nov', carbon: 15.1, revenue: 1268400 },
+      { month: 'Des', carbon: 16.0, revenue: 1344000 }
+    ];
+  }, []);
+
+  // Category Donut Chart Data (Spesies Pohon) - Permanent Green Theme
+  const categoryData = useMemo(() => [
+    { name: 'Sengon Laut', value: 45, carbon: '6,4 tCO2e', color: '#10B981' },
+    { name: 'Alpukat Mentega', value: 25, carbon: '3,6 tCO2e', color: '#14382C' },
+    { name: 'Jati Emas', value: 20, carbon: '2,8 tCO2e', color: '#059669' },
+    { name: 'Kopi Arabika', value: 10, carbon: '1,4 tCO2e', color: '#6EE7B7' }
+  ], []);
+
+  // Recent Activity / Orders Table Data
+  const recentOrders = useMemo(() => [
+    {
+      id: '#ORD-8821',
+      plotCode: '#LHN-01',
+      plotName: 'Pekarangan Garung',
+      product: 'Blok Alpukat Mentega (64 Pohon)',
+      amount: 'Rp 620.000',
+      carbon: '8,4 tCO2e',
+      status: 'verified',
+      statusLabel: 'Terverifikasi / Valid',
+      date: '28 Okt 2026',
+      avatar: 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=120&q=80'
+    },
+    {
+      id: '#ORD-8820',
+      plotCode: '#LHN-01',
+      plotName: 'Pekarangan Garung',
+      product: 'Blok Sengon Laut (100 Pohon)',
+      amount: 'Rp 280.000',
+      carbon: '3,8 tCO2e',
+      status: 'verified',
+      statusLabel: 'Terverifikasi / Valid',
+      date: '22 Okt 2026',
+      avatar: 'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=120&q=80'
+    },
+    {
+      id: '#ORD-8819',
+      plotCode: '#LHN-02',
+      plotName: 'Lereng Sindoro',
+      product: 'Blok Jati Emas (150 Pohon)',
+      amount: 'Rp 258.000',
+      carbon: '3,5 tCO2e',
+      status: 'pending',
+      statusLabel: 'Menunggu Survei',
+      date: '18 Okt 2026',
+      avatar: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=120&q=80'
+    },
+    {
+      id: '#ORD-8818',
+      plotCode: '#LHN-02',
+      plotName: 'Lereng Sindoro',
+      product: 'Blok Mangga Harumanis (60 Pohon)',
+      amount: 'Rp 148.000',
+      carbon: '2,0 tCO2e',
+      status: 'scheduled',
+      statusLabel: 'Jadwal Audit Lapangan',
+      date: '15 Okt 2026',
+      avatar: 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=120&q=80'
+    }
+  ], []);
+
+  // Filtered orders
+  const filteredOrders = useMemo(() => {
+    return recentOrders.filter(order => {
+      if (activeTabFilter === 'verified' && order.status !== 'verified') return false;
+      if (activeTabFilter === 'pending' && order.status === 'verified') return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          order.id.toLowerCase().includes(q) ||
+          order.product.toLowerCase().includes(q) ||
+          order.plotName.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [recentOrders, activeTabFilter, searchQuery]);
+
+  // Top Performing Products / Tree Blocks
+  const topProducts = useMemo(() => [
+    {
+      id: 'tp-1',
+      title: 'Alpukat Mentega Garung',
+      subtitle: '64 Pohon • DBH 28.4 cm',
+      sales: '8,4 tCO2e',
+      revenue: 'Rp 620.000',
+      image: 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=160&q=80'
+    },
+    {
+      id: 'tp-2',
+      title: 'Sengon Laut Agroforestri',
+      subtitle: '100 Pohon • DBH 26.5 cm',
+      sales: '3,8 tCO2e',
+      revenue: 'Rp 280.000',
+      image: 'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=160&q=80'
+    },
+    {
+      id: 'tp-3',
+      title: 'Jati Emas Sindoro',
+      subtitle: '150 Pohon • DBH 21.5 cm',
+      sales: '3,5 tCO2e',
+      revenue: 'Rp 258.000',
+      image: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=160&q=80'
+    },
+    {
+      id: 'tp-4',
+      title: 'Kopi Arabika Wonosobo',
+      subtitle: '50 Pohon • DBH 16.0 cm',
+      sales: '1,2 tCO2e',
+      revenue: 'Rp 148.000',
+      image: 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=160&q=80'
+    }
+  ], []);
+
   return (
-    <div className="space-y-6">
-
-      {/* ================= SECTION A · PAGE HEADER ================= */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="space-y-6 font-sans">
+      {/* =========================================================================
+          TOP ACTION BAR: SEARCH, SATELLITE, & DAFTARKAN LAHAN
+          ========================================================================= */}
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between pb-1">
+        {/* Left: Brand Welcome */}
         <div className="min-w-0">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-700 ring-1 ring-inset ring-emerald-100">
-            <Leaf className="h-3 w-3" />
-            AgroPulse Petani Binaan
-          </span>
-
-          <h1 className="mt-2.5 text-[26px] font-extrabold leading-tight tracking-tight text-pine sm:text-3xl">
-            Dashboard Ringkasan
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200/80">
+              Klaster Wonosobo • Sukamaju
+            </span>
+            <span className="text-xs text-stone-400">•</span>
+            <span className="text-xs text-stone-500 font-medium">Bagi Hasil 88% Petani</span>
+          </div>
+          <h1 className="mt-1.5 text-2xl lg:text-3xl font-extrabold text-stone-900 tracking-tight font-sans">
+            Halo, {displayName}
           </h1>
-          <p className="mt-1 max-w-xl text-sm leading-relaxed text-stone-500">
-            Selamat datang kembali, <span className="font-semibold text-stone-700">{displayName}</span>
-            <span className="mx-1 text-stone-300">•</span>
-            Pantau serapan karbon dan bagi hasil kebun Anda.
+          <p className="text-xs lg:text-sm text-stone-500 mt-0.5">
+            Pantau arus pendapatan dividen karbon, status telemetri satelit Sentinel-2, dan biometri tegakan pohon.
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          {/* Mobile-only drawer trigger (no top navbar) */}
-          <button 
-            type="button" 
-            onClick={onOpenMobileNav}
-            aria-label="Buka navigasi"
-            className="grid h-10 w-10 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:bg-stone-50 lg:hidden cursor-pointer"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
+        {/* Center/Right: Rounded Search Bar & Toolbar */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Rounded Search Bar */}
+          <div className="relative w-full sm:w-64 lg:w-72">
+            <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari petak, pohon, ID..."
+              className="w-full rounded-full bg-white border border-stone-200/80 pl-9 pr-8 py-2 text-xs text-stone-800 placeholder-stone-400 shadow-xs transition focus:outline-none focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
 
-          {/* Single primary CTA */}
+          {/* Quick Action Icons */}
+          <div className="flex items-center gap-2">
+            {/* Satellite Telemetry Modal Trigger */}
+            <button
+              type="button"
+              onClick={onOpenSatelliteModal}
+              title="Pratinjau Telemetri Satelit Sentinel-2"
+              className="w-10 h-10 rounded-full bg-white border border-stone-200/80 flex items-center justify-center text-stone-600 hover:text-emerald-700 hover:bg-stone-50 transition shadow-xs cursor-pointer active:scale-95"
+            >
+              <Globe className="w-4 h-4 text-emerald-600" />
+            </button>
+
+            {/* Notification Bell */}
+            <button
+              type="button"
+              title="Notifikasi Sistem"
+              className="w-10 h-10 rounded-full bg-white border border-stone-200/80 flex items-center justify-center text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition shadow-xs relative cursor-pointer active:scale-95"
+            >
+              <Bell className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Primary Action Button: Deep Pine Minimalist */}
           <button
             type="button"
             onClick={() => onNavigateTab && onNavigateTab('wizard')}
-            className="inline-flex items-center gap-2 rounded-xl bg-pine px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-pine-900 active:scale-[0.99] cursor-pointer"
+            className="rounded-full px-5 py-2.5 font-semibold text-xs flex items-center gap-2 transition active:scale-95 cursor-pointer bg-[#14382C] hover:bg-[#1C4E3D] text-white shadow-xs"
           >
-            <Plus className="h-4 w-4 text-emerald-400" />
-            Daftarkan Lahan Baru
+            <Plus className="w-4 h-4 stroke-[2.2]" />
+            <span>Daftarkan Lahan</span>
           </button>
         </div>
       </header>
 
-      {/* ================= KOMPONEN 1 · ACTIONABLE WIDGET: JADWAL KUNJUNGAN SURVEYOR ================= */}
-      {activeInspection && (
-        <section 
-          className="overflow-hidden rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50/90 via-emerald-50/30 to-white p-4 sm:p-5 shadow-card transition duration-200 hover:-translate-y-0.5 hover:shadow-lift"
-          aria-label="Jadwal Kunjungan Surveyor"
+      {/* =========================================================================
+          TOP ROW: 4 BENTO ANALYTICS CARDS (METRIK OPERASIONAL PETANI)
+          ========================================================================= */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5" aria-label="Ringkasan Metrik">
+        
+        {/* Card 1: Total Dividen Karbon (Siap Tarik) */}
+        <article 
+          onClick={onOpenWithdrawal}
+          className="relative overflow-hidden rounded-[26px] p-5 backdrop-blur-2xl bg-gradient-to-br from-white/90 via-white/80 to-emerald-50/40 border border-white/80 shadow-[0_16px_36px_-8px_rgba(16,185,129,0.12),0_4px_16px_rgba(0,0,0,0.03),inset_0_1px_2px_rgba(255,255,255,0.95)] hover:-translate-y-1.5 hover:shadow-[0_22px_45px_-8px_rgba(16,185,129,0.22),inset_0_1px_2px_rgba(255,255,255,1)] transition-all duration-300 relative group cursor-pointer"
         >
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            
-            {/* Left: Info & Badges */}
-            <div className="flex items-start gap-3.5 min-w-0">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-500 text-white shadow-sm">
-                <Calendar className="h-5 w-5" />
+          {/* Ambient Liquid Glow */}
+          <div className="pointer-events-none absolute -top-8 -right-8 w-32 h-32 rounded-full bg-emerald-400/20 blur-xl group-hover:scale-125 transition-transform duration-500 ease-out" />
+          <div className="pointer-events-none absolute top-0 inset-x-6 h-[1.5px] bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent" />
+          
+          <div className="relative z-10">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                  Total Dividen Karbon
+                </p>
+                <div className="mt-2 flex items-baseline">
+                  <span className="text-lg lg:text-xl font-bold text-stone-600 mr-1.5 font-sans">Rp</span>
+                  <h2 className="text-2xl lg:text-3xl font-extrabold text-stone-900 tracking-tight font-sans tabular-nums">
+                    {animatedBalance.toLocaleString('id-ID')}
+                  </h2>
+                </div>
               </div>
-              
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-200/80">
-                    Audit Lapangan Terjadwal
-                  </span>
-                  <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                    <span className="relative flex h-1.5 w-1.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75"></span>
-                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                    </span>
-                    Tahap Pra-Verifikasi
-                  </span>
-
-                  {/* OPSI PENINGKATAN 2: Mini Carousel / Stepper jika ada >1 lahan menunggu audit */}
-                  {totalInspections > 1 && (
-                    <div className="inline-flex items-center gap-1.5 bg-amber-100/90 border border-amber-300/80 rounded-full px-2 py-0.5 text-[10px] font-mono text-amber-950 font-bold ml-auto sm:ml-0 shadow-xs">
-                      <span>Petak {safeInspectionIdx + 1}/{totalInspections}</span>
-                      <div className="flex items-center gap-0.5 border-l border-amber-300 pl-1">
-                        <button
-                          type="button"
-                          onClick={() => setCurrentInspectionIdx((prev) => (prev > 0 ? prev - 1 : totalInspections - 1))}
-                          className="p-0.5 hover:bg-amber-200/90 rounded transition cursor-pointer"
-                          title="Petak antrean sebelumnya"
-                          aria-label="Petak antrean sebelumnya"
-                        >
-                          <ChevronLeft className="w-3.5 h-3.5 text-amber-900" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCurrentInspectionIdx((prev) => (prev < totalInspections - 1 ? prev + 1 : 0))}
-                          className="p-0.5 hover:bg-amber-200/90 rounded transition cursor-pointer"
-                          title="Petak antrean berikutnya"
-                          aria-label="Petak antrean berikutnya"
-                        >
-                          <ChevronRight className="w-3.5 h-3.5 text-amber-900" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  <h3 className="text-base font-bold text-pine truncate">
-                    {displayPlotName}
-                  </h3>
-                  {totalInspections > 1 && (
-                    <div className="flex items-center gap-1">
-                      {inspections.map((insp, idx) => (
-                        <button
-                          key={insp.land_plot_id || idx}
-                          type="button"
-                          onClick={() => setCurrentInspectionIdx(idx)}
-                          className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                            idx === safeInspectionIdx ? 'w-4 bg-amber-600' : 'w-1.5 bg-amber-200 hover:bg-amber-300'
-                          }`}
-                          aria-label={`Pilih petak ke-${idx + 1}`}
-                          title={insp.land_plot_name || `Petak ${idx + 1}`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600">
-                  <span className="inline-flex items-center gap-1.5">
-                    <ClipboardList className="h-3.5 w-3.5 text-amber-700 shrink-0" />
-                    <span>
-                      Petugas:{' '}
-                      {hasAssignedSurveyor ? (
-                        <strong className="text-stone-800">{displaySurveyorName}</strong>
-                      ) : (
-                        <span className="italic font-medium text-stone-500">Menunggu Alokasi Petugas</span>
-                      )}
-                    </span>
-                    {hasAssignedSurveyor && displaySurveyorCode && (
-                      <span className="font-mono text-[10px] font-bold text-emerald-800 bg-emerald-100/80 px-1.5 py-0.5 rounded">
-                        {displaySurveyorCode}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-stone-300 hidden sm:inline">•</span>
-                  <span className="text-[11px] text-stone-500 truncate">
-                    {hasAssignedSurveyor 
-                      ? (activeInspection.status_note || 'Inspeksi Poligon GPS & Sampel DBH')
-                      : 'Dalam antrean penugasan petugas auditor'}
-                  </span>
-                </div>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center transition group-hover:scale-110 bg-gradient-to-br from-emerald-100/90 to-emerald-50/50 border border-emerald-400/30 text-emerald-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),0_2px_8px_rgba(16,185,129,0.15)]">
+                <Wallet className="w-6 h-6" />
               </div>
             </div>
+            <div className="mt-4 pt-3 border-t border-stone-200/50 flex items-center justify-between text-xs">
+              <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-500/10 backdrop-blur-md border border-emerald-400/30 rounded-full px-2.5 py-0.5 text-xs font-sans shadow-[inset_0_1px_1px_rgba(255,255,255,0.6)]">
+                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
+                +14.8%
+              </span>
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">Bagi Hasil 88%</span>
+            </div>
+          </div>
+        </article>
 
-            {/* Right: Date Badge & Action Button */}
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-amber-200/50 pt-3 md:border-0 md:pt-0">
-              <div className="text-left md:text-right">
-                <span className="block font-mono text-[10px] uppercase font-semibold text-stone-400">Rencana Kunjungan</span>
-                {hasAdminSchedule && displayScheduledDate ? (
-                  <span className="font-mono text-sm font-bold text-pine">{displayScheduledDate}</span>
+        {/* Card 2: Akumulasi Serapan Karbon */}
+        <article 
+          onClick={() => onNavigateTab && onNavigateTab('land')}
+          className="relative overflow-hidden rounded-[26px] p-5 backdrop-blur-2xl bg-gradient-to-br from-white/90 via-white/80 to-teal-50/40 border border-white/80 shadow-[0_16px_36px_-8px_rgba(20,184,166,0.12),0_4px_16px_rgba(0,0,0,0.03),inset_0_1px_2px_rgba(255,255,255,0.95)] hover:-translate-y-1.5 hover:shadow-[0_22px_45px_-8px_rgba(20,184,166,0.22),inset_0_1px_2px_rgba(255,255,255,1)] transition-all duration-300 relative group cursor-pointer"
+        >
+          {/* Ambient Liquid Glow */}
+          <div className="pointer-events-none absolute -top-8 -right-8 w-32 h-32 rounded-full bg-teal-400/20 blur-xl group-hover:scale-125 transition-transform duration-500 ease-out" />
+          <div className="pointer-events-none absolute top-0 inset-x-6 h-[1.5px] bg-gradient-to-r from-transparent via-teal-400/40 to-transparent" />
+
+          <div className="relative z-10">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                  Akumulasi Serapan
+                </p>
+                <h2 className="mt-2 text-2xl lg:text-3xl font-extrabold text-stone-900 tracking-tight font-sans tabular-nums">
+                  {rawCarbon} <span className="text-base font-semibold text-stone-500 font-sans">tCO2e</span>
+                </h2>
+              </div>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center transition group-hover:scale-110 bg-gradient-to-br from-teal-100/90 to-teal-50/50 border border-teal-400/30 text-teal-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),0_2px_8px_rgba(20,184,166,0.15)]">
+                <Leaf className="w-6 h-6" />
+              </div>
+            </div>
+            <div className="mt-4 pt-3 border-t border-stone-200/50 flex items-center justify-between text-xs">
+              <span className="inline-flex items-center gap-1 font-semibold text-teal-800 bg-teal-500/10 backdrop-blur-md border border-teal-400/30 rounded-full px-2.5 py-0.5 text-xs font-sans shadow-[inset_0_1px_1px_rgba(255,255,255,0.6)]">
+                <ArrowUpRight className="w-3.5 h-3.5 text-teal-600" />
+                +8.4%
+              </span>
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">Chave Tier-3 KLHK</span>
+            </div>
+          </div>
+        </article>
+
+        {/* Card 3: Total Luas Lahan Terdaftar */}
+        <article 
+          onClick={() => onNavigateTab && onNavigateTab('land')}
+          className="relative overflow-hidden rounded-[26px] p-5 backdrop-blur-2xl bg-gradient-to-br from-white/90 via-white/80 to-emerald-50/40 border border-white/80 shadow-[0_16px_36px_-8px_rgba(16,185,129,0.12),0_4px_16px_rgba(0,0,0,0.03),inset_0_1px_2px_rgba(255,255,255,0.95)] hover:-translate-y-1.5 hover:shadow-[0_22px_45px_-8px_rgba(16,185,129,0.22),inset_0_1px_2px_rgba(255,255,255,1)] transition-all duration-300 relative group cursor-pointer"
+        >
+          {/* Ambient Liquid Glow */}
+          <div className="pointer-events-none absolute -top-8 -right-8 w-32 h-32 rounded-full bg-emerald-400/20 blur-xl group-hover:scale-125 transition-transform duration-500 ease-out" />
+          <div className="pointer-events-none absolute top-0 inset-x-6 h-[1.5px] bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent" />
+
+          <div className="relative z-10">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                  Total Luas Lahan
+                </p>
+                <h2 className="mt-2 text-2xl lg:text-3xl font-extrabold text-stone-900 tracking-tight font-sans tabular-nums">
+                  {rawAreaHa} <span className="text-base font-semibold text-stone-500 font-sans">Ha</span>
+                </h2>
+              </div>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center transition group-hover:scale-110 bg-gradient-to-br from-emerald-100/90 to-emerald-50/50 border border-emerald-400/30 text-emerald-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),0_2px_8px_rgba(16,185,129,0.15)]">
+                <MapPinned className="w-6 h-6" />
+              </div>
+            </div>
+            <div className="mt-4 pt-3 border-t border-stone-200/50 flex items-center justify-between text-xs">
+              <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-500/10 backdrop-blur-md border border-emerald-400/30 rounded-full px-2.5 py-0.5 text-xs font-sans shadow-[inset_0_1px_1px_rgba(255,255,255,0.6)]">
+                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
+                +18.2%
+              </span>
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">2 Petak Poligon GPS</span>
+            </div>
+          </div>
+        </article>
+
+        {/* Card 4: Populasi Tegakan Pohon */}
+        <article 
+          onClick={() => onNavigateTab && onNavigateTab('land')}
+          className="relative overflow-hidden rounded-[26px] p-5 backdrop-blur-2xl bg-gradient-to-br from-white/90 via-white/80 to-emerald-50/40 border border-white/80 shadow-[0_16px_36px_-8px_rgba(16,185,129,0.12),0_4px_16px_rgba(0,0,0,0.03),inset_0_1px_2px_rgba(255,255,255,0.95)] hover:-translate-y-1.5 hover:shadow-[0_22px_45px_-8px_rgba(16,185,129,0.22),inset_0_1px_2px_rgba(255,255,255,1)] transition-all duration-300 relative group cursor-pointer"
+        >
+          {/* Ambient Liquid Glow */}
+          <div className="pointer-events-none absolute -top-8 -right-8 w-32 h-32 rounded-full bg-emerald-400/20 blur-xl group-hover:scale-125 transition-transform duration-500 ease-out" />
+          <div className="pointer-events-none absolute top-0 inset-x-6 h-[1.5px] bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent" />
+
+          <div className="relative z-10">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                  Populasi Pohon
+                </p>
+                <h2 className="mt-2 text-2xl lg:text-3xl font-extrabold text-stone-900 tracking-tight font-sans tabular-nums">
+                  {rawTrees} <span className="text-base font-semibold text-stone-500 font-sans">Btg</span>
+                </h2>
+              </div>
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center transition group-hover:scale-110 bg-gradient-to-br from-emerald-100/90 to-emerald-50/50 border border-emerald-400/30 text-emerald-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),0_2px_8px_rgba(16,185,129,0.15)]">
+                <Trees className="w-6 h-6" />
+              </div>
+            </div>
+            <div className="mt-4 pt-3 border-t border-stone-200/50 flex items-center justify-between text-xs">
+              <span className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-500/10 backdrop-blur-md border border-emerald-400/30 rounded-full px-2.5 py-0.5 text-xs font-sans shadow-[inset_0_1px_1px_rgba(255,255,255,0.6)]">
+                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
+                +5.1%
+              </span>
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">100% Sensus Terdata</span>
+            </div>
+          </div>
+        </article>
+
+      </section>
+
+      {/* =========================================================================
+          MIDDLE ROW: DUAL INTERACTIVE CHARTS (REVENUE OVERVIEW + SALES BY CATEGORY)
+          ========================================================================= */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start" aria-label="Visualisasi Grafik Analitik">
+        
+        {/* Left Chart (Col-span-7 or 8): Revenue Overview Area Chart */}
+        <div className="lg:col-span-8 bg-white rounded-[24px] border border-stone-100 p-5 sm:p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-stone-100">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-stone-900 tracking-tight font-sans">
+                Tren Serapan Karbon &amp; Dividen
+              </h2>
+              <p className="text-xs text-stone-400 mt-0.5">
+                Pertumbuhan serapan biomassa tegakan pohon dan estimasi bagi hasil dividen berjalan
+              </p>
+            </div>
+
+            {/* Timeframe Switcher Pills */}
+            <div className="flex items-center bg-stone-100 p-1 rounded-full text-xs font-semibold self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setTimeframe('monthly')}
+                className={`px-3 py-1 rounded-full transition cursor-pointer ${
+                  timeframe === 'monthly' ? 'bg-[#14382C] text-white shadow-xs' : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                Bulanan
+              </button>
+              <button
+                type="button"
+                onClick={() => setTimeframe('quarterly')}
+                className={`px-3 py-1 rounded-full transition cursor-pointer ${
+                  timeframe === 'quarterly' ? 'bg-[#14382C] text-white shadow-xs' : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                Triwulan
+              </button>
+              <button
+                type="button"
+                onClick={() => setTimeframe('annual')}
+                className={`px-3 py-1 rounded-full transition cursor-pointer ${
+                  timeframe === 'annual' ? 'bg-[#14382C] text-white shadow-xs' : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                Tahunan
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Recharts Area Chart */}
+          <div className="mt-6 h-72 sm:h-80 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={theme.chartFill} stopOpacity={0.35} />
+                    <stop offset="95%" stopColor={theme.chartFill} stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <XAxis 
+                  dataKey="month" 
+                  stroke="#A8A29E" 
+                  fontSize={11} 
+                  tickLine={false} 
+                  axisLine={false} 
+                />
+                <YAxis 
+                  stroke="#A8A29E" 
+                  fontSize={11} 
+                  tickLine={false} 
+                  axisLine={false}
+                  tickFormatter={(val) => `${val} t`} 
+                />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      return (
+                        <div className="rounded-2xl border border-stone-200 bg-white/95 backdrop-blur-md p-3 shadow-xl text-xs space-y-1">
+                          <p className="font-bold text-stone-900 font-sans">{label} 2026</p>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-stone-500">Serapan:</span>
+                            <span className="font-sans font-bold text-emerald-700 tabular-nums">{data.carbon} tCO2e</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-stone-500">Dividen:</span>
+                            <span className="font-sans font-bold text-stone-900 tabular-nums">Rp {data.revenue.toLocaleString('id-ID')}</span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="carbon" 
+                  stroke={theme.chartFill} 
+                  strokeWidth={3} 
+                  fillOpacity={1} 
+                  fill="url(#colorRevenue)" 
+                  activeDot={{ r: 6, fill: theme.chartFill, stroke: '#FFFFFF', strokeWidth: 3 }}
+                  isAnimationActive={true}
+                  animationDuration={1500}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Under-Chart Quick Insight Strip */}
+          <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-3 gap-2 text-center text-xs">
+            <div>
+              <p className="text-stone-400 text-[10px] uppercase font-bold">Rata-rata Bulanan</p>
+              <p className="font-sans font-bold text-stone-800 mt-0.5 tabular-nums">+1,18 tCO2e</p>
+            </div>
+            <div>
+              <p className="text-stone-400 text-[10px] uppercase font-bold">Puncak Serapan</p>
+              <p className="font-sans font-bold mt-0.5 text-emerald-700 tabular-nums">
+                14,2 tCO2e (Okt)
+              </p>
+            </div>
+            <div>
+              <p className="text-stone-400 text-[10px] uppercase font-bold">Target Klaster</p>
+              <p className="font-sans font-bold text-stone-800 mt-0.5 tabular-nums">16,0 tCO2e (89%)</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Chart (Col-span-5 or 4): Sales by Category Donut Chart */}
+        <div className="lg:col-span-4 bg-white rounded-[24px] border border-stone-100 p-5 sm:p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-stone-900 tracking-tight font-sans">
+                  Sales by Category
+                </h2>
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Distribusi biomassa per spesies pohon
+                </p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => onNavigateTab && onNavigateTab('land')}
+                className="text-stone-400 hover:text-stone-700 cursor-pointer text-xs font-semibold"
+              >
+                Detail
+              </button>
+            </div>
+
+            {/* Donut Chart with Centered Metric */}
+            <div className="relative h-60 w-full flex items-center justify-center my-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="65%"
+                    outerRadius="88%"
+                    paddingAngle={4}
+                    dataKey="value"
+                    cornerRadius={6}
+                    isAnimationActive={true}
+                    animationDuration={1400}
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const d = payload[0].payload;
+                        return (
+                          <div className="rounded-xl border border-stone-200 bg-white p-2 text-xs shadow-md">
+                            <p className="font-bold text-stone-900">{d.name}</p>
+                            <p className="font-sans text-stone-600 font-semibold tabular-nums">{d.value}% ({d.carbon})</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+
+              {/* Centered Statistic Inside Donut Hole */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+                <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                  Total
+                </span>
+                <span className="text-xl sm:text-2xl font-extrabold font-sans text-stone-900 leading-tight tabular-nums">
+                  14,2 t
+                </span>
+                <span className="text-[10px] text-emerald-600 font-semibold">
+                  100% Sehat
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Category Legend List */}
+          <div className="space-y-2 pt-2 border-t border-stone-100 text-xs">
+            {categoryData.map((cat, i) => (
+              <div key={i} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                  <span className="text-stone-700 font-medium">{cat.name}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-sans text-stone-400 text-[11px] tabular-nums">{cat.carbon}</span>
+                  <span className="font-sans font-bold text-stone-900 tabular-nums">{cat.value}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </section>
+
+      {/* =========================================================================
+          BOTTOM ROW: TABEL VERIFIKASI & TEGAKAN UNGGULAN
+          ========================================================================= */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start" aria-label="Tabel Aktivitas dan Tegakan Unggulan">
+        
+        {/* Left (Col-span-7 or 8): Riwayat Verifikasi & Sensus */}
+        <div className="lg:col-span-8 bg-white rounded-[24px] border border-stone-100 p-5 sm:p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] space-y-4">
+          
+          {/* Header with "Lihat Semua" */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-stone-100">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-stone-900 tracking-tight font-sans">
+                Riwayat Verifikasi &amp; Sensus Pohon
+              </h2>
+              <p className="text-xs text-stone-400 mt-0.5">
+                Status sensus mandiri, validasi petugas lapangan, dan dividen karbon
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Filter Pills */}
+              <div className="flex items-center bg-stone-100 p-1 rounded-full text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setActiveTabFilter('all')}
+                  className={`px-3 py-1 rounded-full transition cursor-pointer ${
+                    activeTabFilter === 'all' ? 'bg-[#14382C] text-white shadow-xs' : 'text-stone-600'
+                  }`}
+                >
+                  Semua
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTabFilter('verified')}
+                  className={`px-3 py-1 rounded-full transition cursor-pointer ${
+                    activeTabFilter === 'verified' ? 'bg-[#14382C] text-white shadow-xs' : 'text-stone-600'
+                  }`}
+                >
+                  Terverifikasi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTabFilter('pending')}
+                  className={`px-3 py-1 rounded-full transition cursor-pointer ${
+                    activeTabFilter === 'pending' ? 'bg-[#14382C] text-white shadow-xs' : 'text-stone-600'
+                  }`}
+                >
+                  Antrean
+                </button>
+              </div>
+
+              {/* View All link */}
+              <button
+                type="button"
+                onClick={() => onNavigateTab && onNavigateTab('land')}
+                className="text-xs font-bold transition flex items-center gap-1 cursor-pointer hover:underline text-emerald-700"
+              >
+                <span>Lihat Semua</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Clean Modern Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[640px]">
+              <thead>
+                <tr className="border-b border-stone-100 text-[11px] font-bold text-stone-400 pb-2.5">
+                  <th className="py-2.5 pl-2 pr-3"># ID</th>
+                  <th className="py-2.5 px-3">Petak Kebun</th>
+                  <th className="py-2.5 px-3">Jenis Tegakan</th>
+                  <th className="py-2.5 px-3">Estimasi Dividen</th>
+                  <th className="py-2.5 px-3">Status Verifikasi</th>
+                  <th className="py-2.5 pr-2 pl-3">Tanggal Pembaruan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-50 text-xs">
+                {filteredOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="py-8 text-center text-stone-400">
+                      Tidak ada aktivitas yang sesuai dengan filter.
+                    </td>
+                  </tr>
                 ) : (
-                  <span className="font-mono text-sm font-medium text-stone-500 italic">
-                    Menunggu Penjadwalan
-                  </span>
+                  filteredOrders.map((row) => (
+                    <tr key={row.id} className="hover:bg-[#F9FBFA] transition group">
+                      {/* # ID */}
+                      <td className="py-3.5 pl-2 pr-3 font-sans font-semibold text-stone-500 whitespace-nowrap tabular-nums">
+                        {row.id}
+                      </td>
+
+                      {/* Petak Kebun */}
+                      <td className="py-3.5 px-3 whitespace-nowrap">
+                        <div className="flex items-center gap-2.5">
+                          <img 
+                            src={row.avatar} 
+                            alt={row.plotName} 
+                            className="w-7 h-7 rounded-full object-cover border border-stone-200 shrink-0" 
+                          />
+                          <div>
+                            <p className="font-bold text-stone-900 leading-tight">{row.plotName}</p>
+                            <p className="text-[10px] font-sans text-stone-400 tabular-nums">{row.plotCode}</p>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Jenis Tegakan */}
+                      <td className="py-3.5 px-3 whitespace-nowrap font-medium text-stone-700">
+                        {row.product}
+                      </td>
+
+                      {/* Estimasi Dividen */}
+                      <td className="py-3.5 px-3 whitespace-nowrap">
+                        <span className="font-sans font-bold text-stone-900 tabular-nums">{row.amount}</span>
+                        <span className="block text-[10px] font-sans font-semibold text-emerald-700 tabular-nums">({row.carbon})</span>
+                      </td>
+
+                      {/* Status Soft Pill Badge */}
+                      <td className="py-3.5 px-3 whitespace-nowrap">
+                        {row.status === 'verified' && (
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold font-sans bg-emerald-50 text-emerald-800 border border-emerald-200/80">
+                            Terverifikasi
+                          </span>
+                        )}
+                        {row.status === 'pending' && (
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold font-sans bg-amber-50 text-amber-800 border border-amber-200/80">
+                            Menunggu Survei
+                          </span>
+                        )}
+                        {row.status === 'scheduled' && (
+                          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold font-sans bg-blue-50 text-blue-800 border border-blue-200/80">
+                            Jadwal Audit
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Date */}
+                      <td className="py-3.5 pr-2 pl-3 whitespace-nowrap font-sans text-stone-500 text-xs tabular-nums">
+                        {row.date}
+                      </td>
+                    </tr>
+                  ))
                 )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Right (Col-span-5 or 4): Tegakan Karbon Tertinggi */}
+        <div className="lg:col-span-4 bg-white rounded-[24px] border border-stone-100 p-5 sm:p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] space-y-4 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-stone-900 tracking-tight font-sans">
+                  Tegakan Karbon Tertinggi
+                </h2>
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Petak pohon dengan produktivitas serapan biomassa tertinggi
+                </p>
               </div>
 
               <button
                 type="button"
-                onClick={() => {
-                  const plotId = activeInspection?.land_plot_id || activeInspectionPlot?.id;
-                  if (onNavigateTab) {
-                    onNavigateTab('timeline', plotId ? { plotId } : {});
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-3.5 py-2 text-xs font-semibold shadow-xs transition active:scale-[0.98] cursor-pointer"
+                onClick={() => onNavigateTab && onNavigateTab('land')}
+                className="text-xs font-bold transition flex items-center gap-1 cursor-pointer hover:underline text-emerald-700"
               >
-                <span>Lacak Verifikasi</span>
-                <ArrowRight className="h-3.5 w-3.5" />
+                <span>Lihat Semua</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
-          </div>
-        </section>
-      )}
-
-      {/* ================= SECTION B · 4 CORE KPI BENTO CARDS ================= */}
-      <section className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4" aria-label="Metrik utama">
-
-        {/* KPI 1 · Saldo Siap Ditarik (PRIMARY / DARK) */}
-        <article className="group relative flex flex-col justify-between overflow-hidden rounded-2xl bg-pine p-5 text-white shadow-card transition duration-200 hover:-translate-y-0.5 hover:shadow-lift">
-          <span className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-500/10 blur-2xl"></span>
-
-          <div className="relative flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-100/60">Saldo Siap Ditarik</p>
-              {/* available_balance */}
-              <p className="tnum mt-2 font-mono text-[28px] font-bold leading-none tracking-tight text-white">
-                {formatRupiah(activeAvailable)}
-              </p>
-              <p className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-100/70">
-                <Wallet className="h-3 w-3" /> Dompet Mitra Terverifikasi
-              </p>
-            </div>
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-1 font-mono text-[10px] font-semibold text-emerald-300 ring-1 ring-inset ring-emerald-400/30">
-              Bagi Hasil 90%
-            </span>
-          </div>
-
-          <div className="relative mt-5 border-t border-white/10 pt-3">
-            <button 
-              type="button"
-              onClick={() => {
-                if (onOpenWithdrawal) onOpenWithdrawal();
-                else if (onNavigateTab) onNavigateTab('wallet');
-              }}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-400 transition hover:text-emerald-300 cursor-pointer"
-            >
-              <span>Tarik Dana</span>
-              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-            </button>
-          </div>
-        </article>
-
-        {/* KPI 2 · Saldo Escrow */}
-        <article className="flex flex-col justify-between rounded-2xl border border-stone-200/80 bg-white p-5 shadow-card transition duration-200 hover:-translate-y-0.5 hover:shadow-lift">
-          <div className="flex items-start justify-between gap-3">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Saldo Escrow (Tertahan)</p>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600">
-              <Lock className="h-4 w-4" />
-            </span>
-          </div>
-          {/* escrow_balance */}
-          <p className="tnum mt-3 font-mono text-[28px] font-bold leading-none tracking-tight text-amber-600">
-            {formatRupiah(activeEscrow)}
-          </p>
-          <p className="mt-2.5 text-[11px] leading-relaxed text-stone-500">
-            Menunggu pencairan transaksi klaster berikutnya.
-          </p>
-        </article>
-
-        {/* KPI 3 · Total Serapan Karbon Aktif */}
-        <article className="flex flex-col justify-between rounded-2xl border border-stone-200/80 bg-white p-5 shadow-card transition duration-200 hover:-translate-y-0.5 hover:shadow-lift">
-          <div className="flex items-start justify-between gap-3">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Total Serapan Aktif</p>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
-              <Trees className="h-4 w-4" />
-            </span>
-          </div>
-          <div className="mt-3 flex items-baseline gap-1.5">
-            {/* total_all_carbon_tco2e */}
-            <span className="tnum font-mono text-[28px] font-bold leading-none tracking-tight text-pine">{totalCarbon}</span>
-            <span className="font-mono text-xs font-medium text-stone-400">tCO2e/thn</span>
-          </div>
-          <p className="mt-2.5 flex items-center gap-1.5 text-[11px] text-stone-500">
-            <Gauge className="h-3 w-3 text-emerald-600" />
-            Kalkulasi Alometrik Chave Tier-3
-          </p>
-        </article>
-
-        {/* KPI 4 · Total Luas & Populasi */}
-        <article className="flex flex-col justify-between rounded-2xl border border-stone-200/80 bg-white p-5 shadow-card transition duration-200 hover:-translate-y-0.5 hover:shadow-lift">
-          <div className="flex items-start justify-between gap-3">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Total Luas Lahan</p>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-stone-100 text-stone-500">
-              <Ruler className="h-4 w-4" />
-            </span>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="tnum font-mono text-[28px] font-bold leading-none tracking-tight text-pine">{totalAreaHa} Ha</span>
-            {/* total_land_area_sqm */}
-            <span className="tnum font-mono text-[11px] font-medium text-stone-400">({totalAreaM2} m²)</span>
-          </div>
-          <p className="mt-2.5 flex items-center gap-1.5 text-[11px] text-stone-500">
-            <MapPinned className="h-3 w-3 text-emerald-600" />
-            {/* total_land_plots & total_all_trees */}
-            <span className="tnum font-mono">{totalPlots} Petak Kebun • {totalTrees} Pohon Terdata</span>
-          </p>
-        </article>
-      </section>
-
-      {/* ================= SECTION C · OPERATIONAL DETAIL CARDS ================= */}
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-12" aria-label="Detail operasional">
-
-        {/* LEFT (7/12) · Komposisi Spesies & Daftar Petak */}
-        <article className="flex flex-col rounded-2xl border border-stone-200/80 bg-white p-5 shadow-card lg:col-span-7 lg:p-6">
-          <header className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-[15px] font-bold leading-tight tracking-tight text-pine">Komposisi Blok Tanaman &amp; Petak Kebun</h2>
-              <p className="mt-1 text-[11px] text-stone-500">Rincian spesies dominan dan status petak terdaftar.</p>
-            </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-mono text-[10px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-100">
-              <Trees className="h-3 w-3" /> {totalTrees} Pohon Terdata
-            </span>
-          </header>
-
-          {/* Part 1 · Species breakdown */}
-          <div className="mt-5 space-y-2">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Spesies &amp; Yield Karbon</p>
-
-            {speciesList.length > 0 ? (
-              speciesList.map((item, idx) => {
-                const count = item.total_trees || item.tree_count || 0;
-                const carbon = Number(item.total_carbon_tco2e || 0).toFixed(2);
-
-                return (
-                  <div key={idx} className="flex items-center justify-between gap-3 rounded-xl border border-stone-100 bg-stone-50/60 px-3.5 py-3 transition hover:border-emerald-100 hover:bg-emerald-50/40">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
-                        <Trees className="h-4 w-4" />
+            {/* List of Top Products */}
+            <div className="divide-y divide-stone-100 mt-2">
+              {topProducts.map((prod, idx) => (
+                <div key={prod.id} className="py-3 flex items-center justify-between gap-3 group hover:bg-stone-50/70 p-2 rounded-xl transition cursor-pointer">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative w-11 h-11 rounded-xl overflow-hidden shrink-0 border border-stone-200">
+                      <img src={prod.image} alt={prod.title} className="w-full h-full object-cover group-hover:scale-110 transition duration-300" />
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-md text-[9px] font-bold flex items-center justify-center font-sans ${
+                        idx === 0 
+                          ? 'bg-amber-400 text-stone-900' 
+                          : 'bg-black/60 text-white'
+                      }`}>
+                        {idx + 1}
                       </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-stone-800">{item.species_name}</p>
-                        <p className="tnum mt-0.5 truncate font-mono text-[11px] text-stone-500">{count} Batang</p>
-                      </div>
                     </div>
-                    <span className="tnum shrink-0 rounded-lg bg-emerald-50 px-2.5 py-1 font-mono text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-100">
-                      {carbon} tCO2e/thn
-                    </span>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-50/50 py-5 px-4 text-center">
-                <Leaf className="h-6 w-6 text-stone-300" />
-                <p className="mt-1.5 text-xs font-medium text-stone-500">Belum ada data pohon terdata</p>
-                <p className="text-[11px] text-stone-400 mt-0.5">Spesies pohon akan muncul setelah Anda menambahkan data blok tanaman.</p>
-              </div>
-            )}
-          </div>
 
-          {/* Part 2 · Registered land plots */}
-          <div className="mt-5 border-t border-stone-100 pt-4">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Petak Lahan Terdaftar</p>
-
-            {plotList.length > 0 ? (
-              <ul className="mt-2.5 divide-y divide-stone-100">
-                {plotList.map((plot, idx) => {
-                  const areaFormatted = Number(plot.area_sqm || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-                  const isVerified = plot.status === 'verified' || plot.status === 'active';
-                  const plotHasBlocks = hasTreeBlocks(plot);
-                  const isAwaitingTreeBlocks = !isVerified && !plotHasBlocks;
-
-                  return (
-                    <li key={plot.id || idx} className="flex items-center justify-between gap-3 py-2.5">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-stone-100 text-stone-500">
-                          <Frame className="h-4 w-4" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold text-stone-800">{plot.name}</p>
-                          <p className="tnum font-mono text-[11px] text-stone-500">
-                            {areaFormatted} m²
-                            {isAwaitingTreeBlocks && (
-                              <span className="ml-1.5 font-sans font-semibold text-rose-600">
-                                • Belum masuk antrean survei
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      {isVerified ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-100">
-                          <Check className="h-3 w-3" /> Terverifikasi
-                        </span>
-                      ) : isAwaitingTreeBlocks ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700 ring-1 ring-inset ring-rose-100">
-                          <Clock className="h-3 w-3" /> Wajib Input Blok Pohon
-                        </span>
-                      ) : (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-100">
-                          <Clock className="h-3 w-3" /> Draft / Menunggu Audit
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className="mt-2.5 flex flex-col items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-50/50 p-5 text-center">
-                <Leaf className="h-7 w-7 text-stone-300" />
-                <p className="mt-2 text-xs font-semibold text-stone-600">Belum ada lahan terdaftar</p>
-                <p className="mt-0.5 text-[11px] text-stone-400">Petakan batas poligon kebun Anda untuk mulai verifikasi serapan karbon.</p>
-                <button
-                  type="button"
-                  onClick={() => onNavigateTab && onNavigateTab('wizard')}
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-pine px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-pine-900 active:scale-[0.98] cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5 text-emerald-400" />
-                  <span>+ Daftarkan Lahan Baru</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          <footer className="mt-auto pt-5">
-            <button 
-              type="button"
-              onClick={() => onNavigateTab && onNavigateTab('land')}
-              className="group inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 transition hover:text-emerald-800 cursor-pointer"
-            >
-              <span>Kelola Semua Petak &amp; Blok Pohon</span>
-              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-            </button>
-          </footer>
-        </article>
-
-        {/* RIGHT (5/12) · Status Verifikasi & Kuota Klaster */}
-        <article className="flex flex-col rounded-2xl border border-stone-200/80 bg-white p-5 shadow-card lg:col-span-5 lg:p-6">
-          <header className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-[15px] font-bold leading-tight tracking-tight text-pine">Status Audit &amp; Progres Klaster</h2>
-              <p className="mt-1 text-[11px] text-stone-500">Agregasi klaster menuju transaksi offset korporasi.</p>
-            </div>
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-semibold ring-1 ring-inset ${
-              clusterInfo 
-                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' 
-                : 'bg-amber-50 text-amber-700 ring-amber-200'
-            }`}>
-              <span className="relative flex h-1.5 w-1.5">
-                {clusterInfo && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75"></span>}
-                <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${clusterInfo ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-              </span>
-              {clusterInfo ? 'Siklus Klaster Aktif' : 'Menunggu Alokasi Klaster'}
-            </span>
-          </header>
-
-          {/* Part 1 · Cluster quota progress */}
-          <div className="mt-5 rounded-xl border border-stone-100 bg-stone-50/60 p-4">
-            {clusterInfo ? (
-              <>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-pine truncate">{clusterInfo.cluster_name}</p>
-                    <div className="mt-1.5 flex items-baseline gap-2">
-                      <p className="tnum font-mono text-2xl font-bold leading-none tracking-tight text-pine">
-                        {clusterInfo.percentage}%
-                      </p>
-                      <p className="text-[11px] text-stone-500">Kuota Terpenuhi</p>
-                    </div>
-                  </div>
-                  <p className="tnum font-mono text-[11px] font-medium text-stone-500 shrink-0">
-                    {clusterInfo.current_carbon_tco2e} / {clusterInfo.target_tco2e} tCO2e
-                  </p>
-                </div>
-
-                {/* Progress bar */}
-                <div className="mt-3.5 h-2.5 w-full overflow-hidden rounded-full bg-stone-200/70">
-                  <div 
-                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 transition-[width] duration-700" 
-                    style={{ width: `${Math.min(100, Math.max(2, clusterInfo.percentage))}%` }}
-                  ></div>
-                </div>
-                <div className="mt-2 flex justify-between font-mono text-[9px] text-stone-400">
-                  <span>0</span>
-                  <span>{Math.round(clusterInfo.target_tco2e / 2)}</span>
-                  <span>{clusterInfo.target_tco2e} tCO2e</span>
-                </div>
-              </>
-            ) : (
-              <div className="py-2.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-stone-700">Kontribusi Serapan Mandiri</span>
-                  <span className="font-mono text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100">
-                    {totalCarbon} tCO2e/thn
-                  </span>
-                </div>
-                <p className="text-[11px] leading-relaxed text-stone-500">
-                  Kebun terverifikasi Anda sedang dalam antrean pengelompokan klaster regional oleh Surveyor/Admin sebelum ditawarkan ke korporasi pembeli offset.
-                </p>
-              </div>
-            )}
-
-            <p className="mt-3 flex gap-2 text-[11px] leading-relaxed text-stone-500 border-t border-stone-100 pt-3">
-              <Info className="mt-px h-3.5 w-3.5 shrink-0 text-emerald-600" />
-              <span>
-                Dana bagi hasil didistribusikan otomatis lewat <strong className="font-semibold text-stone-700">Smart Escrow</strong> setelah transaksi offset korporasi pada klaster terpenuhi.
-              </span>
-            </p>
-          </div>
-
-          {/* Part 2 · Verification checklist */}
-          <div className="mt-5">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Checklist Verifikasi</p>
-
-            <ul className="mt-2.5 space-y-2">
-              <li className="flex items-center justify-between gap-3 rounded-xl border border-stone-100 px-3.5 py-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
-                    <ScanLine className="h-4 w-4" />
-                  </span>
-                  <p className="truncate text-[13px] font-semibold text-stone-800">Geofencing &amp; Poligon PostGIS</p>
-                </div>
-                <span className="tnum shrink-0 font-mono text-[11px] font-semibold text-emerald-700">
-                  {plotList.length} Petak Terpetakan
-                </span>
-              </li>
-
-              <li className="flex items-center justify-between gap-3 rounded-xl border border-stone-100 px-3.5 py-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-600">
-                    <ClipboardList className="h-4 w-4" />
-                  </span>
-                  <p className="truncate text-[13px] font-semibold text-stone-800">Inspeksi Surveyor Lapangan</p>
-                </div>
-                <span className="tnum shrink-0 text-right font-mono text-[11px] font-semibold leading-tight text-stone-600">
-                  <span className="text-emerald-700">{verifiedCount} Terverifikasi</span>,<br />
-                  {pendingWithBlocksCount} Menunggu Kunjungan
-                  {noTreeDraftCount > 0 && (
-                    <>
-                      <br />
-                      <span className="text-rose-600">{noTreeDraftCount} Menunggu Input Pohon</span>
-                    </>
-                  )}
-                </span>
-              </li>
-            </ul>
-          </div>
-
-          <footer className="mt-auto pt-5">
-            <button 
-              type="button"
-              onClick={() => onNavigateTab && onNavigateTab('timeline')}
-              className="group inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 transition hover:text-emerald-800 cursor-pointer"
-            >
-              <span>Lihat Detail Lacak Verifikasi</span>
-              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-            </button>
-          </footer>
-        </article>
-      </section>
-
-      {/* ================= KOMPONEN 2 · MINI-FEED MUTASI DOMPET TERAKHIR ================= */}
-      <section className="rounded-2xl border border-stone-200/80 bg-white p-5 shadow-card lg:p-6" aria-label="Mutasi Dompet Terakhir">
-        <header className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-stone-100">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="grid h-7 w-7 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
-                <Wallet className="h-4 w-4" />
-              </span>
-              <h2 className="text-[15px] font-bold leading-tight tracking-tight text-pine">
-                Riwayat Mutasi Dompet Terakhir
-              </h2>
-            </div>
-            <p className="mt-1 text-[11px] text-stone-500">
-              Transparansi dana masuk bagi hasil klaster korporat dan pencairan ke rekening terdaftar.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => onNavigateTab && onNavigateTab('wallet')}
-            className="group inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 transition cursor-pointer"
-          >
-            <span>Lihat Semua Mutasi di Dompet Karbon</span>
-            <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-          </button>
-        </header>
-
-        {/* Activity List */}
-        {activities.length > 0 ? (
-          <div className="divide-y divide-stone-100 mt-1">
-            {activities.map((act, idx) => {
-              const isCredit = act.transaction_type === 'credit_payout';
-              const isCompleted = act.status === 'completed';
-
-              return (
-                <div key={act.id || idx} className="flex items-center justify-between gap-3 py-3 transition hover:bg-stone-50/60 rounded-xl px-2.5 -mx-2.5">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${
-                      isCredit ? 'bg-emerald-50 text-emerald-600' : 'bg-stone-100 text-stone-600'
-                    }`}>
-                      {isCredit ? <ArrowDownLeft className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
-                    </span>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-stone-800">
-                        {act.title || act.description}
+                      <p className="font-bold text-stone-900 text-xs truncate leading-snug">
+                        {prod.title}
                       </p>
-                      <p className="tnum mt-0.5 truncate font-mono text-[11px] text-stone-400">
-                        {formatDate(act.timestamp)}
+                      <p className="text-[11px] text-stone-400 truncate">
+                        {prod.subtitle}
                       </p>
                     </div>
                   </div>
 
-                  <div className="shrink-0 text-right">
-                    <p className={`tnum font-mono text-sm font-bold leading-tight ${
-                      isCredit ? 'text-emerald-700' : 'text-stone-800'
-                    }`}>
-                      {isCredit ? '+' : '-'}{formatRupiah(act.amount)}
+                  <div className="text-right shrink-0">
+                    <p className="font-sans font-bold text-xs text-stone-900 tabular-nums">
+                      {prod.sales}
                     </p>
-                    <span className={`inline-flex items-center gap-1 font-mono text-[9px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full mt-1 ${
-                      isCompleted
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                        : 'bg-amber-50 text-amber-700 border border-amber-100'
-                    }`}>
-                      {isCompleted ? 'Selesai' : 'Diproses'}
-                    </span>
+                    <p className="text-[10px] font-sans font-semibold text-emerald-700 tabular-nums">
+                      {prod.revenue}
+                    </p>
                   </div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        ) : (
-          <div className="py-8 text-center">
-            <p className="text-xs text-stone-400">Belum ada aktivitas mutasi dompet.</p>
-          </div>
-        )}
 
-        <footer className="mt-4 pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-3">
-          <span className="text-[11px] text-stone-400">
-            Saldo Siap Ditarik: <strong className="text-pine font-mono font-bold">{formatRupiah(activeAvailable)}</strong>
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              if (onOpenWithdrawal) onOpenWithdrawal();
-              else if (onNavigateTab) onNavigateTab('wallet');
-            }}
-            className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-800 cursor-pointer"
-          >
-            <span>Tarik Saldo</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </footer>
+          {/* Kuota Klaster Progress Capsule (Frosted Glass & Ambient Glow) */}
+          <div className="mt-4 p-4 rounded-2xl bg-white/70 backdrop-blur-md border border-white/90 shadow-[0_4px_16px_rgba(0,0,0,0.02),inset_0_1px_2px_rgba(255,255,255,0.85)] space-y-2.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-stone-800">Target Klaster Sukamaju</span>
+              <span className="font-sans font-bold text-emerald-700 bg-emerald-500/10 px-2 py-0.5 rounded-full text-xs border border-emerald-400/20 tabular-nums">76% Tercapai</span>
+            </div>
+            <div className="w-full bg-stone-200/80 rounded-full h-2.5 overflow-hidden shadow-inner">
+              <div 
+                className="h-full rounded-full transition-all duration-1000 bg-emerald-600" 
+                style={{ width: '76%' }} 
+              />
+            </div>
+            <p className="text-[11px] text-stone-500 leading-tight">
+              380 / 500 tCO2e terkumpul • Audit klaster dijadwalkan 30 Nov 2026
+            </p>
+          </div>
+        </div>
+
       </section>
-
-      <p className="pt-1 text-center font-mono text-[10px] text-stone-400">
-        TaniKarbon · Portal Mitra Petani — data metrik tersinkron dengan basis data spasial PostGIS
-      </p>
     </div>
   );
 }

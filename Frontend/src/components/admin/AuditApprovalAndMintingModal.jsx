@@ -57,34 +57,34 @@ export default function AuditApprovalAndMintingModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-fade-in overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden my-8">
+      <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden my-8 animate-modal-pop">
         
         {/* Modal Header */}
-        <div className="p-6 bg-gradient-to-r from-[#14382C] to-[#1E4D3D] text-white flex items-start justify-between">
+        <div className="p-6 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white flex items-start justify-between shadow-sm">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-xs flex items-center justify-center border border-white/20 text-emerald-300">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center border border-white/30 text-white">
               <Award className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 uppercase tracking-wider font-sans">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/25 text-white uppercase tracking-wider font-sans">
                   Registry Authority
                 </span>
-                <span className="text-xs text-emerald-200 font-mono font-medium">
+                <span className="text-xs text-amber-100 font-sans font-semibold tabular-nums">
                   {cluster.id}
                 </span>
               </div>
-              <h3 className="text-lg font-bold text-white mt-0.5 font-sans">
+              <h3 className="text-lg font-black text-white mt-0.5 font-sans">
                 Pengesahan Audit &amp; Penerbitan Kuota Bursa
               </h3>
-              <p className="text-xs text-emerald-100/80 font-sans mt-0.5">
+              <p className="text-xs text-amber-100/90 font-sans mt-0.5">
                 {cluster.name}
               </p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="p-2 rounded-xl text-emerald-200 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            className="p-2 rounded-xl text-white/80 hover:text-white hover:bg-white/10 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -94,9 +94,9 @@ export default function AuditApprovalAndMintingModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           
           {/* Informational Callout */}
-          <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex items-start gap-3">
-            <Sparkles className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-            <p className="text-xs text-emerald-900 leading-relaxed font-sans">
+          <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/80 flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-950 leading-relaxed font-sans">
               Pengesahan ini otomatis meluluskan <strong>Verification Stepper Tahap 4 (Verified)</strong> untuk seluruh petani di klaster ini dan memunculkan kuota karbon aktif secara langsung di <strong>Marketplace Korporat (B2B ESG)</strong>.
             </p>
           </div>
@@ -120,7 +120,7 @@ export default function AuditApprovalAndMintingModal({
                     onChange={(e) => setAuditorName(e.target.value)}
                     required
                     placeholder="PT Sucofindo / Mutuagung Lestari"
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-[#14382C] font-sans"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans"
                   />
                 </div>
               </div>
@@ -135,13 +135,13 @@ export default function AuditApprovalAndMintingModal({
                   onChange={(e) => setAuditRefNumber(e.target.value)}
                   required
                   placeholder="AUD-2026-SUCOFINDO-0891"
-                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-[#14382C] font-mono font-medium"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans font-medium tabular-nums"
                 />
               </div>
             </div>
 
             {/* Mock PDF Uploader Box */}
-            <div className="p-3.5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50/70 transition flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/40 hover:bg-amber-50/70 transition flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-red-100 text-red-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
                   <FileText className="w-5 h-5 text-red-600" />
@@ -151,12 +151,12 @@ export default function AuditApprovalAndMintingModal({
                     <p className="text-xs font-semibold text-slate-900 font-sans">
                       {uploadedFile.name}
                     </p>
-                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 font-sans">
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-900 font-sans">
                       SIAP VERIFIKASI
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 font-sans">
-                    Ukuran: <span className="font-mono">{uploadedFile.size}</span> • Diunggah: {uploadedFile.uploadedAt}
+                    Ukuran: <span className="font-sans font-medium tabular-nums">{uploadedFile.size}</span> • Diunggah: {uploadedFile.uploadedAt}
                   </p>
                 </div>
               </div>
@@ -188,7 +188,7 @@ export default function AuditApprovalAndMintingModal({
                 <select
                   value={vintageYear}
                   onChange={(e) => setVintageYear(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-[#14382C] font-mono font-semibold text-slate-800 bg-white"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans font-semibold text-slate-800 bg-white tabular-nums"
                 >
                   <option value="2026">Vintage 2026 (Siklus Berjalan)</option>
                   <option value="2025">Vintage 2025 (Retroaktif)</option>
@@ -214,17 +214,17 @@ export default function AuditApprovalAndMintingModal({
                   value={approvedQuota}
                   onChange={(e) => setApprovedQuota(Number(e.target.value))}
                   required
-                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-[#14382C] font-mono font-bold text-emerald-900 bg-emerald-50/30"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans font-bold text-amber-950 bg-amber-50/30 tabular-nums"
                 />
               </div>
               <p className="text-[10px] text-slate-400 font-sans mt-1">
-                Pre-Verified: <span className="font-mono">{cluster.currentQuota} tCO2e</span> (Batas min: 500)
+                Pre-Verified: <span className="font-sans font-semibold tabular-nums">{cluster.currentQuota} tCO2e</span> (Batas min: 500)
               </p>
             </div>
           </div>
 
           {/* 3. AuditCostAdvanceInput (Dana Talangan Audit) */}
-          <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/90 space-y-2">
+          <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/90 space-y-2 font-sans">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-bold text-amber-950 uppercase tracking-wider font-sans">
                 4. Biaya Talangan Audit Eksternal (Cost Recovery)
@@ -235,7 +235,7 @@ export default function AuditApprovalAndMintingModal({
             </div>
 
             <div className="relative">
-              <div className="absolute left-3.5 top-2.5 text-xs font-bold text-slate-500 font-mono">
+              <div className="absolute left-3.5 top-2.5 text-xs font-bold text-slate-500 font-sans">
                 Rp
               </div>
               <input
@@ -244,7 +244,7 @@ export default function AuditApprovalAndMintingModal({
                 value={auditCostAdvance}
                 onChange={(e) => setAuditCostAdvance(Number(e.target.value))}
                 required
-                className="w-full pl-10 pr-3 py-2 text-xs rounded-xl border border-amber-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-[#14382C] font-mono font-bold text-stone-900"
+                className="w-full pl-10 pr-3 py-2 text-xs rounded-xl border border-amber-300 bg-white focus:outline-hidden focus:ring-2 focus:ring-amber-500 font-sans font-bold text-stone-900 tabular-nums"
               />
             </div>
             
@@ -266,7 +266,7 @@ export default function AuditApprovalAndMintingModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2.5 text-xs font-bold text-white bg-[#14382C] hover:bg-[#1E4D3D] rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer font-sans disabled:opacity-50"
+              className="px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2 cursor-pointer font-sans disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
@@ -275,7 +275,7 @@ export default function AuditApprovalAndMintingModal({
                 </>
               ) : (
                 <>
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <ShieldCheck className="w-4 h-4 text-white" />
                   <span>Sahkan Klaster &amp; Terbitkan ke Bursa</span>
                 </>
               )}

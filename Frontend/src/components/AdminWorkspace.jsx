@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import AdminSidebar from './admin/AdminSidebar';
+import AdminMobileNav from './admin/AdminMobileNav';
 import AdminTopBar from './admin/AdminTopBar';
 import AdminDashboardView from './admin/AdminDashboardView';
 import ClusterGeoManagementView from './admin/ClusterGeoManagementView';
@@ -17,7 +18,6 @@ export default function AdminWorkspace({
 }) {
   // Current active tab in Admin platform
   const [currentTab, setCurrentTab] = useState('dashboard');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
   // Toast auto-dismiss
@@ -35,46 +35,26 @@ export default function AdminWorkspace({
 
   const handleSelectTab = (tabId) => {
     setCurrentTab(tabId);
-    setIsMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans flex flex-col antialiased selection:bg-emerald-100 selection:text-emerald-900">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans flex flex-col antialiased selection:bg-amber-100 selection:text-amber-950">
       
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 animate-bounce-short max-w-md">
-          <div className="px-4 py-3 bg-[#14382C] text-white rounded-2xl shadow-xl border border-emerald-500/30 flex items-center justify-between gap-3 text-xs font-sans">
+          <div className="px-4 py-3 bg-[#18130C] text-white rounded-2xl shadow-xl border border-amber-500/30 flex items-center justify-between gap-3 text-xs font-sans">
             <div className="flex items-center gap-2.5">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-amber-400 shrink-0" />
               <span className="leading-snug">{toastMessage}</span>
             </div>
             <button
               onClick={() => setToastMessage(null)}
-              className="p-1 rounded-lg hover:bg-white/10 text-emerald-200 hover:text-white transition cursor-pointer"
+              className="p-1 rounded-lg hover:bg-white/10 text-amber-200 hover:text-white transition cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Mobile Drawer (Hidden on Desktop: lg:hidden) */}
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          <div 
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-          <div className="relative w-72 max-w-[80vw] bg-white h-full shadow-2xl z-10 flex flex-col">
-            <AdminSidebar
-              currentUser={currentUser}
-              onLogout={onLogout}
-              currentTab={currentTab}
-              onSelectTab={handleSelectTab}
-              actionRequiredCount={8}
-            />
           </div>
         </div>
       )}
@@ -98,38 +78,39 @@ export default function AdminWorkspace({
             currentUser={currentUser}
             onLogout={onLogout}
             onNavigateRole={onNavigateRole}
-            onToggleMobileMenu={() => setIsMobileMenuOpen(prev => !prev)}
           />
 
-          {/* Tab Views Router */}
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
-            {currentTab === 'dashboard' && (
-              <AdminDashboardView onNavigateTab={handleSelectTab} />
-            )}
+          {/* Tab Views Router with Smooth Transition */}
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6 pb-28 lg:pb-8">
+            <div key={currentTab} className="page-enter space-y-6">
+              {currentTab === 'dashboard' && (
+                <AdminDashboardView onNavigateTab={handleSelectTab} />
+              )}
 
-            {currentTab === 'clusters' && (
-              <ClusterGeoManagementView onToast={handleShowToast} />
-            )}
+              {currentTab === 'clusters' && (
+                <ClusterGeoManagementView onToast={handleShowToast} />
+              )}
 
-            {currentTab === 'audit' && (
-              <ExternalAuditAndMintingView onToast={handleShowToast} />
-            )}
+              {currentTab === 'audit' && (
+                <ExternalAuditAndMintingView onToast={handleShowToast} />
+              )}
 
-            {currentTab === 'finance' && (
-              <FinancialEscrowAndPayoutView onToast={handleShowToast} />
-            )}
+              {currentTab === 'finance' && (
+                <FinancialEscrowAndPayoutView onToast={handleShowToast} />
+              )}
 
-            {currentTab === 'parameters' && (
-              <SystemParametersMasterView onToast={handleShowToast} />
-            )}
+              {currentTab === 'parameters' && (
+                <SystemParametersMasterView onToast={handleShowToast} />
+              )}
 
-            {currentTab === 'registry' && (
-              <RegistryAndApiMonitorView onToast={handleShowToast} />
-            )}
+              {currentTab === 'registry' && (
+                <RegistryAndApiMonitorView onToast={handleShowToast} />
+              )}
 
-            {currentTab === 'users' && (
-              <UserAndSurveyorManagementView onToast={handleShowToast} />
-            )}
+              {currentTab === 'users' && (
+                <UserAndSurveyorManagementView onToast={handleShowToast} />
+              )}
+            </div>
           </main>
 
           {/* Simple Global Footer */}
@@ -139,6 +120,12 @@ export default function AdminWorkspace({
         </div>
       </div>
 
+      {/* Floating Minimalist Mobile Dock (4 Primary + 1 Lainnya Popover + Logout) */}
+      <AdminMobileNav 
+        currentTab={currentTab} 
+        onSelectTab={handleSelectTab} 
+        onLogout={onLogout}
+      />
     </div>
   );
 }

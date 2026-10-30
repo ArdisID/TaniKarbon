@@ -6,13 +6,14 @@ import {
   AlertCircle, CheckCircle2, UserPlus, LogIn
 } from 'lucide-react';
 import { loginUser, registerUser } from '../api/auth';
+import TaniKarbonLogo from './common/TaniKarbonLogo';
 
-export default function AuthGateway({ 
-  defaultTab = 'farmer', 
+export default function AuthGateway({
+  defaultTab = 'farmer',
   initialMode = 'login',
-  onLogin, 
-  onBack, 
-  onNavigateRole 
+  onLogin,
+  onBack,
+  onNavigateRole
 }) {
   const navigate = useNavigate();
   // Mode: 'login' | 'register'
@@ -173,16 +174,9 @@ export default function AuthGateway({
 
       {/* Top Bar: Brand Logo & Back Button */}
       <div className="relative z-20 max-w-6xl w-full mx-auto flex items-center justify-between">
-        {/* Brand Logo: Dark squircle + bold title with crisp contrast */}
-        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/20 shadow-xs">
-          <div className="w-7 h-7 rounded-lg bg-[#14382C] border border-emerald-400/40 text-emerald-300 flex items-center justify-center shadow-xs">
-            <svg className="w-4 h-4 fill-current text-emerald-300" viewBox="0 0 24 24">
-              <path d="M12 2L4 7v10l8 5 8-5V7l-8-5zm0 2.8L18 8.5v7l-6 3.7-6-3.7v-7l6-3.7z" />
-            </svg>
-          </div>
-          <span className="font-extrabold text-sm text-white tracking-tight font-sans drop-shadow-xs">
-            TaniKarbon
-          </span>
+        {/* Brand Logo */}
+        <div className="flex items-center px-3.5 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/20 shadow-xs">
+          <TaniKarbonLogo size={26} showText={true} textVariant="light" />
         </div>
 
         {/* Back to Home Button */}
@@ -237,9 +231,8 @@ export default function AuthGateway({
             <button
               type="button"
               onClick={() => handleSwitchMode('login')}
-              className={`flex-1 py-1 rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                mode === 'login' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
-              }`}
+              className={`flex-1 py-1 rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer ${mode === 'login' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
+                }`}
             >
               <LogIn className="w-3.5 h-3.5" />
               <span>Masuk</span>
@@ -247,9 +240,8 @@ export default function AuthGateway({
             <button
               type="button"
               onClick={() => handleSwitchMode('register')}
-              className={`flex-1 py-1 rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                mode === 'register' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
-              }`}
+              className={`flex-1 py-1 rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer ${mode === 'register' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
+                }`}
             >
               <UserPlus className="w-3.5 h-3.5" />
               <span>Daftar</span>
@@ -261,9 +253,8 @@ export default function AuthGateway({
             <button
               type="button"
               onClick={() => handleSwitchTab('farmer')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                role === 'farmer' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
-              }`}
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${role === 'farmer' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
+                }`}
             >
               <Smartphone className={`w-3.5 h-3.5 ${role === 'farmer' ? 'text-emerald-600' : 'text-stone-400'}`} />
               <span>Mitra Tani</span>
@@ -271,9 +262,8 @@ export default function AuthGateway({
             <button
               type="button"
               onClick={() => handleSwitchTab('corporate')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                role === 'corporate' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
-              }`}
+              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${role === 'corporate' ? 'bg-white text-stone-900 font-bold shadow-xs' : 'hover:text-stone-900'
+                }`}
             >
               <Building2 className={`w-3.5 h-3.5 ${role === 'corporate' ? 'text-sky-600' : 'text-stone-400'}`} />
               <span>Perusahaan ESG</span>
@@ -396,8 +386,8 @@ export default function AuthGateway({
 
           {/* Dotted Divider */}
           <div className="pt-1 flex items-center justify-center">
-            <span className="text-[10px] font-mono text-stone-400 tracking-wider select-none">
-              ········· Or sign in with ·········
+            <span className="text-[11px] font-sans font-medium text-stone-400 tracking-wider select-none">
+              Or sign in with
             </span>
           </div>
 

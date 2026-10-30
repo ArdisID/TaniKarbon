@@ -1,15 +1,22 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import FarmerSidebar from './farmer/FarmerSidebar';
+import FarmerMobileNav from './farmer/FarmerMobileNav';
 import FarmerDashboardView from './farmer/FarmerDashboardView';
 import LandManagementView from './farmer/LandManagementView';
 import LandRegistrationWizard from './farmer/LandRegistrationWizard';
 import VerificationTrackingView from './farmer/VerificationTrackingView';
 import FarmerWalletView from './farmer/FarmerWalletView';
-import SamplePhotoModal from './farmer/SamplePhotoModal';
-import ViewfinderModal from './farmer/ViewfinderModal';
 import WithdrawalModal from './farmer/WithdrawalModal';
 import TransferReceiptModal from './farmer/TransferReceiptModal';
-import { getFarmerSummary, getFarmerLands, getFarmerWalletTransactions } from '../api/farmer';
+import { 
+  getFarmerSummary, 
+  getFarmerLands, 
+  getFarmerWalletTransactions,
+  getFarmerProfile,
+  updateFarmerProfile,
+  getFarmerBankAccounts
+} from '../api/farmer';
+import { updateStoredUser } from '../api/auth';
 import { 
   X, 
   Globe, 
@@ -21,13 +28,22 @@ import {
   AlertTriangle,
   MapPin, 
   Calendar,
-  Menu
+  Menu,
+  Edit3,
+  User,
+  Phone,
+  CreditCard,
+  Building2,
+  Check,
+  Loader2,
+  Landmark,
+  LogOut
 } from 'lucide-react';
 
 // Sentinel-2 Telemetry Modal
 function SatelliteTelemetryModal({ onClose, onToast }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] isolate flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div className="bg-white rounded-3xl max-w-lg w-full border border-stone-200 shadow-2xl overflow-hidden relative" onClick={e => e.stopPropagation()}>
         <div className="bg-[#14382C] p-5 sm:p-6 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -91,10 +107,67 @@ function SatelliteTelemetryModal({ onClose, onToast }) {
   );
 }
 
-// Dynamic Profile Modal
-function FarmerProfileModal({ currentUser, farmerSummary, onClose, onToast }) {
-  const displayName = currentUser?.full_name || farmerSummary?.farmer_name || 'Petani Mitra';
-  const displayEmail = currentUser?.email || farmerSummary?.farmer_email || 'petani@tanikarbon.id';
+// Dynamic Profile Modal with View & Edit Modes
+function FarmerProfileModal({ currentUser, farmerSummary, onClose, onToast, onUserUpdated, onLogout }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [bankAccounts, setBankAccounts] = useState([]);
+
+  // Form State for Editing
+  const [formData, setFormData] = useState({
+    full_name: currentUser?.full_name || '',
+    nik: '',
+    phone_number: '',
+    gapoktan_name: '',
+    address: '',
+    village: '',
+    regency: '',
+    province: 'Jawa Tengah'
+  });
+
+  // Fetch real profile and bank accounts from backend on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function loadProfile() {
+      setIsLoadingProfile(true);
+      try {
+        const [profileData, banks] = await Promise.all([
+          getFarmerProfile().catch(() => null),
+          getFarmerBankAccounts().catch(() => [])
+        ]);
+        if (isMounted) {
+          if (profileData) {
+            setProfile(profileData);
+            setFormData({
+              full_name: profileData.full_name || currentUser?.full_name || '',
+              nik: profileData.nik || '',
+              phone_number: profileData.phone_number || '',
+              gapoktan_name: profileData.gapoktan_name || '',
+              address: profileData.address || '',
+              village: profileData.village || '',
+              regency: profileData.regency || '',
+              province: profileData.province || 'Jawa Tengah'
+            });
+          }
+          if (Array.isArray(banks)) {
+            setBankAccounts(banks);
+          }
+        }
+      } catch (err) {
+        console.warn('Gagal memuat profil petani:', err);
+      } finally {
+        if (isMounted) setIsLoadingProfile(false);
+      }
+    }
+    loadProfile();
+    return () => { isMounted = false; };
+  }, [currentUser]);
+
+  const displayName = profile?.full_name || currentUser?.full_name || farmerSummary?.farmer_name || 'Petani Mitra';
+  const displayEmail = profile?.email || currentUser?.email || farmerSummary?.farmer_email || 'petani@tanikarbon.id';
+  
   const rawArea = (farmerSummary?.total_land_area_sqm !== undefined && farmerSummary?.total_land_area_sqm !== null)
     ? Number(farmerSummary.total_land_area_sqm)
     : 0;
@@ -107,62 +180,375 @@ function FarmerProfileModal({ currentUser, farmerSummary, onClose, onToast }) {
     ? `#TK-${String(currentUser.id).slice(0, 8).toUpperCase()}` 
     : '#TK-MITRA-01';
 
+  // Format domisili string
+  const domicileParts = [
+    profile?.village ? `Desa ${profile.village}` : null,
+    profile?.regency ? profile.regency : null,
+    profile?.province ? profile.province : null
+  ].filter(Boolean);
+  const domicileText = domicileParts.length > 0 
+    ? domicileParts.join(', ') 
+    : (profile?.address || currentUser?.domicile || 'Wonosobo, Jawa Tengah');
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    if (!formData.full_name.trim()) {
+      onToast('Nama lengkap tidak boleh kosong.', 'warning');
+      return;
+    }
+    if (formData.nik && formData.nik.length !== 16) {
+      onToast('NIK harus berjumlah 16 digit sesuai e-KTP.', 'warning');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const updated = await updateFarmerProfile({
+        full_name: formData.full_name.trim(),
+        nik: formData.nik ? formData.nik.trim() : null,
+        phone_number: formData.phone_number ? formData.phone_number.trim() : null,
+        gapoktan_name: formData.gapoktan_name ? formData.gapoktan_name.trim() : null,
+        address: formData.address ? formData.address.trim() : null,
+        village: formData.village ? formData.village.trim() : null,
+        regency: formData.regency ? formData.regency.trim() : null,
+        province: formData.province ? formData.province.trim() : null
+      });
+
+      setProfile(updated);
+      updateStoredUser({
+        full_name: updated.full_name,
+        nik: updated.nik,
+        phone_number: updated.phone_number,
+        gapoktan_name: updated.gapoktan_name
+      });
+      if (onUserUpdated) {
+        onUserUpdated(updated);
+      }
+      setIsEditing(false);
+      onToast('Data profil berhasil diperbarui.');
+    } catch (err) {
+      console.error('Gagal memperbarui profil:', err);
+      onToast(err.message || 'Gagal menyimpan pembaruan profil.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div className="bg-white rounded-3xl max-w-md w-full border border-stone-200 shadow-2xl overflow-hidden relative" onClick={e => e.stopPropagation()}>
-        <div className="bg-[#14382C] p-5 sm:p-6 text-white flex items-center justify-between">
+    <div className="fixed inset-0 z-[9999] isolate flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div 
+        className="bg-white rounded-3xl max-w-lg w-full border border-stone-200 shadow-2xl overflow-hidden relative max-h-[92vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* HEADER */}
+        <div className="bg-[#14382C] p-5 sm:p-6 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl overflow-hidden ring-2 ring-emerald-400 shrink-0 bg-emerald-800 flex items-center justify-center text-white font-black text-xl">
               {displayName.charAt(0).toUpperCase()}
             </div>
             <div>
-              <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest">Profil Mitra Tani</span>
-              <h3 className="font-extrabold text-white text-base">{displayName}</h3>
-              <p className="text-xs text-emerald-200/80">{displayEmail}</p>
+              <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest block">
+                {isEditing ? 'Pembaruan Data' : 'Profil Mitra Tani'}
+              </span>
+              <h3 className="font-extrabold text-white text-base leading-tight">
+                {isEditing ? 'Edit Profil Mitra' : displayName}
+              </h3>
+              <p className="text-xs text-emerald-200/80 leading-tight mt-0.5">{displayEmail}</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition">
+          <button 
+            onClick={onClose} 
+            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+            aria-label="Tutup"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-5 sm:p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-2.5 text-xs">
-            <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
-              <span className="text-stone-400 block text-[10px] uppercase font-bold">ID Mitra Tani</span>
-              <strong className="text-[#14382C] text-sm font-bold font-mono">{farmerIdCode}</strong>
+        {/* MODAL CONTENT */}
+        <div className="overflow-y-auto p-5 sm:p-6 space-y-4 flex-1">
+          {isLoadingProfile ? (
+            <div className="py-12 flex flex-col items-center justify-center text-stone-500 gap-2">
+              <Loader2 className="w-6 h-6 animate-spin text-[#14382C]" />
+              <p className="text-xs font-medium">Memuat data profil mitra...</p>
             </div>
-            <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
-              <span className="text-stone-400 block text-[10px] uppercase font-bold">Kelompok Tani</span>
-              <strong className="text-stone-700 text-sm font-semibold">{currentUser?.gapoktan || 'Mandiri / Belum Tergabung'}</strong>
-            </div>
-            <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
-              <span className="text-stone-400 block text-[10px] uppercase font-bold">Domisili Lahan</span>
-              <strong className="text-stone-700 text-sm font-semibold">{currentUser?.domicile || 'Belum diatur'}</strong>
-            </div>
-            <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
-              <span className="text-stone-400 block text-[10px] uppercase font-bold">Total Lahan</span>
-              <strong className="text-emerald-700 text-sm font-bold">{totalAreaHa} Ha ({totalPlots} Petak)</strong>
-            </div>
-          </div>
+          ) : isEditing ? (
+            /* ================= EDIT MODE ================= */
+            <form onSubmit={handleSaveProfile} className="space-y-4 text-xs font-sans">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-stone-700 uppercase tracking-wider block">
+                  Nama Lengkap Sesuai KTP <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    value={formData.full_name}
+                    onChange={(e) => handleInputChange('full_name', e.target.value)}
+                    placeholder="Contoh: Petani Agro / Joko Widodo"
+                    className="w-full pl-9 pr-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 font-semibold focus:outline-hidden focus:ring-2 focus:ring-[#14382C] focus:bg-white text-xs transition"
+                  />
+                </div>
+              </div>
 
-          <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200 space-y-2 text-xs">
-            <span className="text-[11px] font-bold text-stone-600 uppercase tracking-wider block">Rekening Penarikan Terdaftar</span>
-            <div className="py-2.5 text-center">
-              <p className="text-xs text-stone-500 font-medium">Belum diatur</p>
-              <p className="text-[10px] text-stone-400 mt-0.5">Rekening bank atau e-wallet dapat ditentukan saat penarikan saldo.</p>
-            </div>
-          </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-stone-700 uppercase tracking-wider block">
+                    Nomor Induk Kependudukan (NIK)
+                  </label>
+                  <div className="relative">
+                    <CreditCard className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      maxLength={16}
+                      value={formData.nik}
+                      onChange={(e) => handleInputChange('nik', e.target.value.replace(/\D/g, ''))}
+                      placeholder="16 Digit NIK KTP"
+                      className="w-full pl-9 pr-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 font-sans tabular-nums text-xs focus:outline-hidden focus:ring-2 focus:ring-[#14382C] focus:bg-white transition"
+                    />
+                  </div>
+                  <span className="text-[10px] text-stone-400 block">Wajib untuk verifikasi sertifikat karbon.</span>
+                </div>
 
-          <button
-            onClick={() => {
-              onToast(`Data profil ${displayName} tersinkronisasi dengan database PostgreSQL.`);
-              onClose();
-            }}
-            className="w-full py-3 bg-[#14382C] hover:bg-[#1a4436] text-white font-bold text-xs rounded-xl transition shadow-xs cursor-pointer"
-          >
-            Tutup Profil
-          </button>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-stone-700 uppercase tracking-wider block">
+                    No. WhatsApp / Telepon
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="tel"
+                      value={formData.phone_number}
+                      onChange={(e) => handleInputChange('phone_number', e.target.value)}
+                      placeholder="081234567890"
+                      className="w-full pl-9 pr-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 text-xs focus:outline-hidden focus:ring-2 focus:ring-[#14382C] focus:bg-white transition"
+                    />
+                  </div>
+                  <span className="text-[10px] text-stone-400 block">Digunakan surveyor untuk koordinasi inspeksi.</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-stone-700 uppercase tracking-wider block">
+                  Kelompok Tani / Gapoktan
+                </label>
+                <div className="relative">
+                  <Building2 className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={formData.gapoktan_name}
+                    onChange={(e) => handleInputChange('gapoktan_name', e.target.value)}
+                    placeholder="Contoh: Gapoktan Sumber Makmur Garung"
+                    className="w-full pl-9 pr-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 text-xs focus:outline-hidden focus:ring-2 focus:ring-[#14382C] focus:bg-white transition"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-stone-700 uppercase tracking-wider block">
+                  Alamat Rumah / Tempat Tinggal
+                </label>
+                <input
+                  type="text"
+                  value={formData.address}
+                  onChange={(e) => handleInputChange('address', e.target.value)}
+                  placeholder="Nama jalan, RT/RW, Dusun"
+                  className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 text-xs focus:outline-hidden focus:ring-2 focus:ring-[#14382C] focus:bg-white transition"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-stone-600 uppercase tracking-wider block">Desa / Kel.</label>
+                  <input
+                    type="text"
+                    value={formData.village}
+                    onChange={(e) => handleInputChange('village', e.target.value)}
+                    placeholder="Garung"
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 text-xs focus:outline-hidden focus:ring-2 focus:ring-[#14382C] focus:bg-white transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-stone-600 uppercase tracking-wider block">Kabupaten</label>
+                  <input
+                    type="text"
+                    value={formData.regency}
+                    onChange={(e) => handleInputChange('regency', e.target.value)}
+                    placeholder="Wonosobo"
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 text-xs focus:outline-hidden focus:ring-2 focus:ring-[#14382C] focus:bg-white transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-stone-600 uppercase tracking-wider block">Provinsi</label>
+                  <input
+                    type="text"
+                    value={formData.province}
+                    onChange={(e) => handleInputChange('province', e.target.value)}
+                    placeholder="Jawa Tengah"
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 text-xs focus:outline-hidden focus:ring-2 focus:ring-[#14382C] focus:bg-white transition"
+                  />
+                </div>
+              </div>
+
+              {/* ACTION BUTTONS (EDIT MODE) */}
+              <div className="pt-3 border-t border-stone-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => setIsEditing(false)}
+                  className="px-4 py-2.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 font-bold text-xs transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2.5 rounded-xl bg-[#14382C] hover:bg-[#1C4E3D] text-white font-bold text-xs transition flex items-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-300" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Simpan Perubahan</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          ) : (
+            /* ================= VIEW MODE ================= */
+            <>
+              {/* 6 Bento Grid Information Cards */}
+              <div className="grid grid-cols-2 gap-2.5 text-xs">
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
+                  <span className="text-stone-400 block text-[10px] uppercase font-bold tracking-wider">ID Mitra Tani</span>
+                  <strong className="text-[#14382C] text-sm font-bold font-sans tabular-nums">{farmerIdCode}</strong>
+                </div>
+
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
+                  <span className="text-stone-400 block text-[10px] uppercase font-bold tracking-wider">NIK (e-KTP)</span>
+                  <strong className="text-stone-800 text-sm font-semibold font-sans tabular-nums">
+                    {profile?.nik ? `${profile.nik.slice(0, 6)}******${profile.nik.slice(12)}` : 'Belum Diisi'}
+                  </strong>
+                </div>
+
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
+                  <span className="text-stone-400 block text-[10px] uppercase font-bold tracking-wider">No. WhatsApp / HP</span>
+                  <strong className="text-stone-800 text-xs font-semibold">
+                    {profile?.phone_number || 'Belum diatur'}
+                  </strong>
+                </div>
+
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
+                  <span className="text-stone-400 block text-[10px] uppercase font-bold tracking-wider">Kelompok Tani</span>
+                  <strong className="text-stone-800 text-xs font-semibold truncate block">
+                    {profile?.gapoktan_name || currentUser?.gapoktan || 'Mandiri / Belum Tergabung'}
+                  </strong>
+                </div>
+
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
+                  <span className="text-stone-400 block text-[10px] uppercase font-bold tracking-wider">Domisili Lahan</span>
+                  <strong className="text-stone-800 text-xs font-semibold block truncate" title={domicileText}>
+                    {domicileText}
+                  </strong>
+                </div>
+
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200">
+                  <span className="text-stone-400 block text-[10px] uppercase font-bold tracking-wider">Total Lahan</span>
+                  <strong className="text-emerald-700 text-sm font-bold">{totalAreaHa} Ha ({totalPlots} Petak)</strong>
+                </div>
+              </div>
+
+              {/* Rekening Penarikan Terdaftar Card */}
+              <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-stone-700 uppercase tracking-wider block">
+                    Rekening Penarikan Terdaftar
+                  </span>
+                  {bankAccounts.length > 0 && (
+                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full">
+                      Terverifikasi
+                    </span>
+                  )}
+                </div>
+
+                {bankAccounts.length > 0 ? (
+                  <div className="space-y-2 pt-1">
+                    {bankAccounts.map((b) => (
+                      <div key={b.id || b.account_number} className="p-2.5 bg-white rounded-xl border border-stone-200 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-[#14382C] font-bold text-xs flex items-center justify-center border border-emerald-200">
+                            <Landmark className="w-4 h-4 text-[#14382C]" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-stone-900 text-xs">{b.bank_name || b.bank_code}</p>
+                            <p className="text-stone-500 text-[11px] font-sans tabular-nums">{b.account_number} • a.n. {b.account_holder_name}</p>
+                          </div>
+                        </div>
+                        {b.is_primary && (
+                          <span className="text-[9px] font-bold bg-[#14382C] text-emerald-300 px-2 py-0.5 rounded-md">
+                            Utama
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-2.5 text-center">
+                    <p className="text-xs text-stone-500 font-medium">Belum diatur</p>
+                    <p className="text-[10px] text-stone-400 mt-0.5">
+                      Rekening bank atau e-wallet dapat ditentukan saat pengajuan penarikan saldo dividen karbon.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons (View Mode) */}
+              <div className="pt-2 flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="flex-1 py-3 bg-[#14382C] hover:bg-[#1C4E3D] text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                >
+                  <Edit3 className="w-4 h-4 text-emerald-400" />
+                  <span>Edit Profil</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-5 py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+
+              {onLogout && (
+                <div className="pt-2 border-t border-stone-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onLogout();
+                    }}
+                    className="w-full py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                  >
+                    <LogOut className="w-4 h-4 text-rose-600" />
+                    <span>Keluar dari Akun Petani</span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -196,6 +582,15 @@ export default function FarmerWorkspace({
   onBack,
   onNavigateRole
 }) {
+  // Active user state to keep UI updated upon profile edit
+  const [activeUser, setActiveUser] = useState(currentUser);
+
+  useEffect(() => {
+    if (currentUser) {
+      setActiveUser(currentUser);
+    }
+  }, [currentUser]);
+
   // Navigation tab state: 'dashboard' | 'land' | 'wizard' | 'timeline' | 'wallet'
   // Inisialisasi awal membaca langsung dari window.location.pathname agar kebal refresh F5/Cmd+R
   const [activeTab, setActiveTabState] = useState(() => {
@@ -259,8 +654,6 @@ export default function FarmerWorkspace({
   const [transactions, setTransactions] = useState([]);
 
   // Modals state
-  const [selectedSampleTree, setSelectedSampleTree] = useState(null);
-  const [viewfinderConfig, setViewfinderConfig] = useState(null);
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
   const [showSatelliteModal, setShowSatelliteModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -396,10 +789,10 @@ export default function FarmerWorkspace({
   };
 
   return (
-    <div className="min-h-screen bg-canvas text-stone-800 flex">
+    <div className="min-h-screen bg-[#E8ECE9] text-stone-800 flex font-sans">
       {/* FIXED LEFT SIDEBAR (single navigation surface — no top navbar) */}
       <FarmerSidebar
-        currentUser={currentUser}
+        currentUser={activeUser}
         onLogout={onLogout}
         currentTab={activeTab}
         onSelectTab={(tabId) => {
@@ -411,29 +804,35 @@ export default function FarmerWorkspace({
         onOpenProfile={() => setShowProfileModal(true)}
       />
 
-      {/* MAIN WORKSPACE */}
-      <main className="min-w-0 flex-1 lg:ml-64">
-        <div className="mx-auto max-w-7xl space-y-6 p-5 sm:p-6 lg:p-8">
-          {/* Mobile drawer trigger for non-dashboard tabs */}
-          {activeTab !== 'dashboard' && (
-            <div className="flex items-center justify-between pb-2 lg:hidden">
-              <button
-                type="button"
-                onClick={() => setMobileOpen(true)}
-                aria-label="Buka navigasi"
-                className="grid h-10 w-10 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:bg-stone-50 cursor-pointer"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
+      {/* MAIN WORKSPACE WRAPPER */}
+      <main className="min-w-0 flex-1 lg:ml-64 p-3 sm:p-4 lg:p-6 pb-28 lg:pb-8">
+        <div className="bg-[#F9FBFA] rounded-[28px] border border-white/80 shadow-sm p-5 sm:p-6 lg:p-8 min-h-[calc(100vh-3rem)]">
+          {/* Mobile top utility bar for quick logout & breadcrumbs */}
+          <div className="flex items-center justify-between pb-4 lg:hidden">
+            {activeTab !== 'dashboard' ? (
               <button
                 type="button"
                 onClick={() => setActiveTab('dashboard')}
                 className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 cursor-pointer"
               >
-                &larr; Kembali ke Dashboard
+                &larr; Beranda
               </button>
-            </div>
-          )}
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Mitra Tani Terverifikasi</span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onLogout}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl border border-rose-200 transition cursor-pointer"
+              title="Keluar dari akun"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Keluar</span>
+            </button>
+          </div>
 
           {/* Toast Notification Banner */}
           {toastMessage && (
@@ -454,95 +853,76 @@ export default function FarmerWorkspace({
               <span className="font-medium flex-1">{toastMessage.message}</span>
               <button 
                 onClick={() => setToastMessage(null)}
-                className="text-white/60 hover:text-white p-1"
+                className="text-white/60 hover:text-white p-1 rounded-md transition cursor-pointer"
+                title="Tutup Notifikasi"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}
 
-          {/* VIEW ROUTING (5 HALAMAN UTAMA) */}
-          {activeTab === 'dashboard' && (
-            <FarmerDashboardView
-              farmerSummary={farmerSummary}
-              realLands={realLands}
-              onNavigateTab={setActiveTab}
-              onOpenSatelliteModal={() => setShowSatelliteModal(true)}
-              onOpenWithdrawal={() => setShowWithdrawalModal(true)}
-              onOpenMobileNav={() => setMobileOpen(true)}
-              availableBalance={currentAvailableBalance}
-              escrowBalance={escrowBalance}
-            />
-          )}
+          {/* VIEW ROUTING (5 HALAMAN UTAMA) WITH SMOOTH TRANSITION */}
+          <div key={activeTab} className="page-enter">
+            {activeTab === 'dashboard' && (
+              <FarmerDashboardView
+                farmerSummary={farmerSummary}
+                realLands={realLands}
+                onNavigateTab={setActiveTab}
+                onOpenSatelliteModal={() => setShowSatelliteModal(true)}
+                onOpenWithdrawal={() => setShowWithdrawalModal(true)}
+                onOpenMobileNav={() => setMobileOpen(true)}
+                availableBalance={currentAvailableBalance}
+                escrowBalance={escrowBalance}
+              />
+            )}
 
-          {activeTab === 'land' && (
-            <LandManagementView
-              realLands={realLands}
-              customPlots={customPlots}
-              onNavigateTab={setActiveTab}
-              onOpenSamplePhoto={(tree) => setSelectedSampleTree(tree)}
-              onRefresh={fetchFarmerData}
-              onOpenMobileNav={() => setMobileOpen(true)}
-              onToast={showToast}
-            />
-          )}
+            {activeTab === 'land' && (
+              <LandManagementView
+                realLands={realLands}
+                customPlots={customPlots}
+                onNavigateTab={setActiveTab}
+                onRefresh={fetchFarmerData}
+                onOpenMobileNav={() => setMobileOpen(true)}
+                onToast={showToast}
+              />
+            )}
 
-          {activeTab === 'wizard' && (
-            <LandRegistrationWizard
-              onComplete={handleWizardComplete}
-              onSaveDraft={handleWizardDraft}
-              onOpenViewfinder={(idx, photo, onSave) => {
-                setViewfinderConfig({ index: idx, photo, onSave });
-              }}
-              onToast={showToast}
-              onNavigateTab={setActiveTab}
-            />
-          )}
+            {activeTab === 'wizard' && (
+              <LandRegistrationWizard
+                onComplete={handleWizardComplete}
+                onSaveDraft={handleWizardDraft}
+                onToast={showToast}
+                onNavigateTab={setActiveTab}
+              />
+            )}
 
-          {activeTab === 'timeline' && (
-            <VerificationTrackingView
-              newlySubmittedPlot={newlySubmittedPlot}
-              onToast={showToast}
-              onOpenMobileNav={() => setMobileOpen(true)}
-              onNavigateTab={setActiveTab}
-            />
-          )}
+            {activeTab === 'timeline' && (
+              <VerificationTrackingView
+                newlySubmittedPlot={newlySubmittedPlot}
+                onToast={showToast}
+                onOpenMobileNav={() => setMobileOpen(true)}
+                onNavigateTab={setActiveTab}
+              />
+            )}
 
-          {activeTab === 'wallet' && (
-            <FarmerWalletView
-              availableBalance={currentAvailableBalance}
-              escrowBalance={escrowBalance}
-              transactions={transactions}
-              onOpenWithdrawal={() => setShowWithdrawalModal(true)}
-              onOpenReceipt={(tx) => setSelectedReceiptTx(tx)}
-              onToast={showToast}
-            />
-          )}
+            {activeTab === 'wallet' && (
+              <FarmerWalletView
+                availableBalance={currentAvailableBalance}
+                escrowBalance={escrowBalance}
+                transactions={transactions}
+                onOpenWithdrawal={() => setShowWithdrawalModal(true)}
+                onOpenReceipt={(tx) => setSelectedReceiptTx(tx)}
+                onToast={showToast}
+              />
+            )}
+          </div>
         </div>
       </main>
 
       {/* =========================================================================
           INTERACTIVE MODALS
           ========================================================================= */}
-      {/* 1. Sample Photo Modal (from Land Management) */}
-      {selectedSampleTree && (
-        <SamplePhotoModal
-          tree={selectedSampleTree}
-          onClose={() => setSelectedSampleTree(null)}
-        />
-      )}
-
-      {/* 2. Viewfinder Camera Modal (from Land Registration Wizard) */}
-      {viewfinderConfig && (
-        <ViewfinderModal
-          sampleIndex={viewfinderConfig.index}
-          currentPhoto={viewfinderConfig.photo}
-          onSave={viewfinderConfig.onSave}
-          onClose={() => setViewfinderConfig(null)}
-        />
-      )}
-
-      {/* 3. Withdrawal Modal (from Farmer Wallet) */}
+      {/* 1. Withdrawal Modal (from Farmer Wallet) */}
       {showWithdrawalModal && (
         <WithdrawalModal
           availableBalance={currentAvailableBalance}
@@ -563,10 +943,15 @@ export default function FarmerWorkspace({
       {/* 5. Farmer Profile Modal */}
       {showProfileModal && (
         <FarmerProfileModal
-          currentUser={currentUser}
+          currentUser={activeUser}
           farmerSummary={farmerSummary}
+          onLogout={onLogout}
           onClose={() => setShowProfileModal(false)}
           onToast={showToast}
+          onUserUpdated={(updatedData) => {
+            setActiveUser(prev => ({ ...prev, ...updatedData }));
+            setFarmerSummary(prev => prev ? ({ ...prev, farmer_name: updatedData.full_name || prev.farmer_name }) : prev);
+          }}
         />
       )}
 
@@ -575,6 +960,18 @@ export default function FarmerWorkspace({
         <TransferReceiptModal
           transaction={selectedReceiptTx}
           onClose={() => setSelectedReceiptTx(null)}
+        />
+      )}
+
+      {/* Mobile Bottom Navigation Bar (lg:hidden) - auto hidden when modals are open */}
+      {!showWithdrawalModal && !showProfileModal && !showSatelliteModal && !selectedReceiptTx && (
+        <FarmerMobileNav
+          currentTab={activeTab}
+          onSelectTab={(tabId) => {
+            setActiveTab(tabId);
+            setMobileOpen(false);
+          }}
+          onLogout={onLogout}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   TrendingUp, 
   Trees, 
@@ -9,18 +9,39 @@ import {
   ArrowRight, 
   CheckCircle2, 
   Award, 
-  Landmark, 
   ExternalLink,
   ShieldCheck,
   Layers,
+  Clock,
   Sparkles,
-  Clock
+  Building2,
+  Activity,
+  ChevronRight
 } from 'lucide-react';
-import { formatRupiah } from '../../data';
+import { formatRupiah, formatNumber } from '../../data';
+import AnimatedNumber from '../common/AnimatedNumber';
+import { getAdminEcosystemStats } from '../../api/admin';
 
 export default function AdminDashboardView({ onNavigateTab }) {
   const mapContainerRef = useRef(null);
   const leafletMapRef = useRef(null);
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadStats() {
+      try {
+        const data = await getAdminEcosystemStats();
+        if (isMounted && data) {
+          setStats(data);
+        }
+      } catch (err) {
+        console.warn('Backend admin stats fallback to mock:', err);
+      }
+    }
+    loadStats();
+    return () => { isMounted = false; };
+  }, []);
 
   // Initialize Leaflet Map for GlobalEcosystemMap
   useEffect(() => {
@@ -60,8 +81,8 @@ export default function AdminDashboardView({ onNavigateTab }) {
             lng: 109.9886,
             quota: 520,
             target: 500,
-            status: 'ready', // Biru Pulse: Siap Audit
-            color: '#3B82F6'
+            status: 'ready', // Orange/Yellow Pulse: Siap Audit
+            color: '#F59E0B'
           },
           {
             name: 'Klaster Konservasi Lereng Sindoro',
@@ -69,8 +90,8 @@ export default function AdminDashboardView({ onNavigateTab }) {
             lng: 110.0100,
             quota: 500,
             target: 500,
-            status: 'ready', // Biru Pulse: Siap Audit
-            color: '#3B82F6'
+            status: 'ready', // Orange/Yellow Pulse: Siap Audit
+            color: '#EA580C'
           },
           {
             name: 'Klaster Pesisir Demak (Mangrove)',
@@ -78,7 +99,7 @@ export default function AdminDashboardView({ onNavigateTab }) {
             lng: 110.6386,
             quota: 750,
             target: 500,
-            status: 'verified', // Hijau: Lulus Audit / Available
+            status: 'verified', // Lulus Audit / Available
             color: '#10B981'
           },
           {
@@ -87,7 +108,7 @@ export default function AdminDashboardView({ onNavigateTab }) {
             lng: 127.8000,
             quota: 620,
             target: 500,
-            status: 'verified', // Hijau: Lulus Audit
+            status: 'verified', // Lulus Audit
             color: '#10B981'
           },
           {
@@ -96,8 +117,8 @@ export default function AdminDashboardView({ onNavigateTab }) {
             lng: 109.8500,
             quota: 280,
             target: 500,
-            status: 'collecting', // Kuning: Sedang Mengumpul (< 100%)
-            color: '#F59E0B'
+            status: 'collecting', // Sedang Mengumpul (< 100%)
+            color: '#FBBF24'
           },
           {
             name: 'Klaster Ciliwung Hulu - Bogor',
@@ -105,8 +126,8 @@ export default function AdminDashboardView({ onNavigateTab }) {
             lng: 106.9500,
             quota: 340,
             target: 500,
-            status: 'collecting', // Kuning: Sedang Mengumpul (< 100%)
-            color: '#F59E0B'
+            status: 'collecting', // Sedang Mengumpul (< 100%)
+            color: '#FBBF24'
           }
         ];
 
@@ -117,13 +138,13 @@ export default function AdminDashboardView({ onNavigateTab }) {
             color: c.color,
             weight: 2,
             fillColor: c.color,
-            fillOpacity: c.status === 'ready' ? 0.4 : 0.2
+            fillOpacity: c.status === 'ready' ? 0.45 : 0.2
           }).addTo(map);
 
           // Marker Point
           const icon = L.divIcon({
             className: 'custom-cluster-dot',
-            html: `<div style="background:${c.color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div>`,
+            html: `<div style="background:${c.color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>`,
             iconSize: [14, 14],
             iconAnchor: [7, 7]
           });
@@ -155,185 +176,235 @@ export default function AdminDashboardView({ onNavigateTab }) {
   }, []);
 
   return (
-    <div className="space-y-6 animate-fade-in pb-16 font-sans">
+    <div className="space-y-6 sm:space-y-7 animate-fade-in pb-16 font-sans">
       
-      {/* Top Banner Context */}
-      <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-[#14382C] text-emerald-300 uppercase">
-              EXECUTIVE COMMAND CENTER
-            </span>
-            <span className="text-xs text-slate-500 font-sans">Otoritas Registri Karbon Nasional</span>
+      {/* 
+        ========================================================================
+        1. BANNER OVERVIEW EKSEKUTIF ADMIN (TEMA GRADIENT ORANGE & KUNING TERANG)
+        Pola terstruktur identik dengan UI Petani & Korporat
+        ========================================================================
+      */}
+      <div className="bg-white rounded-[24px] sm:rounded-[30px] p-6 sm:p-7 lg:p-8 border border-amber-200/90 shadow-[0_4px_24px_rgba(234,88,12,0.04)] relative overflow-hidden">
+        {/* Radiant Orange & Yellow Aura */}
+        <div className="absolute top-0 right-0 w-96 h-full bg-gradient-to-l from-amber-100/70 via-orange-50/40 to-transparent pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-2 min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-sans text-[11px] font-extrabold uppercase tracking-wider text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 px-3 py-1 rounded-full shadow-xs flex items-center gap-1.5 shrink-0">
+                <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                <span>Executive Command Center</span>
+              </span>
+              <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-300 flex items-center gap-1.5 shrink-0">
+                <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" />
+                <span>Otoritas Registri Karbon Nasional (SRN-PPI)</span>
+              </span>
+            </div>
+
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight font-sans truncate">
+              Pusat Kendali Ekosistem TaniKarbon
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 font-sans leading-relaxed max-w-2xl">
+              Pemantauan terpadu hulu ke hilir: pasokan tegakan petani mitra, verifikasi audit validator, brankas escrow transaksi, dan bursa IDXCarbon.
+            </p>
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-[#14382C] mt-1 font-sans">
-            Pusat Kendali Ekosistem TaniKarbon
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5 font-sans">
-            Pemantauan hulu ke hilir: pasokan karbon petani, audit eksternal, brankas escrow, dan integrasi bursa.
-          </p>
+
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => onNavigateTab('audit')}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs shadow-md shadow-orange-950/20 active:scale-95 transition flex items-center gap-2 cursor-pointer"
+            >
+              <Award className="w-4 h-4 text-white" />
+              <span>Verifikasi Audit Eksternal</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('finance')}
+              className="px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Brankas Escrow</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* A. PlatformKpiGrid (3 Kelompok Kartu Eksekutif Nasional) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* 
+        ========================================================================
+        2. PLATFORM KPI GRID (3 KARTU EKSEKUTIF NASIONAL - GAYA BENTO)
+        ========================================================================
+      */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
         
-        {/* Card 1: CarbonSupplyPipelineCard */}
-        <div className="bg-[#14382C] text-white rounded-3xl p-5 sm:p-6 shadow-md flex flex-col justify-between">
-          <div className="space-y-4">
+        {/* Card 1: Pipeline Pasokan Karbon (Executive Warm Obsidian Card) */}
+        <div className="bg-[#18130C] text-white rounded-[24px] p-6 sm:p-7 shadow-lg border border-amber-500/30 flex flex-col justify-between font-sans relative overflow-hidden card-interactive">
+          <div className="absolute -top-12 -right-12 w-48 h-48 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+
+          <div className="relative z-10 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <span className="text-[10px] uppercase font-sans font-bold text-emerald-300 tracking-wider">
-                PIPELINE PASOKAN KARBON
+              <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                Pipeline Pasokan Karbon Nasional
               </span>
-              <span className="text-xs font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded">
-                Total: 10.790 tCO2e
+              <span className="text-xs font-sans font-black text-white bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-0.5 rounded-full shadow-xs tabular-nums">
+                10.790 tCO2e
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs font-sans">
               <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                <span className="text-[10px] text-slate-300 font-sans block">Draft / Antrean Survei</span>
-                <span className="text-lg font-bold font-mono text-white mt-0.5 block">420 tCO2e</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Draft / Antrean</span>
+                <span className="text-lg font-black font-sans text-white mt-1 block tabular-nums">420 tCO2e</span>
               </div>
               <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                <span className="text-[10px] text-amber-300 font-sans block">Pre-Verified Klaster</span>
-                <span className="text-lg font-bold font-mono text-amber-300 mt-0.5 block">1.850 tCO2e</span>
+                <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider block">Pre-Verified</span>
+                <span className="text-lg font-black font-sans text-amber-300 mt-1 block tabular-nums">1.850 tCO2e</span>
               </div>
               <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                <span className="text-[10px] text-emerald-300 font-sans block">Available for Sale</span>
-                <span className="text-lg font-bold font-mono text-emerald-300 mt-0.5 block">3.400 tCO2e</span>
+                <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider block">Available Sale</span>
+                <span className="text-lg font-black font-sans text-amber-400 mt-1 block tabular-nums">3.400 tCO2e</span>
               </div>
               <div className="p-3 bg-white/5 rounded-2xl border border-white/10">
-                <span className="text-[10px] text-slate-300 font-sans block">Retired (Telah Ditebus)</span>
-                <span className="text-lg font-bold font-mono text-white mt-0.5 block">5.120 tCO2e</span>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Telah Ditebus</span>
+                <span className="text-lg font-black font-sans text-white mt-1 block tabular-nums">5.120 tCO2e</span>
               </div>
             </div>
           </div>
 
-          <p className="text-[11px] text-emerald-200/80 pt-3 border-t border-white/10 font-sans mt-3">
-            ✓ 100% tersertifikasi alometrik Chave Tier-3 &amp; terkunci di SRN-PPI KLHK.
+          <p className="text-[11px] text-amber-200/80 pt-3 border-t border-white/10 font-sans mt-4 flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>100% tersertifikasi alometrik Chave Tier-3 &amp; terdaftar SRN-PPI KLHK.</span>
           </p>
         </div>
 
-        {/* Card 2: PlatformRevenueCard */}
-        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-2xs flex flex-col justify-between">
+        {/* Card 2: Kesehatan Kas & Cost Recovery (GMV) */}
+        <div className="bg-white rounded-[24px] p-6 sm:p-7 border border-amber-200/90 shadow-[0_4px_24px_rgba(234,88,12,0.03)] flex flex-col justify-between font-sans card-interactive">
           <div className="space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <span className="text-[10px] uppercase font-sans font-bold text-slate-400 tracking-wider">
-                KESEHATAN KAS &amp; COST RECOVERY
+              <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                Kesehatan Kas &amp; Cost Recovery
               </span>
-              <span className="text-xs font-sans font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+              <span className="text-xs font-sans font-bold text-amber-900 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
                 Audit Ready
               </span>
             </div>
 
             <div>
-              <span className="text-xs text-slate-400 font-sans block">Gross Merchandise Value (GMV):</span>
-              <span className="text-2xl sm:text-3xl font-black font-mono text-[#14382C] mt-0.5 block">
-                {formatRupiah(819200000)}
+              <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                Gross Merchandise Value (GMV):
               </span>
+              <div className="flex items-baseline mt-1 font-sans">
+                <span className="text-xl sm:text-2xl font-bold text-slate-400 mr-2 font-sans">Rp</span>
+                <span className="text-3xl sm:text-4xl font-black text-slate-900 font-sans tracking-tight tabular-nums">
+                  <AnimatedNumber value={819200000} />
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs pt-1">
-              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                <span className="text-[10px] text-slate-500 font-sans block">Talangan Audit Kembali:</span>
-                <span className="text-sm font-bold font-mono text-blue-900 mt-0.5 block">
+              <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-200/80">
+                <span className="text-[10px] text-amber-900 font-bold uppercase block">Talangan Kembali:</span>
+                <span className="text-sm font-extrabold font-sans text-amber-900 mt-0.5 block tabular-nums">
                   {formatRupiah(60000000)}
                 </span>
-                <span className="text-[9px] text-slate-400 font-sans">Cost Recovery 100%</span>
+                <span className="text-[9px] text-amber-700 font-semibold font-sans">Cost Recovery 100%</span>
               </div>
-              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                <span className="text-[10px] text-slate-500 font-sans block">Profit Bersih Platform:</span>
-                <span className="text-sm font-bold font-mono text-emerald-800 mt-0.5 block">
+              <div className="p-3 bg-orange-50/60 rounded-2xl border border-orange-200/80">
+                <span className="text-[10px] text-orange-950 font-bold uppercase block">Take-Rate Platform:</span>
+                <span className="text-sm font-extrabold font-sans text-orange-900 mt-0.5 block tabular-nums">
                   {formatRupiah(113880000)}
                 </span>
-                <span className="text-[9px] text-emerald-700 font-sans">Take-Rate 15%</span>
+                <span className="text-[9px] text-orange-700 font-semibold font-sans">Platform Fee 15%</span>
               </div>
             </div>
           </div>
 
-          <p className="text-[11px] text-slate-400 pt-3 border-t border-slate-100 font-sans mt-3">
-            Sisa dana (Rp 645.320.000 / ~79%) cair langsung ke dompet digital petani.
+          <p className="text-[11px] text-slate-400 pt-3 border-t border-slate-100 font-sans mt-4">
+            Sisa dana (Rp 645.320.000 / ~85%) cair langsung ke dompet petani mitra.
           </p>
         </div>
 
-        {/* Card 3: ActiveEntitiesCard */}
-        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-2xs flex flex-col justify-between">
+        {/* Card 3: Entitas Ekosistem Aktif */}
+        <div className="bg-white rounded-[24px] p-6 sm:p-7 border border-amber-200/90 shadow-[0_4px_24px_rgba(234,88,12,0.03)] flex flex-col justify-between font-sans card-interactive">
           <div className="space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <span className="text-[10px] uppercase font-sans font-bold text-slate-400 tracking-wider">
-                ENTITAS EKOSISTEM AKTIF
+              <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                Entitas Ekosistem Terverifikasi
               </span>
-              <span className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                Live Data
+              <span className="text-xs font-sans font-bold text-amber-800 bg-amber-100/70 px-2.5 py-0.5 rounded-full border border-amber-300">
+                Live PostGIS
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs font-sans">
-              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-center">
-                <span className="text-2xl font-black font-sans text-[#14382C] block">12</span>
-                <span className="text-[11px] font-semibold text-emerald-900 mt-0.5 block">Klaster Terbentuk</span>
-                <span className="text-[10px] text-slate-500">PostGIS ST_DWithin</span>
+              <div className="p-3.5 bg-gradient-to-br from-amber-50/80 to-orange-50/40 rounded-2xl border border-amber-200/80 text-center">
+                <span className="text-2xl font-black font-sans text-amber-900 block tabular-nums">12</span>
+                <span className="text-[11px] font-bold text-amber-900 mt-0.5 block">Klaster Terbentuk</span>
+                <span className="text-[10px] text-slate-400">Radius 10 km</span>
               </div>
-              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-center">
-                <span className="text-2xl font-black font-sans text-[#14382C] block">420</span>
-                <span className="text-[11px] font-semibold text-emerald-900 mt-0.5 block">Petani Terdaftar</span>
-                <span className="text-[10px] text-slate-500">Jawa &amp; Maluku</span>
+              <div className="p-3.5 bg-gradient-to-br from-amber-50/80 to-orange-50/40 rounded-2xl border border-amber-200/80 text-center">
+                <span className="text-2xl font-black font-sans text-amber-900 block tabular-nums">420</span>
+                <span className="text-[11px] font-bold text-amber-900 mt-0.5 block">Petani Mitra</span>
+                <span className="text-[10px] text-slate-400">Jawa &amp; Maluku</span>
               </div>
-              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-center">
-                <span className="text-2xl font-black font-sans text-slate-800 block">18</span>
-                <span className="text-[11px] font-semibold text-slate-700 mt-0.5 block">Surveyor Aktif</span>
-                <span className="text-[10px] text-slate-500">Geofencing Valid</span>
+              <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 text-center">
+                <span className="text-2xl font-black font-sans text-slate-800 block tabular-nums">18</span>
+                <span className="text-[11px] font-bold text-slate-700 mt-0.5 block">Surveyor Lapangan</span>
+                <span className="text-[10px] text-slate-400">MRV Geofence</span>
               </div>
-              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-center">
-                <span className="text-2xl font-black font-sans text-slate-800 block">9</span>
-                <span className="text-[11px] font-semibold text-slate-700 mt-0.5 block">Perusahaan B2B</span>
-                <span className="text-[10px] text-slate-500">Verified Buyer</span>
+              <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 text-center">
+                <span className="text-2xl font-black font-sans text-slate-800 block tabular-nums">9</span>
+                <span className="text-[11px] font-bold text-slate-700 mt-0.5 block">Perusahaan B2B</span>
+                <span className="text-[10px] text-slate-400">Pembeli Sah</span>
               </div>
             </div>
           </div>
 
-          <p className="text-[11px] text-slate-400 pt-3 border-t border-slate-100 font-sans mt-3">
+          <p className="text-[11px] text-slate-400 pt-3 border-t border-slate-100 font-sans mt-4">
             Seluruh data tersinkronisasi via PostgreSQL &amp; PostGIS spatial indices.
           </p>
         </div>
 
       </div>
 
-      {/* C. AdminActionRequiredQueue (Panel Antrean Tindakan Mendesak) */}
-      <div className="bg-amber-50/80 border border-amber-200 rounded-3xl p-5 sm:p-6 shadow-2xs font-sans">
-        <div className="flex items-center gap-2.5 pb-3 border-b border-amber-200/60">
-          <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-xs">
+      {/* 
+        ========================================================================
+        3. ANTREAN TINDAKAN MENDESAK (OTORISASI ADMIN)
+        ========================================================================
+      */}
+      <div className="bg-gradient-to-br from-amber-50 via-orange-50/30 to-white border border-amber-200/90 rounded-[24px] p-6 sm:p-7 shadow-[0_4px_24px_rgba(234,88,12,0.03)] font-sans">
+        <div className="flex items-center gap-3 pb-4 border-b border-amber-200/60">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center font-black text-sm shadow-xs shrink-0">
             !
           </div>
           <div>
-            <h3 className="font-bold text-amber-950 text-sm sm:text-base font-sans">
+            <h3 className="font-extrabold text-slate-900 text-base font-sans">
               Antrean Tindakan Mendesak Membutuhkan Otorisasi Admin
             </h3>
-            <p className="text-xs text-amber-800/80 font-sans">
-              Tindakan ini langsung memperbarui status stepper Petani dan membuka transaksi Korporat.
+            <p className="text-xs text-slate-500 font-sans mt-0.5">
+              Persetujuan di bawah ini langsung memperbarui status sertifikat dan membuka transfer dividen petani.
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-5">
           {/* Action 1: Cluster Ready for Audit */}
-          <div className="bg-white p-4 rounded-2xl border border-amber-200 flex flex-col justify-between space-y-3">
+          <div className="bg-white p-5 rounded-2xl border border-amber-200/90 shadow-2xs flex flex-col justify-between space-y-3">
             <div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200 inline-block">
-                KUOTA 100% TERCAPAI
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 inline-block uppercase">
+                Kuota 100% Tercapai
               </span>
-              <h4 className="font-bold text-xs text-slate-900 mt-1.5 leading-snug">
-                2 Klaster mencapai kuota 100% (Siap Audit Eksternal)
+              <h4 className="font-extrabold text-sm text-slate-900 mt-2 leading-snug font-sans">
+                2 Klaster siap diajukan audit eksternal
               </h4>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Garung Wonosobo (520 tCO2e) &amp; Lereng Sindoro (500 tCO2e).
+              <p className="text-xs text-slate-500 mt-1 font-sans">
+                Garung Wonosobo (520 tCO2e) &amp; Konservasi Sindoro (500 tCO2e).
               </p>
             </div>
             <button
               type="button"
               onClick={() => onNavigateTab('audit')}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              className="w-full py-2.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
             >
               <span>Proses Audit Eksternal</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -341,22 +412,22 @@ export default function AdminDashboardView({ onNavigateTab }) {
           </div>
 
           {/* Action 2: Withdrawal Requests */}
-          <div className="bg-white p-4 rounded-2xl border border-amber-200 flex flex-col justify-between space-y-3">
+          <div className="bg-white p-5 rounded-2xl border border-amber-200/90 shadow-2xs flex flex-col justify-between space-y-3">
             <div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200 inline-block">
-                PERMINTAAN PENCAIRAN
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-950 border border-orange-300 inline-block uppercase">
+                Permintaan Pencairan
               </span>
-              <h4 className="font-bold text-xs text-slate-900 mt-1.5 leading-snug">
-                5 Permintaan Penarikan Dana (Withdrawal) Petani
+              <h4 className="font-extrabold text-sm text-slate-900 mt-2 leading-snug font-sans">
+                5 Pengajuan Payout Dividen Petani
               </h4>
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-xs text-slate-500 mt-1 font-sans">
                 Termasuk pencairan Rp 3.250.000 ke rekening BRI Pak Joko Widodo.
               </p>
             </div>
             <button
               type="button"
               onClick={() => onNavigateTab('finance')}
-              className="w-full py-2 bg-[#14382C] hover:bg-[#1a4436] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              className="w-full py-2.5 bg-[#18130C] hover:bg-[#2A2014] text-amber-300 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
             >
               <span>Verifikasi Payout Petani</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -364,22 +435,22 @@ export default function AdminDashboardView({ onNavigateTab }) {
           </div>
 
           {/* Action 3: Corporate Deposit Top-Up */}
-          <div className="bg-white p-4 rounded-2xl border border-amber-200 flex flex-col justify-between space-y-3">
+          <div className="bg-white p-5 rounded-2xl border border-amber-200/90 shadow-2xs flex flex-col justify-between space-y-3">
             <div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200 inline-block">
-                DEPOSIT B2B MASUK
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200 inline-block uppercase">
+                Deposit B2B Masuk
               </span>
-              <h4 className="font-bold text-xs text-slate-900 mt-1.5 leading-snug">
-                1 Bukti Top-Up Deposit B2B Menunggu Konfirmasi
+              <h4 className="font-extrabold text-sm text-slate-900 mt-2 leading-snug font-sans">
+                1 Bukti Top-Up Saldo Korporat
               </h4>
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-xs text-slate-500 mt-1 font-sans">
                 PT Industri Hijau Nusantara (Tbk) — Rp 100.000.000 via Mandiri VA.
               </p>
             </div>
             <button
               type="button"
               onClick={() => onNavigateTab('finance')}
-              className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
             >
               <span>Cek Mutasi &amp; Terbitkan Faktur</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -388,31 +459,35 @@ export default function AdminDashboardView({ onNavigateTab }) {
         </div>
       </div>
 
-      {/* B. GlobalEcosystemMap (Peta Geospasial Ekosistem Nasional) */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden">
-        <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* 
+        ========================================================================
+        4. PETA GEOSPASIAL SEBARAN KLASTER NASIONAL
+        ========================================================================
+      */}
+      <div className="bg-white rounded-[24px] border border-amber-200/90 shadow-[0_4px_24px_rgba(234,88,12,0.03)] overflow-hidden">
+        <div className="p-5 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="font-bold text-[#14382C] text-base font-sans">
-              Peta Geospasial Sebaran Klaster Nasional (GlobalEcosystemMap)
+            <h3 className="font-extrabold text-slate-900 text-base font-sans">
+              Peta Sebaran Klaster &amp; Geofencing MRV Nasional
             </h3>
             <p className="text-xs text-slate-500 font-sans mt-0.5">
-              Visualisasi radius PostGIS klaster aktif di seluruh Indonesia berdasarkan status kuota.
+              Visualisasi koordinat PostGIS klaster aktif berdasarkan status sertifikasi kuota karbon.
             </p>
           </div>
 
           {/* Map Status Legend */}
           <div className="flex items-center gap-3 text-xs font-sans flex-wrap">
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-amber-500 inline-block" />
+            <span className="flex items-center gap-1.5 font-medium">
+              <span className="w-3 h-3 rounded-full bg-amber-400 inline-block" />
               <span className="text-slate-600">Pre-Verified (&lt; 100%)</span>
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-blue-500 inline-block animate-ping" />
-              <span className="text-blue-700 font-semibold">Siap Audit Eksternal (100%)</span>
+            <span className="flex items-center gap-1.5 font-bold">
+              <span className="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block" />
+              <span className="text-orange-700">Siap Audit Eksternal (100%)</span>
             </span>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 font-bold">
               <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />
-              <span className="text-emerald-800 font-semibold">Available for Sale</span>
+              <span className="text-emerald-700">Available for Sale</span>
             </span>
           </div>
         </div>

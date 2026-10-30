@@ -16,6 +16,29 @@ import {
   Sparkles
 } from 'lucide-react';
 import ClusterNameEditorModal from './ClusterNameEditorModal';
+import { getAdminClusters } from '../../api/admin';
+
+// Helper format display code klaster (hindari UUID 36 karakter membungkus 4 baris)
+function formatClusterCode(cluster) {
+  if (!cluster) return 'CLU-001';
+  if (cluster.code) return cluster.code;
+  const idStr = String(cluster.id || '');
+  if (idStr.startsWith('CLU-')) return idStr;
+  
+  let prefix = 'CLU';
+  const nameLower = (cluster.name || '').toLowerCase();
+  const regionLower = (cluster.region || '').toLowerCase();
+  
+  if (nameLower.includes('sukamaju')) prefix = 'CLU-SKMJ';
+  else if (nameLower.includes('wonosobo') || regionLower.includes('wonosobo')) prefix = 'CLU-WNSB';
+  else if (nameLower.includes('sindoro')) prefix = 'CLU-SNDR';
+  else if (nameLower.includes('gunungkidul') || regionLower.includes('gunungkidul')) prefix = 'CLU-GNKD';
+  else if (nameLower.includes('demak') || regionLower.includes('demak')) prefix = 'CLU-DMK';
+  else prefix = `CLU-${idStr.slice(0, 4).toUpperCase()}`;
+
+  const suffix = idStr.length >= 4 ? idStr.slice(-3).toUpperCase() : '001';
+  return `${prefix}-${suffix}`;
+}
 
 export default function ClusterGeoManagementView({ onToast }) {
   const mapContainerRef = useRef(null);
@@ -98,6 +121,39 @@ export default function ClusterGeoManagementView({ onToast }) {
       description: 'Inisiasi baru agroforestri kopi rakyat di Sukamaju Selatan.'
     }
   ]);
+
+  // Load real clusters from backend
+  useEffect(() => {
+    let isMounted = true;
+    async function loadClusters() {
+      try {
+        const data = await getAdminClusters();
+        if (isMounted && Array.isArray(data) && data.length > 0) {
+          // Merge real backend clusters into list
+          setClusters(prev => {
+            return data.map((bc, idx) => {
+              const matched = prev.find(p => p.name.toLowerCase().includes(bc.name.toLowerCase().slice(0, 8)));
+              return {
+                ...(matched || prev[idx % prev.length]),
+                id: bc.id,
+                name: bc.name,
+                farmersCount: bc.total_farmers || (matched ? matched.farmersCount : 30),
+                hectares: bc.total_area_ha || (matched ? matched.hectares : 25),
+                currentQuota: bc.available_quota_tco2e,
+                targetQuota: bc.target_quota_tco2e,
+                status: bc.status === 'available_for_sale' ? 'verified' : bc.status === 'auditing' ? 'ready' : 'collecting',
+                statusLabel: bc.status === 'available_for_sale' ? 'Terbit Bursa' : bc.status === 'auditing' ? 'Sedang Audit' : 'Mengumpulkan Kuota'
+              };
+            });
+          });
+        }
+      } catch (err) {
+        console.warn('Backend admin clusters fallback to mock:', err);
+      }
+    }
+    loadClusters();
+    return () => { isMounted = false; };
+  }, []);
 
   // Leaflet initialization for PostGisClusterCanvas
   useEffect(() => {
@@ -209,42 +265,42 @@ export default function ClusterGeoManagementView({ onToast }) {
     <div className="space-y-6 animate-fade-in pb-16 font-sans">
       
       {/* Top Banner Context */}
-      <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white p-5 sm:p-7 rounded-[26px] border border-amber-200/90 shadow-[0_4px_24px_rgba(234,88,12,0.04)] flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 uppercase">
-              POSTGIS GEOSPATIAL ENGINE
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-sans font-extrabold bg-amber-50 text-amber-900 border border-amber-300 uppercase tracking-wider">
+              PostGIS Geospatial Engine
             </span>
-            <span className="text-xs text-slate-500 font-sans">ST_Centroid &amp; ST_DWithin (10 km Radius)</span>
+            <span className="text-xs text-slate-500 font-sans">Agregasi Spasial Klaster Standar ISO 14064-2</span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-[#14382C] mt-1 font-sans">
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-1.5 font-sans tracking-tight">
             Manajemen Klaster Geospasial &amp; Agregasi Kuota
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5 font-sans">
-            Pengelompokan otomatis poligon kebun petani ke dalam klaster 500 tCO2e untuk memangkas biaya audit manual.
+          <p className="text-xs text-slate-500 mt-0.5 font-sans max-w-2xl leading-relaxed">
+            Pengelompokan otomatis poligon kebun pekarangan petani mitra ke dalam klaster kuota 500 tCO2e untuk memangkas biaya audit verifikasi manual.
           </p>
         </div>
       </div>
 
-      {/* A. PostGisClusterCanvas (Kanvas Peta Radius & Poligon Klaster) */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden relative font-sans">
+      {/* A. Kanvas Spasial Radius & Poligon Klaster */}
+      <div className="bg-white rounded-[26px] border border-slate-200/90 shadow-sm overflow-hidden relative font-sans">
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="font-bold text-[#14382C] text-sm sm:text-base font-sans">
-              Kanvas PostGIS Radius 10 km &amp; Kumpulan Poligon Petani (PostGisClusterCanvas)
+            <h3 className="font-bold text-slate-900 text-sm sm:text-base font-sans">
+              Kanvas Spasial Agregasi Radius 10 km &amp; Sebaran Kebun Petani
             </h3>
             <p className="text-xs text-slate-500 font-sans mt-0.5">
-              Klik pada poligon kebun untuk melihat detail kadastral petani (termasuk petak Pak Joko Widodo).
+              Klik pada poligon kebun untuk memeriksa kadastral dan status validasi alometrik petani mitra.
             </p>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-sans">
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" />
-              <span>Radius ST_DWithin: 10 km</span>
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-900 border border-blue-200 font-medium">
+              <span className="w-2 h-2 rounded-full bg-blue-600 inline-block" />
+              <span>Radius Klaster: 10 km</span>
             </span>
-            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-              <span className="w-2.5 h-2.5 rounded bg-emerald-600 inline-block" />
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" />
               <span>Poligon Petani Pre-Verified</span>
             </span>
           </div>
@@ -256,15 +312,15 @@ export default function ClusterGeoManagementView({ onToast }) {
         />
       </div>
 
-      {/* B. ClusterDirectoryTable (Tabel & Editor Identitas Klaster) */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden font-sans">
+      {/* B. Direktori Klaster & Pelacak Kuota */}
+      <div className="bg-white rounded-[26px] border border-slate-200/90 shadow-sm overflow-hidden font-sans">
         <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h3 className="font-bold text-[#14382C] text-base font-sans">
-              Direktori Klaster &amp; Pelacak Kuota Minimum (ClusterDirectoryTable)
+            <h3 className="font-bold text-slate-900 text-base font-sans">
+              Direktori Klaster &amp; Pelacak Kuota Minimum (500 tCO2e)
             </h3>
             <p className="text-xs text-slate-500 font-sans mt-0.5">
-              Total {clusters.length} klaster terbentuk oleh algoritma PostGIS.
+              Total <span className="font-bold text-slate-800 tabular-nums">{clusters.length}</span> klaster aktif terdaftar di seluruh wilayah Jawa Tengah &amp; Nusantara.
             </p>
           </div>
 
@@ -276,18 +332,18 @@ export default function ClusterGeoManagementView({ onToast }) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Cari nama klaster atau wilayah..."
-              className="pl-8 pr-3 py-1.5 text-xs font-sans bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-[#14382C] focus:bg-white transition w-56"
+              className="pl-8 pr-3 py-1.5 text-xs font-sans bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:bg-white transition w-60"
             />
           </div>
         </div>
 
-        {/* Table Content (Rapi, Standar Linear/Stripe, whitespace-nowrap) */}
+        {/* Table Content */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-sans">
-            <thead className="bg-stone-50 border-b border-stone-200 text-stone-400 font-sans text-[11px] font-semibold uppercase tracking-wider">
+            <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-sans text-[11px] font-bold uppercase tracking-wider">
               <tr>
                 <th className="px-5 py-3.5 min-w-[220px]">Identitas &amp; Wilayah Klaster</th>
-                <th className="px-5 py-3.5 whitespace-nowrap">Centroid PostGIS</th>
+                <th className="px-5 py-3.5 whitespace-nowrap">Titik Centroid</th>
                 <th className="px-5 py-3.5 whitespace-nowrap">Metrik Komunitas</th>
                 <th className="px-5 py-3.5 whitespace-nowrap">Progres Kuota Minimum (tCO2e)</th>
                 <th className="px-5 py-3.5 whitespace-nowrap text-center">Status Audit</th>
@@ -301,43 +357,50 @@ export default function ClusterGeoManagementView({ onToast }) {
                 return (
                   <tr key={cluster.id} className="hover:bg-slate-50/70 transition">
                     {/* Identitas Klaster */}
-                    <td className="px-5 py-4 min-w-[220px]">
-                      <span className="font-bold text-stone-900 block font-sans text-xs sm:text-sm">
+                    <td className="px-5 py-4 min-w-[240px]">
+                      <span className="font-bold text-slate-900 block font-sans text-xs sm:text-sm">
                         {cluster.name}
                       </span>
-                      <div className="flex items-center gap-1.5 mt-0.5 text-xs text-slate-500">
-                        <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                        <span>{cluster.region}</span>
-                        <span>•</span>
-                        <span className="font-mono text-[11px] font-medium text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                          {cluster.id}
+                      <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-500 flex-wrap">
+                        <span className="inline-flex items-center gap-1 shrink-0">
+                          <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{cluster.region}</span>
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span 
+                          title={`Database UUID: ${cluster.id}`}
+                          className="font-mono text-[10px] font-bold text-amber-950 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-300 tabular-nums whitespace-nowrap shrink-0 shadow-2xs inline-block"
+                        >
+                          {formatClusterCode(cluster)}
                         </span>
                       </div>
                     </td>
 
                     {/* Centroid PostGIS */}
-                    <td className="px-5 py-4 whitespace-nowrap font-mono text-xs text-slate-600">
+                    <td className="px-5 py-4 whitespace-nowrap font-sans text-xs text-slate-600 tabular-nums">
                       {cluster.centroid[0].toFixed(4)}, {cluster.centroid[1].toFixed(4)}
                     </td>
 
                     {/* Metrik Komunitas */}
-                    <td className="px-5 py-4 whitespace-nowrap text-xs text-slate-700">
-                      <strong>{cluster.farmersCount} Petani</strong> • {cluster.hectares} Ha
+                    <td className="px-5 py-4 whitespace-nowrap text-xs text-slate-700 font-sans">
+                      <strong className="tabular-nums font-bold text-slate-900">{cluster.farmersCount} Petani</strong> • <span className="tabular-nums text-slate-500">{cluster.hectares} Ha</span>
                     </td>
 
-                    {/* Progres Kuota (ClusterQuotaProgressCol) */}
+                    {/* Progres Kuota */}
                     <td className="px-5 py-4 whitespace-nowrap">
-                      <div className="space-y-1 w-44">
+                      <div className="space-y-1 w-44 font-sans">
                         <div className="flex justify-between text-xs font-sans">
-                          <span className="font-mono font-bold text-stone-800">
+                          <span className="font-sans font-bold text-slate-900 tabular-nums">
                             {cluster.currentQuota} / {cluster.targetQuota} tCO2e
                           </span>
-                          <span className="font-bold text-emerald-700">{percent}%</span>
+                          <span className="font-black text-amber-700 tabular-nums">{percent}%</span>
                         </div>
                         <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                           <div 
                             className={`h-full rounded-full transition-all duration-300 ${
-                              percent >= 100 ? 'bg-blue-600' : 'bg-emerald-500'
+                              percent >= 100 
+                                ? 'bg-gradient-to-r from-amber-500 to-orange-500' 
+                                : 'bg-amber-400'
                             }`}
                             style={{ width: `${Math.min(100, percent)}%` }}
                           />
@@ -347,12 +410,12 @@ export default function ClusterGeoManagementView({ onToast }) {
 
                     {/* Status Audit */}
                     <td className="px-5 py-4 whitespace-nowrap text-center">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-sans font-semibold ${
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-sans font-bold ${
                         cluster.status === 'ready'
-                          ? 'bg-blue-50 text-blue-900 border border-blue-300'
+                          ? 'bg-amber-50 text-amber-900 border border-amber-300'
                           : cluster.status === 'verified'
                           ? 'bg-emerald-50 text-emerald-900 border border-emerald-300'
-                          : 'bg-amber-50 text-amber-900 border border-amber-300'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200'
                       }`}>
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>{cluster.statusLabel}</span>
@@ -364,7 +427,7 @@ export default function ClusterGeoManagementView({ onToast }) {
                       <button
                         type="button"
                         onClick={() => setSelectedClusterForEdit(cluster)}
-                        className="border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 px-3 py-1.5 rounded-lg text-xs font-sans font-semibold inline-flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                        className="border border-slate-200 bg-white hover:bg-amber-50/50 hover:border-amber-300 hover:text-amber-900 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-sans font-bold inline-flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
                       >
                         <Edit3 className="w-3.5 h-3.5 text-slate-500" />
                         <span>Edit Profil Klaster</span>

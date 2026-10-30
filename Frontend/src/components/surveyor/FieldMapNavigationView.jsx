@@ -106,8 +106,9 @@ export default function FieldMapNavigationView({
         // Marker Centroid Kebun
         const centroidIcon = L.divIcon({
           className: 'custom-centroid-marker',
-          html: `<div style="background:#14382C;color:#34D399;border:2px solid #34D399;border-radius:12px;padding:4px 8px;font-size:11px;font-weight:bold;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,0.4);">
-                  📍 ${activeTicket.farmerName} (${activeTicket.id})
+          html: `<div style="background:#14382C;color:#34D399;border:2px solid #34D399;border-radius:12px;padding:4px 8px;font-size:11px;font-weight:bold;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,0.4);display:flex;align-items:center;gap:4px;">
+                  <span style="width:6px;height:6px;border-radius:50%;background:#34D399;display:inline-block;"></span>
+                  <span>${activeTicket.farmerName} (${activeTicket.id})</span>
                  </div>`,
           iconSize: [120, 30],
           iconAnchor: [60, 15]
@@ -281,7 +282,7 @@ export default function FieldMapNavigationView({
                   <span>Geofencing Terkunci: Di Luar Radius Toleransi</span>
                 </span>
               )}
-              <span className="text-xs font-mono font-bold text-slate-600">
+              <span className="text-xs font-sans font-bold text-slate-600 tabular-nums">
                 Jarak: {currentDistanceMeters} meter
               </span>
             </div>
@@ -290,17 +291,19 @@ export default function FieldMapNavigationView({
               {activeTicket.landName} — {activeTicket.farmerName}
             </h3>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
+            <div className="text-xs text-slate-600 leading-relaxed">
               {isInsideGeofence ? (
-                <span className="text-emerald-900 font-medium">
-                  ✓ Titik GPS Anda terverifikasi berada di dalam batas poligon kebun (&le; 50 meter). Tombol check-in aktif untuk membuka formulir audit inspeksi pohon.
-                </span>
+                <div className="flex items-start gap-2 text-emerald-900 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Titik GPS Anda terverifikasi berada di dalam batas poligon kebun (&le; 50 meter). Tombol check-in aktif untuk membuka formulir audit inspeksi pohon.</span>
+                </div>
               ) : (
-                <span className="text-amber-900 font-medium">
-                  ⚠️ Peringatan Anti-Fraud: Anda harus berada &le; 50 meter dari batas kebun untuk membuka lembar inspeksi. Saat ini jarak Anda 2.400 meter dari poligon.
-                </span>
+                <div className="flex items-start gap-2 text-amber-900 font-medium">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span>Peringatan Anti-Fraud: Anda harus berada &le; 50 meter dari batas kebun untuk membuka lembar inspeksi. Saat ini jarak Anda 2.400 meter dari poligon.</span>
+                </div>
               )}
-            </p>
+            </div>
           </div>
 
           {/* Action Trigger Button */}

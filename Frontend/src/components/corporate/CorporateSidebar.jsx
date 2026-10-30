@@ -5,24 +5,19 @@ import {
   Award, 
   Cpu, 
   CreditCard, 
-  ChevronLeft, 
-  ChevronRight,
-  ShieldCheck,
   Building2,
-  ExternalLink,
-  Layers,
-  X,
-  LogOut
+  CheckCircle2,
+  LogOut,
+  X
 } from 'lucide-react';
 import { clearAuthSession } from '../../api/auth';
+import TaniKarbonLogo from '../common/TaniKarbonLogo';
 
 export default function CorporateSidebar({ 
   currentUser,
   onLogout,
   currentTab, 
   onSelectTab, 
-  collapsed, 
-  onToggleCollapse,
   onOpenCompanyProfile,
   mobileOpen = false,
   onCloseMobile
@@ -47,7 +42,6 @@ export default function CorporateSidebar({
       id: 'integrations',
       label: 'Integrasi ERP & API',
       icon: Cpu,
-      highlight: true
     },
     {
       id: 'wallet',
@@ -65,175 +59,170 @@ export default function CorporateSidebar({
     }
   };
 
+  const displayName = currentUser?.company_name || currentUser?.full_name || 'PT Industri Hijau Nusantara';
+  const displayEmail = currentUser?.email || 'esg@korporathijau.com';
+  const monogram = displayName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 3)
+    .map(w => w[0])
+    .join('')
+    .toUpperCase() || 'IHN';
+
   return (
     <>
-      {/* Mobile Drawer Overlay Backdrop (Hanya di mobile saat dibuka) */}
-      {mobileOpen && (
-        <div 
-          className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-xs transition-opacity animate-fade-in"
-          onClick={onCloseMobile}
-        />
-      )}
-
-      {/* Sidebar Container */}
+      {/* DESKTOP FIXED SIDEBAR (Identik dengan format layout FarmerSidebar) */}
       <aside 
-        className={`fixed lg:sticky top-0 h-screen z-50 lg:z-20 flex flex-col bg-white border-r border-slate-200 transition-all duration-300 shrink-0 ${
-          mobileOpen ? 'left-0 shadow-2xl' : '-left-80 lg:left-0'
-        } ${collapsed ? 'lg:w-20' : 'lg:w-64'} w-72`}
+        id="corporate-sidebar"
+        className="hidden lg:flex fixed inset-y-0 left-0 z-50 h-screen w-64 flex-col justify-between border-r border-slate-200/80 bg-white p-5 font-sans"
+        aria-label="Navigasi Utama Korporat"
       >
-        {/* Top Header Branding */}
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          {(!collapsed || mobileOpen) && (
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#14382C] flex items-center justify-center text-emerald-400 font-bold shadow-xs shrink-0">
-                <Building2 className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <h2 className="font-black text-[#14382C] text-base tracking-tight font-sans">
-                    TaniKarbon
-                  </h2>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    CORP
-                  </span>
-                </div>
-                <span className="text-[11px] text-slate-500 font-sans block leading-none mt-0.5">
-                  Portal ESG &amp; Emisi
-                </span>
-              </div>
-            </div>
-          )}
+        <div className="flex min-h-0 flex-col gap-6">
+          {/* 1. BRAND HEADER */}
+          <div className="flex items-center justify-between">
+            <button 
+              type="button"
+              onClick={() => onSelectTab('dashboard')}
+              className="flex items-center text-left cursor-pointer group"
+            >
+              <TaniKarbonLogo size={36} textVariant="dark" subtitle="PORTAL ESG & EMISI" />
+            </button>
+          </div>
 
-          {/* Tombol Tutup Mobile (di layar mobile) */}
-          <button
-            onClick={onCloseMobile}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition lg:hidden cursor-pointer"
-            title="Tutup Menu"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* 2. MENU NAVIGASI BERSIH */}
+          <nav className="min-h-0 flex-1 overflow-y-auto space-y-1.5 pt-1">
+            {menuItems.map((item) => {
+              const isActive = currentTab === item.id;
+              const Icon = item.icon;
 
-          {/* Tombol Collapse Desktop (hanya di desktop) */}
-          <button
-            onClick={onToggleCollapse}
-            className="hidden lg:flex p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition mx-auto cursor-pointer"
-            title={collapsed ? "Buka Sidebar" : "Perkecil Sidebar"}
-          >
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onSelectTab(item.id)}
+                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl transition-all duration-200 text-left group cursor-pointer text-xs ${
+                    isActive
+                      ? 'bg-[#0F1E2E] text-white shadow-sm font-bold'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-semibold'
+                  }`}
+                >
+                  <div className={`p-1.5 rounded-xl shrink-0 transition ${
+                    isActive 
+                      ? 'bg-white/10 text-sky-400' 
+                      : 'text-slate-400 group-hover:text-slate-700'
+                  }`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* Menu Navigation (Clean, Linear/Stripe style) */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {menuItems.map((item) => {
-            const isActive = currentTab === item.id;
-            const Icon = item.icon;
+        {/* 3. KARTU PROFIL ENTITAS AKTIF */}
+        <div className="pt-4 border-t border-slate-200/80">
+          <div 
+            onClick={onOpenCompanyProfile}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                if (onOpenCompanyProfile) onOpenCompanyProfile();
+              }
+            }}
+            className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-3 hover:border-sky-300 hover:bg-sky-50/30 transition cursor-pointer"
+            title="Buka detail profil korporat & kelola emisi"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#0F1E2E] text-sky-300 font-bold text-xs flex items-center justify-center shrink-0 shadow-xs font-sans">
+                {monogram}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-slate-900 truncate">
+                  {displayName}
+                </p>
+                <p className="text-[10px] text-slate-500 truncate">{displayEmail}</p>
+              </div>
+            </div>
 
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  onSelectTab(item.id);
-                  if (onCloseMobile) onCloseMobile();
+            <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-700">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>API ERP Terhubung</span>
+              </span>
+              <button 
+                type="button" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLogoutClick();
                 }}
-                title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left group cursor-pointer ${
-                  isActive
-                    ? 'bg-[#14382C] text-white shadow-xs font-semibold'
-                    : item.highlight
-                    ? 'bg-slate-50 text-slate-900 hover:bg-slate-100 border border-slate-200/80 font-medium'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-medium'
-                }`}
+                className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition cursor-pointer"
+                title="Keluar Akun"
               >
-                <div className={`p-1 rounded-lg shrink-0 transition ${
-                  isActive 
-                    ? 'text-emerald-300' 
-                    : item.highlight
-                    ? 'text-emerald-700'
-                    : 'text-slate-400 group-hover:text-slate-700'
-                }`}>
-                  <Icon className="w-4.5 h-4.5" />
-                </div>
-
-                {(!collapsed || mobileOpen) && (
-                  <div className="flex-1 flex items-center justify-between min-w-0">
-                    <span className="text-sm font-sans truncate">{item.label}</span>
-                    {item.highlight && !isActive && (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold bg-emerald-600 text-white tracking-wide">
-                        LIVE API
-                      </span>
-                    )}
-                  </div>
-                )}
+                <LogOut className="w-3.5 h-3.5" />
               </button>
-            );
-          })}
-        </nav>
+            </div>
+          </div>
+        </div>
+      </aside>
 
-        {/* Profil Entitas Aktif & Tombol Logout */}
-        <div className="p-3 border-t border-slate-100 bg-slate-50/70 font-sans">
-          {(!collapsed || mobileOpen) ? (
-            <div>
-              <div 
-                onClick={() => {
-                  onOpenCompanyProfile();
-                  if (onCloseMobile) onCloseMobile();
-                }}
-                className="p-3 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-emerald-300 transition cursor-pointer group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-[#14382C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs font-mono">
-                    {(currentUser?.full_name || 'IHN').substring(0, 3).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="text-xs font-semibold text-stone-900 leading-snug truncate group-hover:text-emerald-800 font-sans">
-                      {currentUser?.full_name || 'PT Industri Hijau Nusantara'}
-                    </h4>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 truncate">
-                        SRN-PPI Verified Buyer
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-500 font-sans mt-0.5 truncate">
-                      {currentUser?.email || 'esg@korporathijau.com'}
-                    </p>
-                  </div>
-                </div>
+      {/* MOBILE DRAWER (Bila dibuka di mobile) */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity" 
+            onClick={onCloseMobile} 
+          />
+          <aside className="fixed inset-y-0 left-0 w-64 bg-white p-5 flex flex-col justify-between shadow-2xl z-50">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <TaniKarbonLogo size={32} textVariant="dark" subtitle="PORTAL ESG" />
+                <button 
+                  onClick={onCloseMobile} 
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
+              <nav className="space-y-1.5">
+                {menuItems.map((item) => {
+                  const isActive = currentTab === item.id;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        onSelectTab(item.id);
+                        if (onCloseMobile) onCloseMobile();
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left text-xs ${
+                        isActive
+                          ? 'bg-[#0F1E2E] text-white font-bold'
+                          : 'text-slate-600 hover:bg-slate-100 font-semibold'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            <div className="pt-4 border-t border-slate-200">
               <button
-                type="button"
                 onClick={handleLogoutClick}
-                className="w-full mt-2 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition border border-rose-200 cursor-pointer shadow-2xs"
-                title="Keluar dari akun"
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200"
               >
-                <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                <LogOut className="w-4 h-4" />
                 <span>Keluar Akun</span>
               </button>
             </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2 py-1">
-              <div 
-                onClick={onOpenCompanyProfile}
-                className="cursor-pointer group"
-                title={`${currentUser?.full_name || 'PT Industri Hijau Nusantara'} (${currentUser?.email || ''})`}
-              >
-                <div className="w-9 h-9 rounded-xl bg-[#14382C] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs font-mono">
-                  {(currentUser?.full_name || 'IHN').substring(0, 3).toUpperCase()}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleLogoutClick}
-                className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 transition border border-rose-200 cursor-pointer"
-                title="Keluar Akun"
-              >
-                <LogOut className="w-4 h-4 text-rose-600" />
-              </button>
-            </div>
-          )}
+          </aside>
         </div>
-      </aside>
+      )}
     </>
   );
 }

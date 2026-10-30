@@ -113,6 +113,13 @@ export function getStoredUser() {
   }
 }
 
+export function updateStoredUser(partialData) {
+  const current = getStoredUser() || {};
+  const updated = { ...current, ...partialData };
+  localStorage.setItem('tanikarbon_user', JSON.stringify(updated));
+  return updated;
+}
+
 export function clearAuthSession() {
   const authKeys = [
     'tanikarbon_token',

@@ -71,7 +71,7 @@
   }
 
   .stat-number {
-    @apply font-mono text-3xl md:text-4xl font-bold tracking-tight tabular-nums text-[#173829];
+    @apply font-sans text-3xl md:text-4xl font-extrabold tracking-tight tabular-nums text-stone-900;
   }
 
   .section-title {
@@ -262,6 +262,37 @@
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* =========================================================================
+   Smooth UX & Micro-Interactions (Deluxe Platform Feel)
+   ========================================================================= */
+.card-interactive {
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+  will-change: transform, box-shadow;
+}
+.card-interactive:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px -8px rgba(15, 41, 30, 0.12);
+}
+
+.btn-press {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s cubic-bezier(0.16, 1, 0.3, 1), filter 0.15s ease;
+  will-change: transform;
+}
+.btn-press:active {
+  transform: scale(0.97);
+}
+
+.shimmer-badge {
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite linear;
+}
+
+.page-enter {
+  animation: fadeInUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 
 
 

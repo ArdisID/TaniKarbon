@@ -42,6 +42,7 @@ import 'leaflet/dist/leaflet.css';
 import { getSurveyorTasks } from '../../api/surveyor';
 import { getStoredUser } from '../../api/auth';
 import BeritaAcaraModal from './BeritaAcaraModal';
+import AnimatedNumber from '../common/AnimatedNumber';
 
 // Helper hitung jarak Haversine (km)
 function calculateHaversineDistanceKm(lat1, lon1, lat2, lon2) {
@@ -223,9 +224,9 @@ export default function SurveyorDashboardView({
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       setSyncTime(timeStr);
-      if (onToast) onToast('Sinkronisasi selesai · Data PostgreSQL termutakhir ✔', 'emerald');
+      if (onToast) onToast('Sinkronisasi selesai · Data PostgreSQL termutakhir', 'emerald');
     } catch {
-      if (onToast) onToast('Sinkronisasi lokal selesai ✔', 'emerald');
+      if (onToast) onToast('Sinkronisasi lokal selesai', 'emerald');
     } finally {
       setIsSyncing(false);
     }
@@ -502,7 +503,8 @@ export default function SurveyorDashboardView({
           display: flex;
           align-items: center;
           justify-content: center;
-          font-family: 'JetBrains Mono', monospace;
+          font-family: 'Plus Jakarta Sans', Inter, sans-serif;
+          font-variant-numeric: tabular-nums;
           font-weight: 800;
           font-size: 13px;
           box-shadow: 0 4px 12px rgba(15,41,30,0.3);
@@ -520,7 +522,9 @@ export default function SurveyorDashboardView({
   const createStatusLandIcon = (isVerified, isSelected) => {
     const bg = isVerified ? '#10B981' : '#EF4444';
     const border = isSelected ? '#0F291E' : '#FFFFFF';
-    const symbol = isVerified ? '✓' : '✕';
+    const svgIcon = isVerified
+      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`
+      : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
 
     return L.divIcon({
       className: 'land-status-marker',
@@ -535,15 +539,12 @@ export default function SurveyorDashboardView({
           display: flex;
           align-items: center;
           justify-content: center;
-          font-family: 'JetBrains Mono', monospace;
-          font-weight: 800;
-          font-size: 14px;
           box-shadow: 0 4px 12px rgba(15,41,30,0.3);
           cursor: pointer;
           transform: ${isSelected ? 'scale(1.15)' : 'scale(1)'};
           transition: transform .2s ease;
         ">
-          ${symbol}
+          ${svgIcon}
         </div>
       `,
       iconSize: [30, 30],
@@ -559,7 +560,7 @@ export default function SurveyorDashboardView({
       <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-extrabold tracking-tight text-[#0F291E] sm:text-[26px]">
-            Halo, {activeUser.full_name || 'Budi Surveyor'} 👋
+            Halo, {activeUser.full_name || 'Budi Surveyor'}
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-500">
             <span>
@@ -576,51 +577,38 @@ export default function SurveyorDashboardView({
             </span>
             <span className="text-slate-300">•</span>
             <span>
-              Wilayah kerja: <span className="font-mono font-medium text-slate-700">Jawa Barat &amp; Sekitarnya</span>
+              Wilayah kerja: <span className="font-sans font-medium text-slate-700">Jawa Barat &amp; Sekitarnya</span>
             </span>
           </p>
         </div>
 
-        {/* Kanan: indikator online/offline + tombol sinkronisasi */}
+        {/* Kanan: status koneksi + tombol sinkronisasi */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {isOnline ? (
-            <span
-              className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 select-none"
-              title="Perangkat terhubung ke internet & server MRV TaniKarbon"
-            >
-              <span className="relative flex h-2.5 w-2.5 shrink-0">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-70"></span>
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-              </span>
-              <span className="whitespace-nowrap font-mono text-[11px] font-semibold tracking-tight text-emerald-800">
-                🟢 Online - Mode Sinkronisasi
-              </span>
+          <span
+            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 select-none text-xs font-semibold shadow-2xs transition-colors duration-200 ${
+              isOnline 
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800' 
+                : 'border-amber-200 bg-amber-50 text-amber-800'
+            }`}
+            title={isOnline ? 'Perangkat terhubung ke internet & server MRV TaniKarbon' : 'Perangkat offline. Data disimpan lokal di IndexedDB.'}
+          >
+            <span className={`h-2 w-2 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            <span className="whitespace-nowrap font-sans text-[11px] font-semibold tracking-tight">
+              {isOnline ? 'Online · Sinkronisasi Aktif' : 'Offline · Disimpan Lokal'}
             </span>
-          ) : (
-            <span
-              className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-2 select-none"
-              title="Perangkat offline. Data disimpan lokal di browser."
-            >
-              <span className="relative flex h-2.5 w-2.5 shrink-0">
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500"></span>
-              </span>
-              <span className="whitespace-nowrap font-mono text-[11px] font-semibold tracking-tight text-amber-800">
-                🔴 Offline - Disimpan Lokal
-              </span>
-            </span>
-          )}
+          </span>
 
           <button
             type="button"
             onClick={handleSyncData}
             disabled={isSyncing}
-            className="group inline-flex items-center gap-2 rounded-xl bg-[#0F291E] px-4 py-2.5 text-sm font-semibold text-white shadow-xs transition hover:bg-[#173D2E] active:scale-[.98] disabled:opacity-80 cursor-pointer"
+            className="group inline-flex items-center gap-2 rounded-xl bg-[#0F291E] px-4 py-2.5 text-sm font-semibold text-white shadow-xs transition-all duration-200 hover:bg-[#173D2E] hover:shadow-md hover:-translate-y-0.5 active:scale-95 disabled:opacity-80 cursor-pointer"
           >
             <RefreshCw
-              className={`h-4 w-4 text-emerald-400 transition-transform duration-500 ${isSyncing ? 'animate-spin' : 'group-hover:rotate-90'}`}
+              className={`h-4 w-4 text-emerald-400 transition-transform duration-700 ease-out ${isSyncing ? 'animate-spin' : 'group-hover:rotate-180'}`}
             />
             <span className="whitespace-nowrap">{isSyncing ? 'Menyinkronkan…' : 'Sinkronkan Data'}</span>
-            <span className="hidden font-mono text-[10px] font-medium text-emerald-300 sm:inline">
+            <span className="hidden font-sans text-[10px] font-medium text-emerald-300 sm:inline tabular-nums">
               (Terakhir: {syncTime})
             </span>
           </button>
@@ -628,114 +616,118 @@ export default function SurveyorDashboardView({
       </header>
 
       {/* ========================================================
-           B · GRID 4 KARTU KPI OPERASIONAL (Bento UI Hijau)
+           B · GRID 4 KARTU KPI OPERASIONAL (Bento UI Interaktif & Smooth)
       ========================================================= */}
       <section aria-label="KPI Operasional" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {/* KPI 1 · TUGAS HARI INI */}
-        <article className="group relative overflow-hidden rounded-2xl border border-emerald-200/70 bg-white p-5 shadow-xs transition duration-300 hover:border-emerald-300">
+        <article className="group relative overflow-hidden rounded-2xl border border-emerald-200/80 bg-white p-5 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-xl hover:shadow-emerald-950/5 hover:border-emerald-300">
+          <div className="absolute -top-12 -right-12 w-32 h-32 bg-emerald-500/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
           <div className="relative flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-800">
+              <p className="font-sans text-[11px] font-bold uppercase tracking-wider text-emerald-800">
                 Tugas Hari Ini
               </p>
               <p className="mt-3 flex items-baseline gap-1.5">
-                <span className="tnum text-[42px] font-extrabold leading-none tracking-tight text-[#0F291E]">
-                  {kpiStats.todayCount}
+                <span className="tnum text-[42px] font-extrabold leading-none tracking-tight text-[#0F291E] font-sans tabular-nums">
+                  <AnimatedNumber value={kpiStats.todayCount} />
                 </span>
                 <span className="text-sm font-semibold text-slate-400">Lahan</span>
               </p>
               <p className="mt-2 text-[12.5px] text-slate-500">Antrean prioritas survei</p>
             </div>
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-3 shadow-2xs">
               <ClipboardCheck className="h-6 w-6" />
             </span>
           </div>
           <div className="relative mt-4">
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
               <div
-                className="h-full rounded-full bg-emerald-500"
+                className="h-full rounded-full bg-emerald-500 transition-all duration-700 ease-out"
                 style={{ width: `${Math.min(100, Math.max(25, (kpiStats.todayCount / Math.max(1, tasks.length)) * 100))}%` }}
               ></div>
             </div>
-            <p className="mt-1.5 font-mono text-[10px] text-slate-400">
+            <p className="mt-1.5 font-sans text-[10px] text-slate-400">
               Sinkronisasi real-time PostgreSQL
             </p>
           </div>
         </article>
 
         {/* KPI 2 · ANTREAN BACKLOG */}
-        <article className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-xs transition duration-300 hover:border-slate-300">
+        <article className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-xl hover:shadow-slate-950/5 hover:border-slate-300">
+          <div className="absolute -top-12 -right-12 w-32 h-32 bg-slate-500/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
           <div className="relative flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <p className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Antrean Backlog
               </p>
               <p className="mt-3 flex items-baseline gap-1.5">
-                <span className="tnum text-[42px] font-extrabold leading-none tracking-tight text-[#0F291E]">
-                  {kpiStats.backlogCount}
+                <span className="tnum text-[42px] font-extrabold leading-none tracking-tight text-[#0F291E] font-sans tabular-nums">
+                  <AnimatedNumber value={kpiStats.backlogCount} />
                 </span>
                 <span className="text-sm font-semibold text-slate-400">Lahan</span>
               </p>
               <p className="mt-2 text-[12.5px] text-slate-500">Menunggu jadwal lapangan</p>
             </div>
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200 transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-3 shadow-2xs">
               <Inbox className="h-6 w-6" />
             </span>
           </div>
           <div className="relative mt-4 flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 font-mono text-[10px] font-medium text-slate-600">
+            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 font-sans text-[10px] font-semibold text-slate-600">
               <CalendarClock className="h-3 w-3" /> Siap dialokasikan
             </span>
           </div>
         </article>
 
         {/* KPI 3 · MENUNGGU REVISI */}
-        <article className="group relative overflow-hidden rounded-2xl border border-amber-200 bg-white p-5 shadow-xs transition duration-300 hover:border-amber-300">
+        <article className="group relative overflow-hidden rounded-2xl border border-amber-200 bg-white p-5 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-xl hover:shadow-amber-950/5 hover:border-amber-300">
+          <div className="absolute -top-12 -right-12 w-32 h-32 bg-amber-500/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
           <div className="relative flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-800">
+              <p className="font-sans text-[11px] font-bold uppercase tracking-wider text-amber-800">
                 Menunggu Revisi
               </p>
               <p className="mt-3 flex items-baseline gap-1.5">
-                <span className="tnum text-[42px] font-extrabold leading-none tracking-tight text-[#0F291E]">
-                  {kpiStats.revisionCount}
+                <span className="tnum text-[42px] font-extrabold leading-none tracking-tight text-[#0F291E] font-sans tabular-nums">
+                  <AnimatedNumber value={kpiStats.revisionCount} />
                 </span>
                 <span className="text-sm font-semibold text-slate-400">Lahan</span>
               </p>
               <p className="mt-2 text-[12.5px] text-slate-500">Dikembalikan ke petani</p>
             </div>
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-3 shadow-2xs">
               <PencilRuler className="h-6 w-6" />
             </span>
           </div>
           <div className="relative mt-4">
-            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 font-mono text-[10px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 font-sans text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
               <Hourglass className="h-3 w-3" /> SLA revisi: 3 hari
             </span>
           </div>
         </article>
 
         {/* KPI 4 · SELESAI */}
-        <article className="group relative overflow-hidden rounded-2xl border border-emerald-200 bg-white p-5 shadow-xs transition duration-300 hover:border-emerald-300">
+        <article className="group relative overflow-hidden rounded-2xl border border-emerald-200 bg-white p-5 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-xl hover:shadow-emerald-950/5 hover:border-emerald-300">
+          <div className="absolute -top-12 -right-12 w-32 h-32 bg-emerald-500/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
           <div className="relative flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-800">
+              <p className="font-sans text-[11px] font-bold uppercase tracking-wider text-emerald-800">
                 Selesai / Terverifikasi
               </p>
               <p className="mt-3 flex items-baseline gap-1.5">
-                <span className="tnum text-[42px] font-extrabold leading-none tracking-tight text-[#0F291E]">
-                  {kpiStats.completedCount}
+                <span className="tnum text-[42px] font-extrabold leading-none tracking-tight text-[#0F291E] font-sans tabular-nums">
+                  <AnimatedNumber value={kpiStats.completedCount} />
                 </span>
                 <span className="text-sm font-semibold text-slate-400">Lahan</span>
               </p>
               <p className="mt-2 text-[12.5px] text-slate-500">Lolos audit surveyor</p>
             </div>
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 transition-transform duration-300 ease-out group-hover:scale-110 group-hover:rotate-3 shadow-2xs">
               <CircleCheckBig className="h-6 w-6" />
             </span>
           </div>
           <div className="relative mt-4 flex items-center gap-2">
-            <span className="truncate font-mono text-[10px] text-slate-500">
+            <span className="truncate font-sans text-[10px] text-slate-500 font-medium tabular-nums">
               Total {kpiStats.totalHa} ha di bawah pengawasan
             </span>
           </div>
@@ -765,7 +757,7 @@ export default function SurveyorDashboardView({
               )}
             </h2>
             {activeTab === 'completed' ? (
-              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-slate-500">
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-sans text-[11px] text-slate-500 font-medium tabular-nums">
                 <span className="inline-flex items-center gap-1 font-semibold text-emerald-800">
                   <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" /> {completedTasks.length} Lahan Selesai Diaudit
                 </span>
@@ -779,7 +771,7 @@ export default function SurveyorDashboardView({
                 </span>
               </p>
             ) : (
-              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-slate-500">
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-sans text-[11px] text-slate-500 font-medium tabular-nums">
                 <span className="inline-flex items-center gap-1 font-semibold text-emerald-800">
                   <Ruler className="h-3.5 w-3.5 text-emerald-600" /> Jarak Berurutan: {routeCalculation.sequentialDistanceKm} km
                 </span>
@@ -910,12 +902,12 @@ export default function SurveyorDashboardView({
                   <Popup>
                     <div className="font-sans text-xs p-1">
                       <div className="flex items-center gap-1.5">
-                        <span className={`px-1.5 py-0.5 rounded font-mono font-bold text-[10px] ${
+                        <span className={`px-1.5 py-0.5 rounded font-sans font-bold text-[10px] ${
                           isCompleted
                             ? (isVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800')
                             : 'bg-emerald-100 text-emerald-800'
                         }`}>
-                          {isCompleted ? (isVerified ? '✓ Terverifikasi' : '✕ Ditolak') : 'Draft'}
+                          {isCompleted ? (isVerified ? 'Terverifikasi' : 'Ditolak') : 'Draft'}
                         </span>
                         <strong className="text-[#0F291E] block text-[13px]">{task.name}</strong>
                       </div>
@@ -991,22 +983,22 @@ export default function SurveyorDashboardView({
                   <Popup>
                     <div className="font-sans text-xs p-1">
                       <div className="flex items-center gap-1.5">
-                        <span className={`px-1.5 py-0.5 rounded font-mono font-bold text-[10px] ${
+                        <span className={`px-1.5 py-0.5 rounded font-sans font-bold text-[10px] tabular-nums ${
                           isCompleted
                             ? (isVerified ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800')
                             : 'bg-emerald-100 text-emerald-800'
                         }`}>
-                          {activeTab === 'completed' ? (isVerified ? '✓ Disetujui' : '✕ Ditolak') : `#${idx + 1}`}
+                          {activeTab === 'completed' ? (isVerified ? 'Disetujui' : 'Ditolak') : `#${idx + 1}`}
                         </span>
                         <strong className="text-[#0F291E]">{task.name}</strong>
                       </div>
                       <p className="text-slate-500 mt-1">Petani: {task.farmer_name || 'Petani Mitra'}</p>
-                      <p className="text-slate-500">Jarak: {task.computedDistance} km</p>
+                      <p className="text-slate-500 font-sans tabular-nums">Jarak: {task.computedDistance} km</p>
                       {isCompleted ? (
                         <button
                           type="button"
                           onClick={() => setSelectedBaTask(task)}
-                          className="mt-2 w-full py-1.5 px-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition flex items-center justify-center gap-1 cursor-pointer"
+                          className="mt-2 w-full py-1.5 px-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-900 transition flex items-center justify-center gap-1 cursor-pointer font-sans"
                         >
                           <FileText className="h-3 w-3 text-emerald-400" />
                           <span>Lihat Berita Acara</span>
@@ -1015,7 +1007,7 @@ export default function SurveyorDashboardView({
                         <button
                           type="button"
                           onClick={() => handleStartInspectionClick(task)}
-                          className="mt-2 w-full py-1.5 px-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition cursor-pointer"
+                          className="mt-2 w-full py-1.5 px-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition cursor-pointer font-sans"
                         >
                           Mulai Inspeksi Lapangan →
                         </button>
@@ -1029,8 +1021,8 @@ export default function SurveyorDashboardView({
 
           {/* Floating Chip Urutan Rute Kunjungan ATAU Arsip Lahan Selesai Diaudit */}
           {displayedMapPlots.length > 0 && (
-            <div className="no-scrollbar absolute bottom-3 inset-x-3 z-[1000] flex items-center gap-2 overflow-x-auto rounded-xl bg-white/95 p-2 shadow-sm backdrop-blur-xs border border-slate-200">
-              <span className="shrink-0 px-2 font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="no-scrollbar absolute bottom-3 inset-x-3 z-[1000] flex items-center gap-2 overflow-x-auto rounded-xl bg-white/95 p-2 shadow-sm backdrop-blur-xs border border-slate-200 scroll-smooth">
+              <span className="shrink-0 px-2 font-sans text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 {activeTab === 'completed' ? 'Arsip Lahan:' : 'Urutan:'}
               </span>
               {displayedMapPlots.map((plotItem, idx) => {
@@ -1041,21 +1033,21 @@ export default function SurveyorDashboardView({
                     key={`chip-${plotItem.id}`}
                     type="button"
                     onClick={() => handleSelectTask(plotItem)}
-                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] cursor-pointer ${
                       isSelected
-                        ? 'bg-[#0F291E] text-white shadow-xs'
+                        ? 'bg-[#0F291E] text-white shadow-xs ring-2 ring-emerald-500/40'
                         : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-800'
                     }`}
                   >
                     {activeTab === 'completed' ? (
                       <span className={`h-2 w-2 rounded-full ${isVerified ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
                     ) : (
-                      <span className="font-mono text-[10px] font-bold">#{idx + 1}</span>
+                      <span className="font-sans text-[10px] font-bold tabular-nums">#{idx + 1}</span>
                     )}
-                    <span className="truncate max-w-[140px]">{plotItem.name}</span>
-                    <span className="font-mono text-[10px] text-emerald-400">
+                    <span className="truncate max-w-[140px] font-sans">{plotItem.name}</span>
+                    <span className="font-sans text-[10px] text-emerald-400 font-medium tabular-nums">
                       {activeTab === 'completed'
-                        ? (isVerified ? '✓' : '✕')
+                        ? (isVerified ? 'Lolos' : 'Ditolak')
                         : `(${plotItem.computedDistance} km)`}
                     </span>
                   </button>
@@ -1073,22 +1065,22 @@ export default function SurveyorDashboardView({
         {/* Header Tabs Filter */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-[#0F291E] flex items-center gap-2">
+            <h2 className="text-lg font-bold text-[#0F291E] flex items-center gap-2 font-sans">
               <ListTodo className="h-5 w-5 text-emerald-600" /> Antrean Lahan Lapangan
             </h2>
-            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono text-xs font-semibold">
+            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-sans text-xs font-bold tabular-nums">
               {displayTasks.length} Tiket
             </span>
           </div>
 
-          <div className="flex rounded-xl bg-slate-100 p-1 flex-wrap gap-1">
+          <div className="flex rounded-xl bg-slate-100 p-1 flex-wrap gap-1 shadow-inner">
             <button
               type="button"
               onClick={() => setActiveTab('all')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 active:scale-95 cursor-pointer ${
                 activeTab === 'all'
-                  ? 'bg-white text-[#0F291E] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-[#0F291E] shadow-sm font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               Semua Antrean ({activeInspectionTasks.length})
@@ -1096,10 +1088,10 @@ export default function SurveyorDashboardView({
             <button
               type="button"
               onClick={() => setActiveTab('nearest')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 active:scale-95 cursor-pointer ${
                 activeTab === 'nearest'
-                  ? 'bg-white text-[#0F291E] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-[#0F291E] shadow-sm font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               Terdekat dari GPS
@@ -1107,10 +1099,10 @@ export default function SurveyorDashboardView({
             <button
               type="button"
               onClick={() => setActiveTab('today')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 active:scale-95 cursor-pointer ${
                 activeTab === 'today'
-                  ? 'bg-white text-[#0F291E] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-[#0F291E] shadow-sm font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               Jadwal Hari Ini
@@ -1118,10 +1110,10 @@ export default function SurveyorDashboardView({
             <button
               type="button"
               onClick={() => setActiveTab('completed')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200 active:scale-95 cursor-pointer ${
                 activeTab === 'completed'
-                  ? 'bg-white text-[#0F291E] shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-[#0F291E] shadow-sm font-bold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               Selesai Diaudit ({completedTasks.length})
@@ -1147,7 +1139,7 @@ export default function SurveyorDashboardView({
         )}
 
         {/* List Tiket Lahan */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {displayTasks.map((task) => {
             const isSelected = selectedTask?.id === task.id;
             const area = task.area_sqm || task.areaM2 || 0;
@@ -1159,60 +1151,63 @@ export default function SurveyorDashboardView({
               <article
                 key={task.id}
                 onClick={() => handleSelectTask(task)}
-                className={`group relative flex flex-col justify-between rounded-2xl border bg-white p-5 shadow-xs transition duration-200 cursor-pointer ${
+                className={`group relative flex flex-col justify-between rounded-2xl border bg-white p-5 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:shadow-xl hover:shadow-emerald-950/8 cursor-pointer overflow-hidden ${
                   isSelected
-                    ? 'border-emerald-500 ring-2 ring-emerald-500/20'
-                    : 'border-slate-200 hover:border-slate-300'
+                    ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-md'
+                    : 'border-slate-200 hover:border-emerald-300'
                 }`}
               >
-                <div>
+                {/* Ambient glow accent on card hover */}
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+
+                <div className="relative z-10">
                   <div className="flex items-start justify-between gap-2">
                     {isCompleted ? (
-                      <span className={`font-mono text-[11px] font-bold border px-2 py-0.5 rounded-md ${
+                      <span className={`font-sans text-[11px] font-bold border px-2 py-0.5 rounded-md shadow-2xs ${
                         isVerified
                           ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
                           : 'text-rose-800 bg-rose-50 border-rose-200'
                       }`}>
-                        {isVerified ? '✓ Terverifikasi' : '✕ Ditolak'}
+                        {isVerified ? 'Terverifikasi' : 'Ditolak'}
                       </span>
                     ) : (
-                      <span className="font-mono text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                        TKT-{task.id?.slice(0, 8).toUpperCase()}
+                      <span className="font-sans text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md tabular-nums shadow-2xs">
+                        TKT-{String(task.id || '').slice(0, 8).toUpperCase()}
                       </span>
                     )}
-                    <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-slate-500">
-                      <MapPin className="h-3 w-3 text-emerald-600" />
+                    <span className="inline-flex items-center gap-1 font-sans text-[11px] font-semibold text-slate-500 tabular-nums bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md">
+                      <MapPin className="h-3 w-3 text-emerald-600 transition-transform group-hover:scale-110" />
                       {task.computedDistance} km
                     </span>
                   </div>
 
-                  <h3 className="mt-2.5 text-base font-bold text-[#0F291E] line-clamp-1 group-hover:text-emerald-800 transition">
+                  <h3 className="mt-2.5 text-base font-bold text-[#0F291E] line-clamp-1 group-hover:text-emerald-800 transition-colors duration-200 font-sans">
                     {task.name}
                   </h3>
-                  <p className="text-xs font-semibold text-slate-600 mt-0.5">
+                  <p className="text-xs font-semibold text-slate-600 mt-0.5 font-sans">
                     Petani: {task.farmer_name || 'Petani Mitra'}
                   </p>
 
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-mono text-slate-600 border-t border-slate-100 pt-2.5">
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-sans text-slate-600 border-t border-slate-100 pt-2.5 tabular-nums">
                     <div>
-                      <span className="text-slate-400 block text-[10px]">LUAS LAHAN</span>
-                      <strong>{Number(area).toLocaleString()} m²</strong>
+                      <span className="text-slate-400 block text-[10px] font-sans">LUAS LAHAN</span>
+                      <strong className="font-bold text-stone-900">{Number(area).toLocaleString()} m²</strong>
                     </div>
                     <div>
-                      <span className="text-slate-400 block text-[10px]">POPULASI POHON</span>
-                      <strong>{treeCount} Pohon</strong>
+                      <span className="text-slate-400 block text-[10px] font-sans">POPULASI POHON</span>
+                      <strong className="font-bold text-stone-900">{treeCount} Pohon</strong>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                <div className="relative z-10 mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleWhatsApp(task.farmer_phone, task.farmer_name);
                     }}
-                    className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition cursor-pointer"
+                    className="p-2 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all duration-200 active:scale-95 cursor-pointer"
                     title="Hubungi Petani via WhatsApp"
                   >
                     <MessageCircle className="h-4 w-4" />
@@ -1225,7 +1220,7 @@ export default function SurveyorDashboardView({
                         e.stopPropagation();
                         setSelectedBaTask(task);
                       }}
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-800 py-2 px-3 text-xs font-bold text-white transition hover:bg-slate-900 active:scale-[.98] cursor-pointer"
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-800 py-2.5 px-3.5 text-xs font-bold text-white transition-all duration-200 hover:bg-slate-900 hover:shadow-md active:scale-[.98] cursor-pointer"
                     >
                       <FileText className="h-3.5 w-3.5 text-emerald-400" />
                       <span>Lihat Berita Acara</span>
@@ -1237,10 +1232,10 @@ export default function SurveyorDashboardView({
                         e.stopPropagation();
                         handleStartInspectionClick(task);
                       }}
-                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0F291E] py-2 px-3 text-xs font-bold text-white transition hover:bg-[#173D2E] active:scale-[.98] cursor-pointer"
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0F291E] py-2.5 px-3.5 text-xs font-bold text-white transition-all duration-200 hover:bg-[#173D2E] hover:shadow-md active:scale-[.98] cursor-pointer group/btn"
                     >
                       <span>Mulai Inspeksi</span>
-                      <ArrowRight className="h-3.5 w-3.5 text-emerald-400" />
+                      <ArrowRight className="h-3.5 w-3.5 text-emerald-400 transition-transform duration-200 group-hover/btn:translate-x-1" />
                     </button>
                   )}
                 </div>

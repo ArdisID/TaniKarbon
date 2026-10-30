@@ -126,11 +126,13 @@ export default function AnnualReverificationView({ onToast }) {
                     <span className="font-bold text-sm text-stone-900 font-sans">
                       {ticket.farmerName}
                     </span>
-                    <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                    <span className="font-sans text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 tabular-nums">
                       {ticket.id}
                     </span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      {ticket.oldVintage} ➔ {ticket.newVintage}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      <span>{ticket.oldVintage}</span>
+                      <ArrowRight className="w-3 h-3 text-emerald-600 inline" />
+                      <span>{ticket.newVintage}</span>
                     </span>
                   </div>
 
@@ -139,7 +141,11 @@ export default function AnnualReverificationView({ onToast }) {
                   </p>
 
                   <div className="flex items-center gap-3 text-xs text-slate-500">
-                    <span>Pertumbuhan: Lingkar {ticket.oldGirthCm} cm ➔ <strong>{ticket.newGirthCm} cm</strong> (<span className="text-emerald-700 font-bold">{ticket.girthDelta}</span>)</span>
+                    <span className="inline-flex items-center gap-1">
+                      <span>Pertumbuhan: Lingkar {ticket.oldGirthCm} cm</span>
+                      <ArrowRight className="w-3 h-3 text-emerald-600 inline" />
+                      <strong>{ticket.newGirthCm} cm</strong> (<span className="text-emerald-700 font-bold">{ticket.girthDelta}</span>)
+                    </span>
                     <span>•</span>
                     <span>Diajukan: {ticket.submissionDate}</span>
                   </div>
@@ -205,7 +211,7 @@ export default function AnnualReverificationView({ onToast }) {
                 <div className="grid grid-cols-2 gap-4 text-center">
                   <div className="p-3 bg-white rounded-xl border border-emerald-200">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block">Tahun Lalu ({selectedTicketForModal.oldVintage})</span>
-                    <strong className="text-xl font-mono text-stone-800 mt-1 block">
+                    <strong className="text-xl font-sans font-bold text-stone-800 mt-1 block tabular-nums">
                       Lingkar {selectedTicketForModal.oldGirthCm} cm
                     </strong>
                     <span className="text-[10px] text-slate-400">Terverifikasi Surveyor Budi</span>
@@ -213,7 +219,7 @@ export default function AnnualReverificationView({ onToast }) {
 
                   <div className="p-3 bg-white rounded-xl border border-emerald-200">
                     <span className="text-[10px] text-emerald-700 uppercase font-bold block">Tahun Berjalan ({selectedTicketForModal.newVintage})</span>
-                    <strong className="text-xl font-mono text-emerald-800 mt-1 block">
+                    <strong className="text-xl font-sans font-extrabold text-emerald-800 mt-1 block tabular-nums">
                       Lingkar {selectedTicketForModal.newGirthCm} cm
                     </strong>
                     <span className="text-[10px] text-emerald-600 font-semibold font-sans">
@@ -230,7 +236,7 @@ export default function AnnualReverificationView({ onToast }) {
               {/* Photo Canopy Evidence Box */}
               <div className="p-4 bg-slate-900 text-white rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-emerald-400">Bukti Foto Kanopi &amp; Meteran Petani</span>
+                  <span className="text-xs font-sans font-semibold text-emerald-400">Bukti Foto Kanopi &amp; Meteran Petani</span>
                   <Camera className="w-4 h-4 text-slate-400" />
                 </div>
                 <div className="h-32 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700 text-xs text-slate-400 font-sans">

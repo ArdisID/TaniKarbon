@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   X, 
-  Landmark, 
+  Building2, 
   CheckCircle2, 
   Copy, 
   Upload, 
@@ -48,27 +48,27 @@ export default function TopUpDepositModal({ onClose, onTopUpSuccess, onToast }) 
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in"
+      className="fixed inset-0 z-[9999] isolate flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div 
-        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden relative max-h-[92vh] flex flex-col"
+        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden relative max-h-[92vh] flex flex-col font-sans"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-[#14382C] px-5 py-4 text-white flex items-center justify-between shrink-0">
+        <div className="bg-[#0F1E2E] px-5 py-4 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
-              <Landmark className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-300">
+              <Building2 className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[10px] font-mono font-bold text-emerald-300 uppercase tracking-wider">Pre-Funded Wallet</span>
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-sky-300">Pre-Funded Wallet</span>
               <h3 className="font-extrabold text-white text-base leading-tight">Top-Up Deposit Korporat B2B</h3>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
+            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -91,9 +91,9 @@ export default function TopUpDepositModal({ onClose, onTopUpSuccess, onToast }) 
                   key={opt.id}
                   type="button"
                   onClick={() => setBank(opt.id)}
-                  className={`p-2.5 rounded-xl border text-center transition ${
+                  className={`p-2.5 rounded-xl border text-center transition cursor-pointer ${
                     bank === opt.id
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-900 font-bold ring-2 ring-emerald-600/20'
+                      ? 'border-sky-600 bg-sky-50 text-sky-900 font-bold ring-2 ring-sky-600/20'
                       : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300'
                   }`}
                 >
@@ -105,23 +105,23 @@ export default function TopUpDepositModal({ onClose, onTopUpSuccess, onToast }) 
 
           {/* VA Display Box */}
           <div className="p-4 bg-slate-900 text-white rounded-2xl border border-slate-800 space-y-1">
-            <span className="text-[10px] font-mono text-slate-400 uppercase font-bold block">
+            <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
               Nomor Rekening Virtual Account (Otomatis Kliring)
             </span>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-base sm:text-lg font-black font-mono text-emerald-300">
+              <span className="text-base sm:text-lg font-bold font-sans text-sky-300 tabular-nums">
                 {vaNumbers[bank]}
               </span>
               <button
                 type="button"
                 onClick={handleCopyVa}
-                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-mono transition flex items-center gap-1"
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium transition flex items-center gap-1 cursor-pointer"
               >
-                {copiedVa ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedVa ? <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copiedVa ? 'Tersalin' : 'Salin'}</span>
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+            <p className="text-[11px] text-slate-400 font-sans mt-0.5">
               a.n. TaniKarbon ESCROW - PT Industri Hijau Nusantara (Tbk)
             </p>
           </div>
@@ -140,7 +140,7 @@ export default function TopUpDepositModal({ onClose, onTopUpSuccess, onToast }) 
                 value={nominal}
                 onChange={(e) => setNominal(e.target.value)}
                 required
-                className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-mono font-black text-lg text-[#14382C] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14382C]"
+                className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl font-sans font-extrabold text-lg text-[#0F1E2E] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F1E2E] tabular-nums"
               />
             </div>
 
@@ -151,7 +151,7 @@ export default function TopUpDepositModal({ onClose, onTopUpSuccess, onToast }) 
                   key={val}
                   type="button"
                   onClick={() => setNominal(val.toString())}
-                  className="px-2.5 py-1 text-[11px] font-mono font-bold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition"
+                  className="px-2.5 py-1 text-xs font-sans font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition cursor-pointer tabular-nums"
                 >
                   {formatRupiah(val)}
                 </button>
@@ -171,14 +171,14 @@ export default function TopUpDepositModal({ onClose, onTopUpSuccess, onToast }) 
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+              className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex-2 py-3 bg-[#14382C] hover:bg-[#1a4436] text-white font-bold text-xs rounded-xl transition shadow-md flex items-center justify-center gap-2"
+              className="flex-2 py-3 bg-[#0F1E2E] hover:bg-[#1E293B] text-white font-bold text-xs rounded-xl transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
               {isSubmitting ? 'Memverifikasi Setoran...' : `Konfirmasi Top-Up ${formatRupiah(parseInt(nominal || 0))}`}
             </button>

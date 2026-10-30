@@ -16,7 +16,8 @@ import {
   X, 
   ShieldCheck, 
   Sparkles,
-  HelpCircle
+  HelpCircle,
+  Pencil
 } from 'lucide-react';
 
 export default function FieldInspectionWorksheetView({ 
@@ -132,7 +133,7 @@ export default function FieldInspectionWorksheetView({
             <span className="px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-[#14382C] text-emerald-300 uppercase">
               LEMBAR AUDIT FISIK TIER-3
             </span>
-            <span className="text-xs font-mono font-medium text-slate-500">{activeTicket.id}</span>
+            <span className="text-xs font-sans font-medium text-slate-500 tabular-nums">{activeTicket.id}</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-[#14382C] mt-1 font-sans">
             Inspeksi Lapangan: {activeTicket.landName}
@@ -172,7 +173,7 @@ export default function FieldInspectionWorksheetView({
                   : 'bg-slate-50 text-slate-500 font-medium'
               }`}
             >
-              <span className={`w-5 h-5 rounded-full text-[10px] font-mono flex items-center justify-center ${
+              <span className={`w-5 h-5 rounded-full text-[10px] font-sans font-bold tabular-nums flex items-center justify-center ${
                 currentStep === s.num ? 'bg-white text-[#14382C] font-bold' : 'bg-slate-200 text-slate-700'
               }`}>
                 {s.num}
@@ -203,10 +204,10 @@ export default function FieldInspectionWorksheetView({
           {/* Visual Boundary Preview Box */}
           <div className="p-4 bg-slate-900 text-white rounded-2xl relative overflow-hidden h-52 flex flex-col justify-between">
             <div className="flex items-center justify-between z-10">
-              <span className="text-xs font-mono text-emerald-400 bg-white/10 px-2.5 py-1 rounded-lg border border-white/20">
+              <span className="text-xs font-sans font-medium text-emerald-400 bg-white/10 px-2.5 py-1 rounded-lg border border-white/20">
                 Overlay Citra Satelit + Jalur Berjalan Petugas
               </span>
-              <span className="text-xs font-mono font-bold text-white">
+              <span className="text-xs font-sans font-bold text-white tabular-nums">
                 Luas Lahan: {recalculatedArea.toLocaleString('id-ID')} m²
               </span>
             </div>
@@ -214,7 +215,7 @@ export default function FieldInspectionWorksheetView({
             <div className="text-center z-10 py-6">
               <div className="inline-block p-4 border-2 border-dashed border-emerald-400/80 rounded-2xl bg-emerald-500/10 backdrop-blur-xs">
                 <span className="text-xs text-emerald-200 block font-medium">Poligon Lahan #TK-WNSB-042</span>
-                <span className="text-xl font-bold font-mono text-white mt-1 block">
+                <span className="text-xl font-extrabold font-sans text-white mt-1 block tabular-nums">
                   {recalculatedArea} m²
                 </span>
                 <span className="text-[10px] text-emerald-300 font-sans mt-0.5 block">
@@ -223,7 +224,7 @@ export default function FieldInspectionWorksheetView({
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-[11px] text-slate-400 z-10 border-t border-white/10 pt-2 font-mono">
+            <div className="flex items-center justify-between text-[11px] text-slate-400 z-10 border-t border-white/10 pt-2 font-sans font-medium tabular-nums">
               <span>Sensor: GPS High-Precision (Akurasi &plusmn; 1.2m)</span>
               <span>Datum: WGS84 UTM Zone 49S</span>
             </div>
@@ -248,8 +249,8 @@ export default function FieldInspectionWorksheetView({
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span className="text-xs font-bold font-sans">✓ Batas Poligon Sesuai Lapangan</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="text-xs font-bold font-sans">Batas Poligon Sesuai Lapangan</span>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1 font-sans">
                   Garis poligon yang digambar petani akurat sesuai patok batas fisik di tanah (4.520 m²).
@@ -269,7 +270,8 @@ export default function FieldInspectionWorksheetView({
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-amber-700">✎ Koreksi Titik Sudut (Redraw Tool)</span>
+                  <Pencil className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span className="text-xs font-bold text-amber-700">Koreksi Titik Sudut (Redraw Tool)</span>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1 font-sans">
                   Ada sudut meluber ke jalan desa / jurang; dikoreksi menjadi <strong>4.380 m²</strong>.
@@ -425,7 +427,7 @@ export default function FieldInspectionWorksheetView({
                 Tahap 3: Uji Petik &amp; Pengukuran Ulang Sampel (SampleRemeasurementStep)
               </h3>
               <p className="text-xs text-slate-500">
-                Validasi 3 sampel pohon dengan pita ukur setinggi dada (130 cm / DBH) dan kamera ber-watermark.
+                Validasi 3 sampel spesimen pohon dengan pita ukur setinggi dada (130 cm / DBH) dan koordinat GPS terverifikasi.
               </p>
             </div>
           </div>
@@ -453,7 +455,7 @@ export default function FieldInspectionWorksheetView({
                 <div key={sample.id} className="p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 font-sans">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-stone-900 text-xs sm:text-sm flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-full bg-[#14382C] text-white text-[11px] font-mono flex items-center justify-center font-bold">
+                      <span className="w-6 h-6 rounded-full bg-[#14382C] text-white text-[11px] font-sans font-bold tabular-nums flex items-center justify-center">
                         #{sample.id}
                       </span>
                       <span>Pohon Sampel Uji Petik #{sample.id}</span>
@@ -474,7 +476,17 @@ export default function FieldInspectionWorksheetView({
                             : 'bg-amber-100 text-amber-900 border-amber-300'
                         }`}
                       >
-                        {sample.farmerPhotoValid ? '✓ Foto Petani Valid' : '⚠️ Foto Buram / Tidak Sesuai'}
+                        {sample.farmerPhotoValid ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            <span>Foto Petani Valid</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            <span>Foto Buram / Tidak Sesuai</span>
+                          </span>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -483,7 +495,7 @@ export default function FieldInspectionWorksheetView({
                     {/* Klaim Petani */}
                     <div className="p-3 bg-white rounded-xl border border-slate-200">
                       <span className="text-[10px] text-slate-400 uppercase font-semibold block">Klaim Petani</span>
-                      <strong className="text-base font-mono text-stone-800 mt-0.5 block">
+                      <strong className="text-base font-sans font-extrabold text-stone-800 mt-0.5 block tabular-nums">
                         Lingkar {sample.farmerGirthCm} cm
                       </strong>
                       <span className="text-[10px] text-slate-400">Tercatat di aplikasi petani</span>
@@ -503,11 +515,11 @@ export default function FieldInspectionWorksheetView({
                             updated[idx].actualGirthCm = e.target.value;
                             setSamples(updated);
                           }}
-                          className="w-20 px-2.5 py-1 text-sm font-mono font-bold bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-600"
+                          className="w-20 px-2.5 py-1 text-sm font-sans font-bold tabular-nums bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-600"
                         />
-                        <span className="font-mono text-xs text-slate-600">cm</span>
-                        <span className="text-slate-400">➔</span>
-                        <span className="font-mono text-xs font-bold text-emerald-700">
+                        <span className="font-sans text-xs text-slate-600">cm</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="font-sans text-xs font-bold text-emerald-700 tabular-nums">
                           D = {diameterCm} cm
                         </span>
                       </div>
@@ -516,10 +528,10 @@ export default function FieldInspectionWorksheetView({
                     {/* GeoStamped Camera Simulator */}
                     <div className="p-3 bg-slate-900 text-white rounded-xl flex flex-col justify-between">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-emerald-400 font-mono">WATERMARK BUKTI</span>
+                        <span className="text-[10px] text-emerald-400 font-sans font-bold">WATERMARK BUKTI</span>
                         <Camera className="w-3.5 h-3.5 text-slate-400" />
                       </div>
-                      <div className="text-[9px] font-mono text-slate-300 leading-tight mt-2">
+                      <div className="text-[9px] font-sans font-medium tabular-nums text-slate-300 leading-tight mt-2">
                         26 Okt 2026 10:14 WIB<br />
                         -7.3639, 109.9886<br />
                         ID: SRV-BUDI-09
@@ -572,7 +584,7 @@ export default function FieldInspectionWorksheetView({
           <div className="p-6 bg-emerald-950 text-white rounded-3xl relative overflow-hidden shadow-md">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <span className="text-[10px] uppercase font-mono font-bold text-emerald-400 block tracking-wider">
+                <span className="text-[10px] uppercase font-sans font-bold text-emerald-400 block tracking-wider">
                   HASIL REKALKULASI ALOMETRIK CHAVE TIER-3
                 </span>
                 <h4 className="text-lg font-bold text-white mt-0.5">
@@ -583,11 +595,11 @@ export default function FieldInspectionWorksheetView({
               <div className="sm:text-right space-y-1">
                 {/* Estimasi Awal (Dicoret) */}
                 <div className="text-xs text-slate-400 font-sans">
-                  Estimasi Awal Petani (100 pohon, 40 cm): <span className="line-through font-mono">2,00 tCO2e / tahun</span>
+                  Estimasi Awal Petani (100 pohon, 40 cm): <span className="line-through font-sans font-semibold tabular-nums">2,00 tCO2e / tahun</span>
                 </div>
                 {/* Hasil Validasi (Highlight Hijau Tebal) */}
                 <div className="text-3xl font-black font-sans text-emerald-300">
-                  +1,94 <span className="text-base font-normal font-mono text-white">tCO2e / tahun</span>
+                  +1,94 <span className="text-base font-normal font-sans text-white">tCO2e / tahun</span>
                 </div>
                 <span className="text-[10px] text-emerald-400 font-sans block">
                   Dikunci Permanen untuk Kuota Klaster Agroforestri

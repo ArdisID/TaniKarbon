@@ -1,3 +1,4 @@
+from __future__ import annotations
 from pydantic import BaseModel, Field, EmailStr
 from typing import Any, Dict, Optional, List, Union
 from uuid import UUID

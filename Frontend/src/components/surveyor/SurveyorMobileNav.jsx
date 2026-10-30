@@ -1,53 +1,112 @@
 import React from 'react';
 import { 
   ClipboardList, 
-  History 
+  MapPin, 
+  CheckCircle2, 
+  RefreshCw,
+  LogOut 
 } from 'lucide-react';
+import { clearAuthSession } from '../../api/auth';
 
 export default function SurveyorMobileNav({ 
   currentTab, 
   onSelectTab,
   pendingCount = 0,
-  syncQueueCount = 0
+  syncQueueCount = 0,
+  onLogout
 }) {
-  const tabs = [
-    { id: 'tasks', label: 'Tugas & Rute', icon: ClipboardList, badge: pendingCount > 0 ? pendingCount : null },
-    { id: 'sync', label: 'Riwayat & Sinkron', icon: History, badge: syncQueueCount > 0 ? syncQueueCount : null },
+  const handleLogoutClick = () => {
+    if (window.confirm('Keluar dari sesi akun Surveyor lapangan?')) {
+      clearAuthSession();
+      if (onLogout) {
+        onLogout();
+      } else {
+        window.location.replace('/login');
+      }
+    }
+  };
+
+  const navItems = [
+    { 
+      id: 'tasks', 
+      label: 'Tugas', 
+      icon: ClipboardList, 
+      badge: pendingCount > 0 ? pendingCount : null 
+    },
+    { 
+      id: 'map', 
+      label: 'Peta GPS', 
+      icon: MapPin 
+    },
+    { 
+      id: 'inspection', 
+      label: 'Inspeksi', 
+      icon: CheckCircle2 
+    },
+    { 
+      id: 'sync', 
+      label: 'Sinkronisasi', 
+      icon: RefreshCw, 
+      badge: syncQueueCount > 0 ? syncQueueCount : null 
+    },
   ];
 
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-3 py-2 flex items-center justify-around font-sans">
-      {tabs.map((tab) => {
-        const isActive = currentTab === tab.id;
-        const Icon = tab.icon;
+    <nav 
+      aria-label="Navigasi Mobile Surveyor"
+      className="fixed bottom-3 inset-x-4 z-50 lg:hidden max-w-md mx-auto"
+    >
+      <div className="bg-white/95 backdrop-blur-md border border-stone-200/90 rounded-2xl shadow-[0_8px_30px_rgba(20,56,44,0.1)] px-2 py-1.5 h-16 flex items-center justify-around font-sans">
+        {navItems.map((item) => {
+          const isActive = currentTab === item.id;
+          const Icon = item.icon;
 
-        return (
-          <button
-            key={tab.id}
-            onClick={() => onSelectTab(tab.id)}
-            className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition relative cursor-pointer ${
-              isActive 
-                ? 'text-[#14382C] font-bold' 
-                : 'text-slate-400 hover:text-slate-600 font-medium'
-            }`}
-          >
-            <div className={`p-1.5 rounded-xl transition ${
-              isActive ? 'bg-[#14382C] text-emerald-400 shadow-xs' : ''
-            }`}>
-              <Icon className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] mt-0.5 font-sans leading-none">
-              {tab.label}
-            </span>
-
-            {tab.badge && (
-              <span className="absolute top-1 right-2 w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-mono font-bold flex items-center justify-center shadow-xs">
-                {tab.badge}
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onSelectTab(item.id)}
+              className="flex-1 flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all duration-200 cursor-pointer relative active:scale-95"
+            >
+              {isActive ? (
+                <div className="bg-emerald-500/12 px-3 py-0.5 rounded-full flex items-center justify-center">
+                  <Icon className="w-5 h-5 stroke-[2.2] text-[#14382C]" />
+                </div>
+              ) : (
+                <Icon className="w-5 h-5 stroke-[1.75] text-stone-400" />
+              )}
+              <span className={`text-[10px] leading-none ${
+                isActive 
+                  ? 'font-bold text-[#14382C]' 
+                  : 'font-medium text-stone-500'
+              }`}>
+                {item.label}
               </span>
-            )}
-          </button>
-        );
-      })}
+
+              {item.badge && !isActive && (
+                <span className="absolute top-1 right-2.5 w-4 h-4 rounded-full bg-emerald-600 text-white text-[9px] font-sans font-bold tabular-nums flex items-center justify-center shadow-xs">
+                  {item.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+
+        {/* Dedicated Mobile Logout Button */}
+        <button
+          type="button"
+          onClick={handleLogoutClick}
+          aria-label="Keluar dari sesi surveyor"
+          className="flex-1 flex flex-col items-center justify-center gap-1 py-1 rounded-xl transition-all duration-200 cursor-pointer text-rose-500 hover:text-rose-700 active:scale-95"
+        >
+          <div className="hover:bg-rose-50 text-rose-600 px-2 py-1 rounded-full flex items-center justify-center transition">
+            <LogOut className="w-4.5 h-4.5 stroke-[2]" />
+          </div>
+          <span className="text-[10px] leading-none font-bold text-rose-600">
+            Keluar
+          </span>
+        </button>
+      </div>
     </nav>
   );
 }

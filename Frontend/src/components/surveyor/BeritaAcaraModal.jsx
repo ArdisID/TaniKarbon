@@ -28,7 +28,7 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
     String(data.decision || data.status || '').toLowerCase().includes('tolak') || 
     String(data.decision || data.status || '').toLowerCase() === 'rejected';
 
-  const ticketCode = data.ticketId || (data.id ? `TKT-${data.id.slice(0, 8).toUpperCase()}` : 'TKT-MRV-001');
+  const ticketCode = data.ticketId || (data.id ? `TKT-${String(data.id).slice(0, 8).toUpperCase()}` : 'TKT-MRV-001');
   const docNumber = `BA-MRV/${ticketCode}/${new Date().getFullYear()}`;
   const farmerName = data.farmerName || data.farmer_name || 'Petani Mitra';
   const landName = data.landName || data.name || 'Petak Agroforestri';
@@ -52,7 +52,7 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#0F291E]/70 backdrop-blur-xs animate-fade-in font-sans">
       <div 
-        className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl flex flex-col font-sans print:shadow-none print:border-none print:max-h-full print:w-full"
+        className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl flex flex-col font-sans print:shadow-none print:border-none print:max-h-full print:w-full animate-modal-pop"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -65,7 +65,7 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
               <h3 className="font-extrabold text-[#0F291E] text-base leading-tight">
                 Berita Acara Verifikasi Lapangan
               </h3>
-              <p className="text-[11px] font-mono text-slate-500">{docNumber}</p>
+              <p className="text-[11px] font-sans font-medium text-slate-500 tabular-nums">{docNumber}</p>
             </div>
           </div>
 
@@ -97,7 +97,7 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-black text-[#0F291E] text-lg tracking-tight">TANIKARBON MRV</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-900">
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-900 font-sans">
                   OFFICIAL AUDIT REPORT
                 </span>
               </div>
@@ -109,17 +109,17 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
             {/* Status Stamp */}
             <div className="self-start sm:self-center">
               {isVerified ? (
-                <div className="px-3.5 py-1.5 rounded-xl border-2 border-emerald-600 bg-emerald-50 text-emerald-800 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
+                <div className="px-3.5 py-1.5 rounded-xl border-2 border-emerald-600 bg-emerald-50 text-emerald-800 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-xs font-sans">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                   <span>TERVERIFIKASI &amp; DISAHKAN</span>
                 </div>
               ) : isRejected ? (
-                <div className="px-3.5 py-1.5 rounded-xl border-2 border-rose-600 bg-rose-50 text-rose-800 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
+                <div className="px-3.5 py-1.5 rounded-xl border-2 border-rose-600 bg-rose-50 text-rose-800 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-xs font-sans">
                   <XCircle className="w-4 h-4 text-rose-600" />
                   <span>AUDIT DITOLAK</span>
                 </div>
               ) : (
-                <div className="px-3.5 py-1.5 rounded-xl border-2 border-amber-600 bg-amber-50 text-amber-800 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
+                <div className="px-3.5 py-1.5 rounded-xl border-2 border-amber-600 bg-amber-50 text-amber-800 font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-xs font-sans">
                   <AlertCircle className="w-4 h-4 text-amber-600" />
                   <span>MENUNGGU REVISI</span>
                 </div>
@@ -130,15 +130,15 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
           {/* Metadata Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block font-mono">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block font-sans">
                 NOMOR TIKET &amp; DOKUMEN
               </span>
-              <p className="font-mono font-bold text-slate-900 text-sm mt-0.5">{ticketCode}</p>
-              <p className="font-mono text-[11px] text-slate-500">{docNumber}</p>
+              <p className="font-sans font-bold text-slate-900 text-sm mt-0.5 tabular-nums">{ticketCode}</p>
+              <p className="font-sans text-[11px] font-medium text-slate-500 tabular-nums">{docNumber}</p>
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block font-mono">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block font-sans">
                 WAKTU &amp; TANGGAL AUDIT
               </span>
               <p className="font-semibold text-slate-900 mt-0.5 flex items-center gap-1.5">
@@ -148,7 +148,7 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block font-mono">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block font-sans">
                 DATA PETANI / PEMILIK
               </span>
               <p className="font-bold text-slate-900 mt-0.5 flex items-center gap-1.5">
@@ -156,7 +156,7 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
                 <span>{farmerName}</span>
               </p>
               {data.farmerPhone && (
-                <p className="font-mono text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                <p className="font-sans font-medium text-[11px] text-slate-500 flex items-center gap-1 mt-0.5 tabular-nums">
                   <Phone className="w-3 h-3 text-slate-400" />
                   <span>{data.farmerPhone}</span>
                 </p>
@@ -164,7 +164,7 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
             </div>
 
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block font-mono">
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block font-sans">
                 AUDITOR / PETUGAS SURVEYOR
               </span>
               <p className="font-semibold text-slate-900 mt-0.5 flex items-center gap-1.5">
@@ -176,35 +176,35 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
 
           {/* Spatial & Land Data */}
           <div>
-            <h4 className="font-bold text-[#0F291E] text-xs uppercase tracking-wider mb-2 font-mono flex items-center gap-1.5">
+            <h4 className="font-bold text-[#0F291E] text-xs uppercase tracking-wider mb-2 font-sans flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-emerald-600" /> Data Spasial &amp; Geofencing Lahan
             </h4>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 border border-slate-200 rounded-xl p-3 bg-white">
               <div>
-                <span className="text-[10px] text-slate-400 block font-mono">NAMA PETAK</span>
+                <span className="text-[10px] text-slate-400 block font-sans">NAMA PETAK</span>
                 <span className="font-bold text-slate-800">{landName}</span>
               </div>
               <div>
-                <span className="text-[10px] text-slate-400 block font-mono">LUAS LAHAN</span>
-                <span className="font-mono font-bold text-slate-800">
+                <span className="text-[10px] text-slate-400 block font-sans">LUAS LAHAN</span>
+                <span className="font-sans font-bold text-slate-800 tabular-nums">
                   {areaSqm.toLocaleString()} m² ({areaHa} Ha)
                 </span>
               </div>
               <div className="col-span-2 sm:col-span-1">
-                <span className="text-[10px] text-slate-400 block font-mono">SENTROID GPS</span>
-                <span className="font-mono text-emerald-700 font-semibold">{gpsCoord}</span>
+                <span className="text-[10px] text-slate-400 block font-sans">SENTROID GPS</span>
+                <span className="font-sans text-emerald-700 font-semibold tabular-nums">{gpsCoord}</span>
               </div>
             </div>
           </div>
 
           {/* Tree & Allometric Table */}
           <div>
-            <h4 className="font-bold text-[#0F291E] text-xs uppercase tracking-wider mb-2 font-mono flex items-center gap-1.5">
+            <h4 className="font-bold text-[#0F291E] text-xs uppercase tracking-wider mb-2 font-sans flex items-center gap-1.5">
               <Trees className="w-3.5 h-3.5 text-emerald-600" /> Rekapitulasi Blok Tegakan Pohon
             </h4>
             {treeBlocks.length === 0 ? (
-              <div className="p-4 border border-slate-200 rounded-xl bg-slate-50 text-slate-500 text-xs">
-                Populasi terdata: <strong className="text-slate-800">{treeCount} pohon</strong>
+              <div className="p-4 border border-slate-200 rounded-xl bg-slate-50 text-slate-500 text-xs font-sans">
+                Populasi terdata: <strong className="text-slate-800 tabular-nums">{treeCount} pohon</strong>
               </div>
             ) : (
               <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -218,7 +218,7 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
                       <th className="px-3.5 py-2 text-right">Potensi Serapan</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 font-mono">
+                  <tbody className="divide-y divide-slate-100 font-sans tabular-nums">
                     {treeBlocks.map((block, i) => (
                       <tr key={block.id || i} className="hover:bg-slate-50/50">
                         <td className="px-3.5 py-2 font-sans font-semibold text-slate-800">
@@ -246,16 +246,16 @@ export default function BeritaAcaraModal({ isOpen, onClose, data }) {
 
           {/* Notes & Audit Logs */}
           <div>
-            <h4 className="font-bold text-[#0F291E] text-xs uppercase tracking-wider mb-2 font-mono flex items-center gap-1.5">
+            <h4 className="font-bold text-[#0F291E] text-xs uppercase tracking-wider mb-2 font-sans flex items-center gap-1.5">
               <Scale className="w-3.5 h-3.5 text-emerald-600" /> Catatan Resmi Berita Acara &amp; Audit Log
             </h4>
             <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2">
               <p className="text-xs text-slate-700 leading-relaxed font-sans italic">
                 "{notes}"
               </p>
-              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-slate-500 font-mono">
+              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-slate-500 font-sans">
                 <span>Status Konsensus: Validated via Ledger</span>
-                <span>TaniKarbon MRV Engine v2.4</span>
+                <span className="tabular-nums">TaniKarbon MRV Engine v2.4</span>
               </div>
             </div>
           </div>

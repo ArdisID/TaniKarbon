@@ -144,7 +144,7 @@ export default function SatelliteGISMap() {
 
         // Label centroid
         const centroidIcon = L.default.divIcon({
-          html: `<div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;color:#92400e;font-family:monospace;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.15)">#TK-WNSB-042 · 1.20 Ha</div>`,
+          html: `<div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700;color:#92400e;font-family:'Plus Jakarta Sans',Inter,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.15)">#TK-WNSB-042 · 1.20 Ha</div>`,
           iconAnchor: [55, 10],
           className: '',
         });
@@ -156,15 +156,15 @@ export default function SatelliteGISMap() {
           const ndviColor = tree.ndvi >= 0.88 ? '#059669' : tree.ndvi >= 0.80 ? '#10b981' : '#34d399';
           const treeIcon = L.default.divIcon({
             html: `<div style="
-              width: 28px; height: 28px; border-radius: 50%;
+              width: 24px; height: 24px; border-radius: 50%;
               background: ${ndviColor};
-              border: 2.5px solid white;
-              box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+              border: 2px solid white;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.3);
               display: flex; align-items: center; justify-content: center;
-              font-size: 13px; cursor: pointer;
-            ">🌳</div>`,
-            iconSize: [28, 28],
-            iconAnchor: [14, 14],
+              cursor: pointer;
+            "><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-7l-2-2"/><path d="M17 8a5 5 0 0 0-10 0c0 3 2 5 5 7 3-2 5-4 5-7z"/></svg></div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
             className: '',
           });
           const marker = L.default.marker(tree.pos, { icon: treeIcon });
@@ -185,9 +185,10 @@ export default function SatelliteGISMap() {
           html: `<div style="
             background: #14382C; color: white; border-radius: 20px;
             padding: 4px 10px; font-size: 10px; font-weight: 700;
-            font-family: monospace; box-shadow: 0 4px 12px rgba(20,56,44,0.4);
+            font-family: 'Plus Jakarta Sans', Inter, sans-serif; box-shadow: 0 4px 12px rgba(20,56,44,0.4);
             white-space: nowrap; border: 1.5px solid rgba(255,255,255,0.3);
-          ">📍 Klaster Wonosobo</div>`,
+            display: flex; align-items: center; gap: 5px;
+          "><span style="width:6px;height:6px;border-radius:50%;background:#34D399;display:inline-block;"></span>Klaster Wonosobo</div>`,
           iconAnchor: [60, 12],
           className: '',
         });
@@ -282,15 +283,15 @@ export default function SatelliteGISMap() {
       {/* Main Map Container */}
       <div className="bg-white rounded-[28px] border border-stone-200/80 shadow-sm overflow-hidden relative isolate">
         {/* Map header bar */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-stone-100 font-sans">
           <div className="flex items-center gap-2.5">
-            <span className="text-xs font-mono font-bold text-stone-700">ESA Sentinel-2 — Live</span>
+            <span className="text-xs font-sans font-bold text-stone-700">ESA Sentinel-2 — Live</span>
             <span className="text-stone-300">|</span>
-            <span className="text-xs font-mono text-stone-500">Zoom 15 · Wonosobo, Jawa Tengah</span>
+            <span className="text-xs font-sans text-stone-500 font-medium">Zoom 15 · Wonosobo, Jawa Tengah</span>
           </div>
 
           {/* Layer toggle pills */}
-          <div className="flex items-center gap-1.5 bg-stone-100/80 rounded-xl p-1">
+          <div className="flex items-center gap-1.5 bg-stone-100/80 rounded-xl p-1 font-sans">
             {LAYERS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -309,13 +310,13 @@ export default function SatelliteGISMap() {
         </div>
 
         {/* Map area */}
-        <div className="relative isolate" style={{ height: '480px' }}>
+        <div className="relative isolate font-sans" style={{ height: '480px' }}>
           <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
           {/* NDVI Legend Overlay */}
           {activeLayer === 'ndvi' && (
-            <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-sm rounded-xl border border-stone-200/80 shadow-sm px-3.5 py-2.5">
-              <p className="text-[10px] font-mono font-bold text-stone-500 mb-1.5 tracking-wider">INDEKS NDVI</p>
+            <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-sm rounded-xl border border-stone-200/80 shadow-sm px-3.5 py-2.5 font-sans">
+              <p className="text-[10px] font-sans font-bold text-stone-500 mb-1.5 tracking-wider uppercase">INDEKS NDVI</p>
               <div className="flex items-center gap-1.5">
                 <div className="flex h-2.5 w-24 rounded-full overflow-hidden">
                   <div className="flex-1 bg-[#6ee7b7]" title="0.70" />
@@ -324,23 +325,23 @@ export default function SatelliteGISMap() {
                   <div className="flex-1 bg-[#059669]" title="0.90" />
                   <div className="flex-1 bg-[#047857]" title="0.95" />
                 </div>
-                <span className="text-[9px] text-stone-400 font-mono">0.70 → 1.00</span>
+                <span className="text-[9px] text-stone-400 font-sans tabular-nums font-medium">0.70 → 1.00</span>
               </div>
-              <p className="text-[9px] text-emerald-700 font-bold mt-1">Rata-rata klaster: <span className="font-mono">0.88</span></p>
+              <p className="text-[9px] text-emerald-700 font-bold mt-1 font-sans">Rata-rata klaster: <span className="font-sans font-bold tabular-nums">0.88</span></p>
             </div>
           )}
 
           {/* Cadastral legend */}
           {activeLayer === 'cadastral' && (
-            <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-sm rounded-xl border border-stone-200/80 shadow-sm px-3.5 py-2.5">
-              <p className="text-[10px] font-mono font-bold text-stone-500 mb-1.5 tracking-wider">LEGENDA KADASTRAL</p>
+            <div className="absolute bottom-4 left-4 z-10 bg-white/95 backdrop-blur-sm rounded-xl border border-stone-200/80 shadow-sm px-3.5 py-2.5 font-sans">
+              <p className="text-[10px] font-sans font-bold text-stone-500 mb-1.5 tracking-wider uppercase">LEGENDA KADASTRAL</p>
               <div className="flex items-center gap-2 mb-1">
                 <div className="w-5 h-0.5 border-t-2 border-dashed border-amber-400" />
-                <span className="text-[10px] text-stone-600">Batas Petak Lahan</span>
+                <span className="text-[10px] text-stone-600 font-sans font-medium">Batas Petak Lahan</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-[#fbbf24]/20 border border-amber-400" />
-                <span className="text-[10px] text-stone-600">Area Polikultur 1.20 Ha</span>
+                <span className="text-[10px] text-stone-600 font-sans font-medium">Area Polikultur 1.20 Ha</span>
               </div>
             </div>
           )}
@@ -358,31 +359,31 @@ export default function SatelliteGISMap() {
       </div>
 
       {/* Telemetry Panel */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 font-sans">
         {telemetryData.map(({ label, value, sub, icon: Icon, color }) => (
           <div
             key={label}
-            className="bg-white rounded-2xl border border-stone-200/80 shadow-sm px-4 py-3.5 hover:shadow-md transition-shadow"
+            className="bg-white rounded-2xl border border-stone-200/80 shadow-sm px-4 py-3.5 hover:shadow-md transition-shadow font-sans"
           >
             <div className="flex items-center gap-1.5 mb-2">
               <Icon className={`w-3.5 h-3.5 ${color}`} strokeWidth={1.5} />
-              <span className="text-[10px] font-mono font-bold text-stone-400 tracking-wider uppercase">{label}</span>
+              <span className="text-[10px] font-sans font-bold text-stone-400 tracking-wider uppercase">{label}</span>
             </div>
-            <p className="text-sm font-bold text-[#14382C] leading-tight">{value}</p>
-            <p className="text-[10px] text-stone-400 mt-0.5 leading-snug">{sub}</p>
+            <p className="text-sm font-bold text-[#14382C] leading-tight font-sans tabular-nums">{value}</p>
+            <p className="text-[10px] text-stone-400 mt-0.5 leading-snug font-sans">{sub}</p>
           </div>
         ))}
       </div>
 
       {/* Compliance strip */}
-      <div className="bg-[#F4F6F0] rounded-2xl border border-stone-200/60 px-5 py-3 flex items-center justify-between flex-wrap gap-3">
+      <div className="bg-[#F4F6F0] rounded-2xl border border-stone-200/60 px-5 py-3 flex items-center justify-between flex-wrap gap-3 font-sans">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-600" strokeWidth={1.5} />
           <span className="text-xs text-stone-600 font-medium">
             Data spasial terverifikasi oleh <strong className="text-[#14382C]">SRN-PPI KLHK</strong> · POJK No. 51/2017 ESG Compliant
           </span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-stone-500 font-mono">
+        <div className="flex items-center gap-1.5 text-xs text-stone-500 font-sans font-medium">
           <span>Sinkronisasi otomatis setiap 5 hari</span>
         </div>
       </div>

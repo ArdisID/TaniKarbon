@@ -32,12 +32,14 @@ import {
   FileCheck2,
   LocateFixed,
   Crosshair,
-  Loader2
+  Loader2,
+  Timer
 } from 'lucide-react';
 import { MapContainer, TileLayer, Polygon, Marker, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { submitSurveyorAudit } from '../../api/surveyor';
+import { saveOfflineSurvey } from '../../utils/offlineStorage';
 
 // Helper auto-fit bounds Leaflet (HANYA SEKALI saat awal load petak lahan atau saat user klik tombol fokus kamera)
 function MapUpdater({ bounds, triggerRecenter }) {
@@ -176,7 +178,7 @@ export default function SurveyorInspectionView({
   }, [plotId, tasks, plot, onBack, onToast]);
 
   const activePlotId = plot?.id || plotId || 'plot-default';
-  const displayTicketId = 'TKT-' + (plot?.id ? plot.id.slice(0, 8).toUpperCase() : 'TK-FIELD');
+  const displayTicketId = 'TKT-' + (plot?.id ? String(plot.id).slice(0, 8).toUpperCase() : 'TK-FIELD');
   const farmerName = plot?.farmer_name || plot?.farmerName || 'Petani Mitra';
   const plotName = plot?.name || plot?.landName || 'Petak Kebun Agroforestri';
   const areaSqm = plot?.area_sqm || plot?.areaM2 || 0;
@@ -526,7 +528,7 @@ export default function SurveyorInspectionView({
             setGpsAccuracy(Math.round(pos.coords.accuracy));
           }
           setIsCalibratingGps(false);
-          if (onToast) onToast(`Kalibrasi GNSS berhasil · Akurasi GPS ±${Math.round(pos.coords.accuracy || 3)} meter ✔`, 'emerald');
+          if (onToast) onToast(`Kalibrasi GNSS berhasil · Akurasi GPS ±${Math.round(pos.coords.accuracy || 3)} meter`, 'emerald');
         },
         (err) => {
           console.warn('Geolocation calibration warning:', err.message);
@@ -618,7 +620,7 @@ export default function SurveyorInspectionView({
       svgType: 'kanopi'
     };
     setPhotos((prev) => [newPhoto, ...prev]);
-    if (onToast) onToast(`Foto "${file.name}" berhasil diunggah dengan geotag tersimpan ✔`, 'emerald');
+    if (onToast) onToast(`Foto "${file.name}" berhasil diunggah dengan geotag tersimpan.`, 'emerald');
     e.target.value = '';
   };
 
@@ -677,24 +679,48 @@ export default function SurveyorInspectionView({
         notes = rejectReason;
       }
 
-      await submitSurveyorAudit(plot?.id || activePlotId, {
+      let submittedToBackend = false;
+      const auditPayload = {
         decision,
         notes,
         category,
         block_adjustments: blockAdjustments
-      });
+      };
+
+      if (navigator.onLine) {
+        try {
+          await submitSurveyorAudit(plot?.id || activePlotId, auditPayload);
+          submittedToBackend = true;
+        } catch (netErr) {
+          console.warn('Gagal kirim audit ke server, beralih ke IndexedDB offline cache:', netErr);
+        }
+      }
+
+      if (!submittedToBackend) {
+        // Simpan ke IndexedDB lokal jika offline atau koneksi gagal
+        await saveOfflineSurvey({
+          landId: plot?.id || activePlotId,
+          landName: plotName,
+          farmerName: farmerName,
+          areaSqm: areaHa ? (parseFloat(areaHa) * 10000) : 0,
+          ...auditPayload
+        });
+        if (onToast) onToast(`Sinyal offline / server tidak terjangkau. Hasil audit disimpan aman di IndexedDB perangkat.`, 'amber');
+      }
 
       // Hapus draft dan timer setelah pengiriman berhasil
       localStorage.removeItem(draftStorageKey);
       localStorage.removeItem(timerStorageKey);
 
       closeModal();
-      if (decision === 'approved') {
-        if (onToast) onToast(`Lahan "${plotName}" BERHASIL DISETUJUI & diverifikasi ke Pre-Verified ✔`, 'emerald');
-      } else if (decision === 'revision') {
-        if (onToast) onToast(`Instruksi revisi (${category}) berhasil dikirim ke ${farmerName} ✔`, 'amber');
-      } else if (decision === 'rejected') {
-        if (onToast) onToast(`Tiket lahan ditolak permanen. Status lahan telah diperbarui di database.`, 'rose');
+      if (submittedToBackend) {
+        if (decision === 'approved') {
+          if (onToast) onToast(`Lahan "${plotName}" BERHASIL DISETUJUI & diverifikasi ke Pre-Verified.`, 'emerald');
+        } else if (decision === 'revision') {
+          if (onToast) onToast(`Instruksi revisi (${category}) berhasil dikirim ke ${farmerName}.`, 'amber');
+        } else if (decision === 'rejected') {
+          if (onToast) onToast(`Tiket lahan ditolak permanen. Status lahan telah diperbarui di database.`, 'rose');
+        }
       }
 
       if (onAuditComplete) {
@@ -706,7 +732,7 @@ export default function SurveyorInspectionView({
       }
     } catch (err) {
       console.error('Audit submission error:', err);
-      if (onToast) onToast(`Gagal mengirim audit: ${err.message}`, 'rose');
+      if (onToast) onToast(`Gagal menyimpan audit: ${err.message}`, 'rose');
     } finally {
       setIsSubmitting(false);
     }
@@ -750,17 +776,17 @@ export default function SurveyorInspectionView({
         <span className="h-4 w-px bg-white/15" />
 
         <div className="min-w-0 pr-1">
-          <h1 className="truncate font-bold text-xs sm:text-sm text-white leading-tight">
+          <h1 className="truncate font-bold text-xs sm:text-sm text-white leading-tight font-sans">
             {plotName}
           </h1>
-          <p className="truncate font-mono text-[10.5px] text-emerald-300/80">
+          <p className="truncate font-sans font-medium text-[10.5px] text-emerald-300/80 tabular-nums">
             {farmerName} · {areaHa} Ha
           </p>
         </div>
       </div>
 
       {/* Sisi Kanan Melayang: Stepper 3 Tahap Kapsul & Timer Durasi Audit */}
-      <div className="fixed top-4 right-4 z-[1000] flex items-center gap-2 sm:gap-3 rounded-2xl bg-[#0F291E]/80 px-3.5 py-2 text-white shadow-xl backdrop-blur-md border border-white/10">
+      <div className="fixed top-4 right-4 z-[1000] flex items-center gap-2 sm:gap-3 rounded-2xl bg-[#0F291E]/80 px-3.5 py-2 text-white shadow-xl backdrop-blur-md border border-white/10 font-sans">
         <nav aria-label="Tahapan inspeksi" className="flex items-center gap-1">
           {[
             { step: 1, label: 'Spasial' },
@@ -790,7 +816,7 @@ export default function SurveyorInspectionView({
                       ? 'bg-emerald-500/30 text-emerald-200'
                       : 'bg-white/10 text-white/60'
                   }`}>
-                    {isDone ? '✓' : item.step}
+                    {isDone ? <Check className="w-2.5 h-2.5 stroke-[3]" /> : item.step}
                   </span>
                   <span className="hidden sm:inline">{item.label}</span>
                 </button>
@@ -801,8 +827,8 @@ export default function SurveyorInspectionView({
 
         <span className="h-4 w-px bg-white/15" />
 
-        <div className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-emerald-300">
-          <span className="text-xs">⏱</span>
+        <div className="inline-flex items-center gap-1.5 font-sans text-xs font-semibold text-emerald-300 tabular-nums">
+          <Timer className="w-3.5 h-3.5 text-emerald-300" />
           <span className="tnum tracking-wider">{formatTimer(seconds)}</span>
         </div>
       </div>
@@ -862,7 +888,7 @@ export default function SurveyorInspectionView({
                       position={pt}
                       icon={L.divIcon({
                         className: 'vertex-marker',
-                        html: `<div style="background:#0F291E;color:#10B981;border:2px solid #10B981;border-radius:6px;padding:2px 6px;font-size:10px;font-family:monospace;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;">${extreme.label}</div>`,
+                        html: `<div style="background:#0F291E;color:#10B981;border:2px solid #10B981;border-radius:6px;padding:2px 6px;font-size:10px;font-family:'Plus Jakarta Sans',Inter,sans-serif;font-variant-numeric:tabular-nums;font-weight:bold;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;">${extreme.label}</div>`,
                         iconSize: [56, 22],
                         iconAnchor: [28, 11]
                       })}
@@ -870,7 +896,7 @@ export default function SurveyorInspectionView({
                       <Popup>
                         <div className="font-sans text-xs">
                           <strong>{extreme.label} ({extreme.direction})</strong>
-                          <p className="font-mono text-[10px] text-slate-500 mt-0.5">
+                          <p className="font-sans text-[10px] text-slate-500 mt-0.5 tabular-nums">
                             {pt[0].toFixed(6)}, {pt[1].toFixed(6)}
                           </p>
                         </div>
@@ -899,7 +925,7 @@ export default function SurveyorInspectionView({
                   position={pt}
                   icon={L.divIcon({
                     className: 'vertex-marker',
-                    html: `<div style="background:#10B981;color:#fff;border:2px solid #ECFDF5;border-radius:4px;padding:1px 4px;font-size:9px;font-family:monospace;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,0.3);">P${idx + 1}</div>`,
+                    html: `<div style="background:#10B981;color:#fff;border:2px solid #ECFDF5;border-radius:4px;padding:1px 4px;font-size:9px;font-family:'Plus Jakarta Sans',Inter,sans-serif;font-variant-numeric:tabular-nums;font-weight:bold;box-shadow:0 1px 3px rgba(0,0,0,0.3);">P${idx + 1}</div>`,
                     iconSize: [24, 18],
                     iconAnchor: [12, 9]
                   })}
@@ -955,25 +981,25 @@ export default function SurveyorInspectionView({
               <span>Fokuskan Kamera</span>
             </button>
 
-            <div className="rounded-2xl bg-white/90 px-3.5 py-2.5 shadow-xl backdrop-blur-md border border-white/60 text-slate-700">
-              <p className="flex items-center gap-1.5 font-mono text-[10px] font-semibold">
+            <div className="rounded-2xl bg-white/90 px-3.5 py-2.5 shadow-xl backdrop-blur-md border border-white/60 text-slate-700 font-sans">
+              <p className="flex items-center gap-1.5 font-sans text-[10px] font-semibold">
                 <span className="inline-block h-0.5 w-4 rounded bg-emerald-500"></span> Batas Poligon Petani ({polygonLatLngs.length} Titik{polygonLatLngs.length > 6 ? ' · 4 Patok Utama' : ` · ${polygonLatLngs.length} Patok`})
               </p>
-              <p className="mt-1 flex items-center gap-1.5 font-mono text-[10px] font-semibold">
+              <p className="mt-1 flex items-center gap-1.5 font-sans text-[10px] font-semibold">
                 <span className="inline-block h-2.5 w-2.5 rounded-full bg-[#0F291E] ring-1 ring-emerald-500"></span> Posisi GPS Surveyor
               </p>
             </div>
           </div>
 
           {/* Floating Side Panel: Status Geofencing & Metrik Riil Melayang di Kanan Peta */}
-          <div className="absolute top-20 right-4 z-[400] w-80 sm:w-96 max-h-[calc(100vh-170px)] overflow-y-auto rounded-3xl bg-white/95 p-4 shadow-2xl backdrop-blur-md border border-white/80 space-y-3.5">
+          <div className="absolute top-20 right-4 z-[400] w-80 sm:w-96 max-h-[calc(100vh-170px)] overflow-y-auto rounded-3xl bg-white/95 p-4 shadow-2xl backdrop-blur-md border border-white/80 space-y-3.5 font-sans">
             {/* Status Geofencing Riil */}
             <div className={`rounded-2xl border p-3.5 ${
               isInsidePolygon
                 ? 'border-emerald-200 bg-emerald-50/80'
                 : 'border-amber-200 bg-amber-50/80'
             }`}>
-              <p className={`flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.1em] ${
+              <p className={`flex items-center gap-2 font-sans text-[11px] font-semibold uppercase tracking-wider ${
                 isInsidePolygon ? 'text-emerald-800' : 'text-amber-800'
               }`}>
                 <span className="relative flex h-2 w-2">
@@ -987,8 +1013,8 @@ export default function SurveyorInspectionView({
                 {isInsidePolygon ? 'Status Geofencing Valid' : 'Di Luar Batas Lahan'}
               </p>
               <p className="mt-1.5 text-[13px] font-bold leading-snug text-[#0F291E]">
-                {isInsidePolygon ? '🟢 Posisi Anda Terverifikasi di Lapangan' : '🟡 Posisi Anda di Luar Batas Poligon'}
-                <span className="block font-mono text-[11px] font-semibold text-emerald-700">
+                {isInsidePolygon ? 'Posisi Anda Terverifikasi di Lapangan' : 'Posisi Anda di Luar Batas Poligon'}
+                <span className="block font-sans text-[11px] font-semibold text-emerald-700 tabular-nums">
                   (Akurasi GPS Lapangan: ±{gpsAccuracy || 4} meter)
                 </span>
               </p>
@@ -1002,34 +1028,34 @@ export default function SurveyorInspectionView({
             {/* Metrik Koordinat Riil */}
             <dl className="grid grid-cols-2 gap-2">
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                <dt className="font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Latitude Surveyor
                 </dt>
-                <dd className="tnum mt-0.5 font-mono text-[12px] font-bold text-[#0F291E]">
+                <dd className="tnum mt-0.5 font-sans text-[12px] font-bold text-[#0F291E] tabular-nums">
                   {currentPos?.lat ? currentPos.lat.toFixed(6) : centroidLatLng[0].toFixed(6)}
                 </dd>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                <dt className="font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Longitude Surveyor
                 </dt>
-                <dd className="tnum mt-0.5 font-mono text-[12px] font-bold text-[#0F291E]">
+                <dd className="tnum mt-0.5 font-sans text-[12px] font-bold text-[#0F291E] tabular-nums">
                   {currentPos?.lng ? currentPos.lng.toFixed(6) : centroidLatLng[1].toFixed(6)}
                 </dd>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                <dt className="font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Luas Poligon
                 </dt>
-                <dd className="tnum mt-0.5 font-mono text-[12px] font-bold text-[#0F291E]">
+                <dd className="tnum mt-0.5 font-sans text-[12px] font-bold text-[#0F291E] tabular-nums">
                   {Number(areaSqm).toLocaleString()} m²
                 </dd>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                <dt className="font-mono text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                <dt className="font-sans text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Jarak ke Batas Tepi
                 </dt>
-                <dd className="tnum mt-0.5 font-mono text-[12px] font-bold text-[#0F291E]">
+                <dd className="tnum mt-0.5 font-sans text-[12px] font-bold text-[#0F291E] tabular-nums">
                   {distanceToEdge} m ({isInsidePolygon ? 'Dalam' : 'Luar'})
                 </dd>
               </div>
@@ -1037,7 +1063,7 @@ export default function SurveyorInspectionView({
 
             {/* Checklist Patok Fisik */}
             <div className="rounded-2xl border border-slate-200 p-3">
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <p className="font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 Checklist Verifikasi Batas Fisik
               </p>
               <ul className="mt-2 space-y-1.5">
@@ -1127,29 +1153,29 @@ export default function SurveyorInspectionView({
                   <div className="hidden overflow-x-auto rounded-xl border border-slate-200 lg:block">
                     <table className="w-full border-collapse text-left">
                       <thead>
-                        <tr className="bg-slate-50">
-                          <th scope="col" className="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                        <tr className="bg-slate-50 font-sans">
+                          <th scope="col" className="px-4 py-3 font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                             Spesies / Klaim Petani
                           </th>
-                          <th scope="col" className="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                          <th scope="col" className="px-4 py-3 font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                             Klaim (Pohon)
                           </th>
-                          <th scope="col" className="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-800">
+                          <th scope="col" className="px-4 py-3 font-sans text-[11px] font-semibold uppercase tracking-wider text-emerald-800">
                             Jumlah Pohon Hidup
                           </th>
-                          <th scope="col" className="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-800">
+                          <th scope="col" className="px-4 py-3 font-sans text-[11px] font-semibold uppercase tracking-wider text-emerald-800">
                             Rata-rata DBH (cm)
                           </th>
-                          <th scope="col" className="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                          <th scope="col" className="px-4 py-3 font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                             Tinggi Rata-rata (m)
                           </th>
-                          <th scope="col" className="px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                          <th scope="col" className="px-4 py-3 font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                             Catatan Kesehatan
                           </th>
                           <th scope="col" className="px-3 py-3 w-10"></th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-slate-100 font-sans">
                         {samples.map((row) => {
                           const claim = Number(row.claimTrees) || 0;
                           const actual = row.actualTrees !== '' && row.actualTrees != null ? Number(row.actualTrees) : null;
@@ -1168,12 +1194,12 @@ export default function SurveyorInspectionView({
                                   )}
                                   {row.species}
                                 </p>
-                                <p className="mt-0.5 font-mono text-[10.5px] text-slate-400">
+                                <p className="mt-0.5 font-sans text-[10.5px] text-slate-400">
                                   {row.scientificName || 'Blok Agroforestri'}
                                 </p>
                               </td>
                               <td className="px-4 py-3.5 align-top">
-                                <span className="tnum inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-[13px] font-bold text-slate-700">
+                                <span className="tnum inline-flex items-center rounded-lg bg-slate-100 px-2.5 py-1.5 font-sans text-[13px] font-bold text-slate-700 tabular-nums">
                                   {claim} Pohon
                                 </span>
                               </td>
@@ -1190,18 +1216,18 @@ export default function SurveyorInspectionView({
                                       prev.map((s) => (s.id === row.id ? { ...s, actualTrees: val } : s))
                                     );
                                   }}
-                                  className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs transition hover:border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                                  className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs transition hover:border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-sans tabular-nums"
                                 />
                                 {actual !== null ? (
                                   <p
-                                    className={`mt-1 font-mono text-[10.5px] font-semibold ${
+                                    className={`mt-1 font-sans text-[10.5px] font-semibold tabular-nums ${
                                       Math.abs(pct) > 10 ? 'text-rose-600' : Math.abs(pct) > 0 ? 'text-amber-600' : 'text-emerald-600'
                                     }`}
                                   >
                                     Selisih: {diff > 0 ? `+${diff}` : diff} ({diff > 0 ? `+${pct.toFixed(1)}` : pct.toFixed(1)}%)
                                   </p>
                                 ) : (
-                                  <p className="mt-1 font-mono text-[10.5px] text-slate-400">
+                                  <p className="mt-1 font-sans text-[10.5px] text-slate-400 tabular-nums">
                                     Klaim: {claim} Pohon
                                   </p>
                                 )}
@@ -1219,9 +1245,9 @@ export default function SurveyorInspectionView({
                                       prev.map((s) => (s.id === row.id ? { ...s, dbhCm: val } : s))
                                     );
                                   }}
-                                  className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs transition hover:border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                                  className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs transition hover:border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-sans tabular-nums"
                                 />
-                                <p className="mt-1 font-mono text-[10.5px] text-slate-400">
+                                <p className="mt-1 font-sans text-[10.5px] text-slate-400 tabular-nums">
                                   Klaim: {row.claimDbh || '—'} cm
                                 </p>
                               </td>
@@ -1238,13 +1264,13 @@ export default function SurveyorInspectionView({
                                       prev.map((s) => (s.id === row.id ? { ...s, heightM: val } : s))
                                     );
                                   }}
-                                  className={`w-24 rounded-xl border px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs transition focus:ring-2 ${
+                                  className={`w-24 rounded-xl border px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs transition focus:ring-2 font-sans tabular-nums ${
                                     isMonocot
                                       ? 'border-emerald-300 bg-emerald-50/40 focus:border-emerald-500 focus:ring-emerald-500/20'
                                       : 'border-slate-200 bg-white focus:border-emerald-500 focus:ring-emerald-500/20'
                                   }`}
                                 />
-                                <p className="mt-1 font-mono text-[10.5px] text-slate-400">
+                                <p className="mt-1 font-sans text-[10.5px] text-slate-400">
                                   {isMonocot ? 'Wajib (monokotil)' : 'Opsional'}
                                 </p>
                               </td>
@@ -1284,22 +1310,22 @@ export default function SurveyorInspectionView({
                   {/* Tampilan Kartu Mobile */}
                   <div className="space-y-3 lg:hidden">
                     {samples.map((row) => (
-                      <article key={row.id} className="rounded-xl border border-slate-200 p-4 transition hover:bg-emerald-50/20">
+                      <article key={row.id} className="rounded-xl border border-slate-200 p-4 transition hover:bg-emerald-50/20 font-sans">
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="flex items-center gap-2 text-[14px] font-bold text-[#0F291E]">
                               {row.isMonocot ? <Palmtree className="h-4 w-4 text-emerald-600" /> : <TreeDeciduous className="h-4 w-4 text-emerald-600" />}
                               {row.species}
                             </p>
-                            <p className="mt-0.5 font-mono text-[10.5px] text-slate-400">{row.scientificName}</p>
+                            <p className="mt-0.5 font-sans text-[10.5px] text-slate-400">{row.scientificName}</p>
                           </div>
-                          <span className="tnum shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-[12px] font-bold text-slate-700">
+                          <span className="tnum shrink-0 rounded-lg bg-slate-100 px-2.5 py-1.5 font-sans text-[12px] font-bold text-slate-700 tabular-nums">
                             Klaim: {row.claimTrees}
                           </span>
                         </div>
                         <div className="mt-3 grid grid-cols-2 gap-3">
                           <label className="block">
-                            <span className="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-emerald-800">
+                            <span className="mb-1 block font-sans text-[10px] font-semibold uppercase tracking-wider text-emerald-800">
                               Jumlah Hidup
                             </span>
                             <input
@@ -1312,11 +1338,11 @@ export default function SurveyorInspectionView({
                                 const val = e.target.value;
                                 setSamples((prev) => prev.map((s) => (s.id === row.id ? { ...s, actualTrees: val } : s)));
                               }}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-sans tabular-nums"
                             />
                           </label>
                           <label className="block">
-                            <span className="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-emerald-800">
+                            <span className="mb-1 block font-sans text-[10px] font-semibold uppercase tracking-wider text-emerald-800">
                               Rata-rata DBH (cm)
                             </span>
                             <input
@@ -1329,11 +1355,11 @@ export default function SurveyorInspectionView({
                                 const val = e.target.value;
                                 setSamples((prev) => prev.map((s) => (s.id === row.id ? { ...s, dbhCm: val } : s)));
                               }}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-sans tabular-nums"
                             />
                           </label>
                           <label className="block col-span-2">
-                            <span className="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                            <span className="mb-1 block font-sans text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                               Rata-rata Tinggi (m)
                             </span>
                             <input
@@ -1346,11 +1372,11 @@ export default function SurveyorInspectionView({
                                 const val = e.target.value;
                                 setSamples((prev) => prev.map((s) => (s.id === row.id ? { ...s, heightM: val } : s)));
                               }}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[14px] font-semibold text-[#0F291E] shadow-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-sans tabular-nums"
                             />
                           </label>
                           <label className="block col-span-2">
-                            <span className="mb-1 block font-mono text-[9.5px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                            <span className="mb-1 block font-sans text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                               Catatan Kesehatan
                             </span>
                             <input
@@ -1361,7 +1387,7 @@ export default function SurveyorInspectionView({
                                 setSamples((prev) => prev.map((s) => (s.id === row.id ? { ...s, notes: val } : s)));
                               }}
                               placeholder="Kondisi kesehatan pohon aktual..."
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-[#0F291E] shadow-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-[#0F291E] shadow-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-sans"
                             />
                           </label>
                         </div>
@@ -1370,14 +1396,14 @@ export default function SurveyorInspectionView({
                   </div>
 
                   {/* Ringkasan Deviasi Bento */}
-                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 font-sans">
                     <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
-                      <p className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">Total Klaim</p>
-                      <p className="tnum mt-1 text-[20px] font-extrabold leading-none text-[#0F291E]">{stats.totalClaim}</p>
+                      <p className="font-sans text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total Klaim</p>
+                      <p className="tnum mt-1 text-[20px] font-extrabold leading-none text-[#0F291E] font-sans tabular-nums">{stats.totalClaim}</p>
                     </div>
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5">
-                      <p className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-emerald-800">Total Aktual</p>
-                      <p className="tnum mt-1 text-[20px] font-extrabold leading-none text-emerald-700">
+                      <p className="font-sans text-[10px] font-semibold uppercase tracking-wider text-emerald-800">Total Aktual</p>
+                      <p className="tnum mt-1 text-[20px] font-extrabold leading-none text-emerald-700 font-sans tabular-nums">
                         {stats.hasActualInputs ? stats.totalActual : '—'}
                       </p>
                     </div>
@@ -1388,9 +1414,9 @@ export default function SurveyorInspectionView({
                           : 'border-amber-200 bg-amber-50/70'
                       }`}
                     >
-                      <p className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-amber-800">Deviasi</p>
+                      <p className="font-sans text-[10px] font-semibold uppercase tracking-wider text-amber-800">Deviasi</p>
                       <p
-                        className={`tnum mt-1 text-[20px] font-extrabold leading-none ${
+                        className={`tnum mt-1 text-[20px] font-extrabold leading-none font-sans tabular-nums ${
                           Math.abs(stats.deviationPct) > 10 ? 'text-rose-700' : 'text-amber-700'
                         }`}
                       >
@@ -1398,10 +1424,10 @@ export default function SurveyorInspectionView({
                       </p>
                     </div>
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5">
-                      <p className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.08em] text-emerald-800">
+                      <p className="font-sans text-[10px] font-semibold uppercase tracking-wider text-emerald-800">
                         Estimasi Biomassa
                       </p>
-                      <p className="tnum mt-1 text-[20px] font-extrabold leading-none text-emerald-700">
+                      <p className="tnum mt-1 text-[20px] font-extrabold leading-none text-emerald-700 font-sans tabular-nums">
                         {stats.estimatedBiomass} t
                       </p>
                     </div>
@@ -1436,7 +1462,7 @@ export default function SurveyorInspectionView({
                     <p className="mt-0.5 text-[12.5px] text-slate-500">Unggah bukti visual geotag lapangan sebelum menerbitkan keputusan audit.</p>
                   </div>
                 </div>
-                <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-[10.5px] font-semibold text-slate-600">
+                <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 font-sans text-[10.5px] font-semibold text-slate-600 tabular-nums">
                   <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" /> {photos.length} foto terlampir
                 </span>
               </header>
@@ -1488,17 +1514,17 @@ export default function SurveyorInspectionView({
                   onChange={handleFileUpload}
                   className="hidden"
                 />
-                <p className="mt-3 font-mono text-[10.5px] text-slate-400">
+                <p className="mt-3 font-sans text-[10.5px] text-slate-400">
                   JPG / PNG · maks 8 MB per berkas · Metadata EXIF &amp; koordinat GPS otomatis tersimpan
                 </p>
               </div>
 
               {/* Galeri Foto Geotag */}
-              <p className="mt-5 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+              <p className="mt-5 font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 Foto Terunggah ({photos.length})
               </p>
               {photos.length === 0 ? (
-                <div className="mt-2.5 rounded-xl border border-dashed border-slate-200 p-6 text-center bg-slate-50/50">
+                <div className="mt-2.5 rounded-xl border border-dashed border-slate-200 p-6 text-center bg-slate-50/50 font-sans">
                   <Camera className="h-8 w-8 text-slate-300 mx-auto mb-1.5" />
                   <p className="text-xs font-semibold text-slate-600">Belum ada foto dokumentasi terunggah</p>
                   <p className="text-[11px] text-slate-400 mt-0.5">Silakan ambil atau unggah foto patok batas dan kanopi pohon di lapangan.</p>
@@ -1508,25 +1534,25 @@ export default function SurveyorInspectionView({
                   {photos.map((photo) => (
                     <figure
                       key={photo.id}
-                      className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-xs transition hover:border-emerald-300"
+                      className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-xs transition hover:border-emerald-300 font-sans"
                     >
                       <div className="relative h-44 w-full overflow-hidden bg-slate-800">
                         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-emerald-900 to-[#0F291E] text-white">
                           <div className="text-center p-4">
                             <Trees className="h-10 w-10 mx-auto text-emerald-400 mb-2 opacity-80" />
-                            <span className="font-mono text-xs font-bold text-emerald-200 block">{photo.title}</span>
-                            <span className="text-[10px] text-emerald-300/70 font-mono">{photo.name}</span>
+                            <span className="font-sans text-xs font-bold text-emerald-200 block">{photo.title}</span>
+                            <span className="text-[10px] text-emerald-300/70 font-sans">{photo.name}</span>
                           </div>
                         </div>
 
                         {/* Watermark Koordinat & Waktu */}
-                        <figcaption className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-2 rounded-lg bg-black/60 px-2 py-1 font-mono text-[9.5px] font-semibold text-white backdrop-blur-xs">
+                        <figcaption className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-2 rounded-lg bg-black/60 px-2 py-1 font-sans text-[9.5px] font-semibold text-white backdrop-blur-xs tabular-nums">
                           <span>{photo.coord}</span>
                           <span className="text-emerald-300">{photo.timestamp}</span>
                         </figcaption>
 
                         {/* Badge Jenis */}
-                        <span className="absolute left-2 top-2 rounded-md bg-emerald-600/95 px-2 py-1 font-mono text-[9.5px] font-bold uppercase tracking-wide text-white">
+                        <span className="absolute left-2 top-2 rounded-md bg-emerald-600/95 px-2 py-1 font-sans text-[10px] font-bold uppercase tracking-wider text-white">
                           {photo.title}
                         </span>
 
@@ -1542,7 +1568,7 @@ export default function SurveyorInspectionView({
                       </div>
                       <div className="flex items-center gap-2 border-t border-slate-200 bg-white px-3 py-2.5">
                         <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                        <p className="truncate text-[12px] font-semibold text-slate-700">
+                        <p className="truncate text-[12px] font-semibold text-slate-700 font-sans">
                           {photo.name} · {photo.size}
                         </p>
                       </div>
@@ -1552,8 +1578,8 @@ export default function SurveyorInspectionView({
               )}
 
               {/* Catatan Tambahan Surveyor */}
-              <label className="mt-5 block">
-                <span className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <label className="mt-5 block font-sans">
+                <span className="mb-1.5 block font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                   Catatan Lapangan Tambahan (Opsional)
                 </span>
                 <textarea
@@ -1561,7 +1587,7 @@ export default function SurveyorInspectionView({
                   value={additionalNotes}
                   onChange={(e) => setAdditionalNotes(e.target.value)}
                   placeholder="Misal: Akses jalan hanya bisa dilalui roda dua; patok P3 terlindung rimbunan bambu; tutupan vegetasi sangat lebat."
-                  className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13.5px] text-[#0F291E] shadow-xs transition hover:border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13.5px] text-[#0F291E] shadow-xs transition hover:border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-sans"
                 />
               </label>
             </div>
@@ -1569,7 +1595,7 @@ export default function SurveyorInspectionView({
             </section>
 
             {/* Footer Note */}
-            <p className="mt-4 text-center font-mono text-[10.5px] text-slate-400">
+            <p className="mt-4 text-center font-sans text-[10.5px] text-slate-400 tabular-nums">
               TaniKarbon MRV Engine · Audit Lapangan {displayTicketId} · Status tersimpan lokal &amp; siap sinkronisasi
             </p>
           </div>
@@ -1658,7 +1684,7 @@ export default function SurveyorInspectionView({
               className="inline-flex items-center gap-1.5 rounded-2xl bg-emerald-600/95 px-4 py-3 text-xs sm:text-sm font-extrabold text-white shadow-xl backdrop-blur-md border border-emerald-400/40 hover:bg-emerald-700 transition active:scale-95 cursor-pointer"
             >
               <Check className="h-4.5 w-4.5 shrink-0" />
-              <span>✓ Setujui &amp; Verifikasi</span>
+              <span>Setujui &amp; Verifikasi</span>
             </button>
           </>
         )}
@@ -1676,8 +1702,8 @@ export default function SurveyorInspectionView({
                   <PencilRuler className="h-5 w-5" />
                 </span>
                 <div>
-                  <h3 className="text-[15px] font-bold tracking-tight text-[#0F291E]">Minta Revisi Petani</h3>
-                  <p className="mt-0.5 font-mono text-[10.5px] text-slate-400">
+                  <h3 className="text-[15px] font-bold tracking-tight text-[#0F291E] font-sans">Minta Revisi Petani</h3>
+                  <p className="mt-0.5 font-sans text-[10.5px] text-slate-400 tabular-nums">
                     {displayTicketId} · {farmerName}
                   </p>
                 </div>
@@ -1692,16 +1718,16 @@ export default function SurveyorInspectionView({
               </button>
             </header>
 
-            <div className="space-y-4 px-5 py-4">
+            <div className="space-y-4 px-5 py-4 font-sans">
               <label className="block">
-                <span className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                <span className="mb-1.5 block font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                   Kategori Kesalahan
                 </span>
                 <div className="relative">
                   <select
                     value={reviseCategory}
                     onChange={(e) => setReviseCategory(e.target.value)}
-                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3.5 py-3 pr-10 text-[13.5px] font-medium text-[#0F291E] shadow-xs focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3.5 py-3 pr-10 text-[13.5px] font-medium text-[#0F291E] shadow-xs focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 font-sans"
                   >
                     <option>Koordinat Poligon Melenceng</option>
                     <option>Luas Lahan Tidak Sesuai Fisik</option>
@@ -1715,7 +1741,7 @@ export default function SurveyorInspectionView({
               </label>
 
               <label className="block">
-                <span className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                <span className="mb-1.5 block font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                   Catatan Instruksi untuk Petani
                 </span>
                 <textarea
@@ -1723,9 +1749,9 @@ export default function SurveyorInspectionView({
                   value={reviseNote}
                   onChange={(e) => setReviseNote(e.target.value)}
                   placeholder="Jelaskan bagian petak atau data yang harus diperbaiki petani…"
-                  className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13.5px] leading-relaxed text-[#0F291E] shadow-xs focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13.5px] leading-relaxed text-[#0F291E] shadow-xs focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 font-sans"
                 />
-                <span className="mt-1 flex items-center justify-between font-mono text-[10px] text-slate-400">
+                <span className="mt-1 flex items-center justify-between font-sans text-[10px] text-slate-400 tabular-nums">
                   <span>Catatan akan dikirimkan ke WhatsApp &amp; Portal Petani.</span>
                   <span>{reviseNote.length}/500</span>
                 </span>
@@ -1782,8 +1808,8 @@ export default function SurveyorInspectionView({
                   <XOctagon className="h-5 w-5" />
                 </span>
                 <div>
-                  <h3 className="text-[15px] font-bold tracking-tight text-[#0F291E]">Tolak Permanen Lahan</h3>
-                  <p className="mt-0.5 font-mono text-[10.5px] text-slate-400">
+                  <h3 className="text-[15px] font-bold tracking-tight text-[#0F291E] font-sans">Tolak Permanen Lahan</h3>
+                  <p className="mt-0.5 font-sans text-[10.5px] text-slate-400 tabular-nums">
                     {displayTicketId} · {plotName}
                   </p>
                 </div>
@@ -1798,16 +1824,16 @@ export default function SurveyorInspectionView({
               </button>
             </header>
 
-            <div className="space-y-4 px-5 py-4">
+            <div className="space-y-4 px-5 py-4 font-sans">
               <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50/80 p-3.5">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-                <p className="text-[12.5px] leading-relaxed text-rose-900">
-                  <span className="font-bold">PERHATIAN:</span> Penolakan bersifat permanen. Lahan akan digugurkan dari program sertifikasi karbon dan statusnya di database PostgreSQL akan diubah menjadi <span className="font-mono font-bold">rejected</span>.
+                <p className="text-[12.5px] leading-relaxed text-rose-900 font-sans">
+                  <span className="font-bold">PERHATIAN:</span> Penolakan bersifat permanen. Lahan akan digugurkan dari program sertifikasi karbon dan statusnya di database PostgreSQL akan diubah menjadi <span className="font-sans font-bold">rejected</span>.
                 </p>
               </div>
 
               <label className="block">
-                <span className="mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                <span className="mb-1.5 block font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                   Alasan Penolakan Permanen (Wajib)
                 </span>
                 <textarea
@@ -1815,7 +1841,7 @@ export default function SurveyorInspectionView({
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
                   placeholder="Misal: Lahan terbukti berada di kawasan lindung non-hutan rakyat atau sengketa hak milik ganda…"
-                  className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13.5px] leading-relaxed text-[#0F291E] shadow-xs focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20"
+                  className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13.5px] leading-relaxed text-[#0F291E] shadow-xs focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 font-sans"
                 />
               </label>
             </div>
@@ -1862,8 +1888,8 @@ export default function SurveyorInspectionView({
                   <Check className="h-5 w-5" />
                 </span>
                 <div>
-                  <h3 className="text-[15px] font-bold tracking-tight text-[#0F291E]">Setujui &amp; Verifikasi Lahan</h3>
-                  <p className="mt-0.5 font-mono text-[10.5px] text-slate-400">
+                  <h3 className="text-[15px] font-bold tracking-tight text-[#0F291E] font-sans">Setujui &amp; Verifikasi Lahan</h3>
+                  <p className="mt-0.5 font-sans text-[10.5px] text-slate-400 tabular-nums">
                     {displayTicketId} · {plotName}
                   </p>
                 </div>
@@ -1878,12 +1904,12 @@ export default function SurveyorInspectionView({
               </button>
             </header>
 
-            <div className="space-y-4 px-5 py-4">
+            <div className="space-y-4 px-5 py-4 font-sans">
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
-                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-emerald-800">
+                <p className="font-sans text-[11px] font-bold uppercase tracking-wider text-emerald-800">
                   Konfirmasi Pengesahan Lapangan
                 </p>
-                <p className="mt-1 text-[13px] text-emerald-950 leading-relaxed">
+                <p className="mt-1 text-[13px] text-emerald-950 leading-relaxed font-sans">
                   Data hasil ukur aktual akan dicatat sebagai baseline sertifikasi karbon. Status lahan akan dipromosikan ke tahap verifikasi resmi.
                 </p>
               </div>

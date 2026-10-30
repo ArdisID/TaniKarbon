@@ -20,6 +20,16 @@ import {
   AlertCircle
 } from 'lucide-react';
 import UploadTransferProofModal from './UploadTransferProofModal';
+import { getAdminPayoutQueue, approvePayout } from '../../api/admin';
+
+// Helper format display kode transaksi / penarikan
+function formatTransactionCode(id, prefix = 'WD') {
+  const str = String(id || '');
+  if (str.startsWith('WD-') || str.startsWith('TXN-') || str.startsWith('ESC-') || str.startsWith('DEP-') || str.startsWith('BATCH-')) {
+    return str;
+  }
+  return `${prefix}-${str.slice(0, 8).toUpperCase()}`;
+}
 
 export default function FinancialEscrowAndPayoutView({ onToast }) {
   const [selectedWithdrawalForTransfer, setSelectedWithdrawalForTransfer] = useState(null);
@@ -122,6 +132,36 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
     }
   ]);
 
+  // Load real payout queue from backend
+  React.useEffect(() => {
+    let isMounted = true;
+    async function loadPayouts() {
+      try {
+        const payouts = await getAdminPayoutQueue();
+        if (isMounted && Array.isArray(payouts) && payouts.length > 0) {
+          const mapped = payouts.map(p => ({
+            id: p.id,
+            farmerName: p.farmer_name,
+            farmerPhone: p.farmer_phone,
+            location: p.location,
+            amount: p.amount,
+            channel: p.bank_name,
+            accountNumber: p.account_number,
+            accountHolder: p.account_holder,
+            date: p.created_at,
+            status: p.status === 'completed' ? 'transferred' : 'pending',
+            referenceNumber: p.status === 'completed' ? 'TRX-VERIFIED' : null
+          }));
+          setFarmerWithdrawals(mapped);
+        }
+      } catch (e) {
+        console.warn('Backend payouts fallback to mock:', e);
+      }
+    }
+    loadPayouts();
+    return () => { isMounted = false; };
+  }, []);
+
   // Corporate Deposits Queue Data
   const [corporateDeposits, setCorporateDeposits] = useState([
     {
@@ -161,7 +201,18 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
   };
 
   // Handler: Confirm Farmer Withdrawal
-  const handleConfirmTransfer = (data) => {
+  const handleConfirmTransfer = async (data) => {
+    try {
+      if (data.withdrawalId) {
+        await approvePayout(data.withdrawalId, {
+          bank_reference_no: data.referenceNumber,
+          admin_notes: 'Transfer disetujui melalui Dashboard Otoritas'
+        });
+      }
+    } catch (err) {
+      console.warn('Approve payout backend fallback:', err);
+    }
+
     setFarmerWithdrawals(prev => prev.map(wd => {
       if (wd.id === data.withdrawalId) {
         return {
@@ -203,32 +254,32 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 font-sans">
-              Brankas Keuangan Terdesentralisasi
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-900 border border-amber-300 uppercase tracking-wider font-sans">
+              Rekonsiliasi Keuangan &amp; Settlement
             </span>
             <span className="text-xs text-slate-500 font-sans">
-              Rekonsiliasi Escrow, Payout &amp; Deposit B2B
+              Rekening Penampung Bank Kustodian Mandiri Escrow
             </span>
           </div>
-          <h1 className="text-2xl font-bold text-stone-900 tracking-tight mt-1 font-sans">
-            Brankas Keuangan, Escrow &amp; Payout
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-1.5 font-sans">
+            Brankas Escrow &amp; Settlement Transaksi Karbon
           </h1>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl font-sans">
-            Kelola pembagian hasil penjualan karbon secara matematis transparan, talangan audit (cost recovery), pencairan dana petani, dan verifikasi deposit korporat.
+          <p className="text-xs text-slate-500 mt-1 max-w-2xl font-sans leading-relaxed">
+            Kelola pembagian hasil penjualan karbon secara matematis transparan, pengembalian talangan audit (cost recovery), pencairan dana petani, dan verifikasi deposit korporat.
           </p>
         </div>
 
         {/* Quick Balance Metrics */}
-        <div className="flex items-center gap-3">
-          <div className="px-4 py-2 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-            <span className="text-[10px] text-slate-500 font-sans block">Total Saldo Escrow Tertahan</span>
-            <span className="text-sm font-bold text-amber-700 font-mono">
+        <div className="flex items-center gap-3 font-sans">
+          <div className="px-4 py-2.5 bg-white border border-slate-200/90 rounded-2xl shadow-xs font-sans">
+            <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Total Saldo Escrow Tertahan</span>
+            <span className="text-base font-black text-amber-700 font-sans tabular-nums">
               Rp 40.290.000
             </span>
           </div>
-          <div className="px-4 py-2 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-            <span className="text-[10px] text-slate-500 font-sans block">Cost Recovery Reimbursed</span>
-            <span className="text-sm font-bold text-emerald-700 font-mono">
+          <div className="px-4 py-2.5 bg-white border border-slate-200/90 rounded-2xl shadow-xs font-sans">
+            <span className="font-sans text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Cost Recovery Reimbursed</span>
+            <span className="text-base font-black text-emerald-700 font-sans tabular-nums">
               Rp 60.000.000
             </span>
           </div>
@@ -236,28 +287,28 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
       </div>
 
       {/* Navigation Filter Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
         <button
           onClick={() => setActiveFinanceTab('split')}
           className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
             activeFinanceTab === 'split'
-              ? 'bg-[#14382C] text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-amber-50/60 hover:text-amber-950'
           }`}
         >
-          <TrendingUp className="w-4 h-4 text-emerald-400" />
-          <span>Mesin Split-Payout &amp; Escrow Klaster</span>
+          <TrendingUp className="w-4 h-4 text-white" />
+          <span>Rekonsiliasi Bagi Hasil Escrow Klaster</span>
         </button>
 
         <button
           onClick={() => setActiveFinanceTab('withdrawals')}
           className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
             activeFinanceTab === 'withdrawals'
-              ? 'bg-[#14382C] text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-amber-50/60 hover:text-amber-950'
           }`}
         >
-          <Users className="w-4 h-4 text-emerald-400" />
+          <Users className="w-4 h-4 text-white" />
           <span>Antrean Penarikan Dana Petani ({pendingWithdrawalsCount} Pending)</span>
         </button>
 
@@ -265,11 +316,11 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
           onClick={() => setActiveFinanceTab('deposits')}
           className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
             activeFinanceTab === 'deposits'
-              ? 'bg-[#14382C] text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-amber-50/60 hover:text-amber-950'
           }`}
         >
-          <Building2 className="w-4 h-4 text-emerald-400" />
+          <Building2 className="w-4 h-4 text-white" />
           <span>Verifikasi Deposit B2B Korporat ({pendingDepositsCount} Menunggu)</span>
         </button>
       </div>
@@ -279,32 +330,32 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
         <div className="space-y-6">
           
           {/* Transparency Formula Banner */}
-          <div className="p-5 rounded-2xl bg-[#14382C] text-white shadow-md relative overflow-hidden">
+          <div className="p-5 sm:p-6 rounded-[24px] bg-[#18130C] text-white shadow-md border border-amber-500/30 relative overflow-hidden">
             <div className="relative z-10 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 uppercase tracking-wider font-sans">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider font-sans">
                     Transparansi Formula Payout
                   </span>
-                  <span className="text-xs text-emerald-200 font-sans">Aturan Pembagian Otomatis Kontrak Cerdas</span>
+                  <span className="text-xs text-amber-100/90 font-sans">Aturan Pembagian Proporsional Berbasis Tonase Lahan</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-3.5 rounded-xl bg-white/10 border border-white/10 backdrop-blur-xs">
-                  <span className="text-[11px] text-emerald-200 block font-semibold mb-1 font-sans">
+                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xs">
+                  <span className="text-[11px] text-amber-300 block font-bold mb-1 font-sans">
                     Rumus 1: Net Payout Pool Petani
                   </span>
-                  <div className="font-mono text-xs text-white bg-black/20 p-2 rounded-lg border border-white/5">
+                  <div className="font-sans text-xs text-white bg-black/40 p-2.5 rounded-xl border border-white/10 tabular-nums">
                     NetPayoutPool = GrossRevenue - CostRecoveryAudit - PlatformTakeRate
                   </div>
                 </div>
 
-                <div className="p-3.5 rounded-xl bg-white/10 border border-white/10 backdrop-blur-xs">
-                  <span className="text-[11px] text-emerald-200 block font-semibold mb-1 font-sans">
+                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xs">
+                  <span className="text-[11px] text-amber-300 block font-bold mb-1 font-sans">
                     Rumus 2: Proporsi Payout Petani Individu
                   </span>
-                  <div className="font-mono text-xs text-white bg-black/20 p-2 rounded-lg border border-white/5">
+                  <div className="font-sans text-xs text-white bg-black/40 p-2.5 rounded-xl border border-white/10 tabular-nums">
                     PayoutPetani_i = NetPayoutPool × (TonasePetani_i / TotalTonaseKlaster)
                   </div>
                 </div>
@@ -332,7 +383,7 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
                   {/* Top Bar of Batch */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                     <div className="flex items-center gap-2.5">
-                      <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold font-sans bg-slate-100 text-slate-800 border border-slate-200 tabular-nums">
                         {batch.id}
                       </span>
                       <span className="text-xs font-bold text-stone-900 font-sans">
@@ -357,56 +408,56 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
                   </div>
 
                   {/* 4 Pillars of Revenue Split */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 font-sans">
                     
                     {/* Gross Revenue */}
-                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                      <span className="text-[10px] uppercase font-bold text-slate-500 font-sans block">
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 font-sans">
+                      <span className="font-sans text-[11px] uppercase font-semibold text-slate-500 block">
                         1. Gross Revenue Korporat
                       </span>
-                      <div className="text-base font-bold text-slate-900 font-mono mt-0.5">
+                      <div className="text-base font-extrabold text-slate-900 font-sans mt-0.5 tabular-nums">
                         Rp {batch.grossRevenue.toLocaleString('id-ID')}
                       </div>
-                      <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+                      <span className="text-xs text-slate-500 font-sans block mt-0.5 tabular-nums">
                         {batch.volume} tCO2e × Rp {batch.pricePerTon.toLocaleString('id-ID')}
                       </span>
                     </div>
 
                     {/* Cost Recovery Reimbursement */}
-                    <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200">
-                      <span className="text-[10px] uppercase font-bold text-amber-800 font-sans block">
+                    <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 font-sans">
+                      <span className="font-sans text-[11px] uppercase font-semibold text-amber-800 block">
                         2. Kas Cost Recovery Platform
                       </span>
-                      <div className="text-base font-bold text-amber-900 font-mono mt-0.5">
+                      <div className="text-base font-extrabold text-amber-900 font-sans mt-0.5 tabular-nums">
                         - Rp {batch.costRecoveryCut.toLocaleString('id-ID')}
                       </div>
-                      <span className="text-[10px] text-amber-700 font-sans block mt-0.5">
+                      <span className="text-xs text-amber-700 font-sans block mt-0.5">
                         Mengembalikan talangan audit
                       </span>
                     </div>
 
                     {/* Platform Take-Rate */}
-                    <div className="p-3.5 rounded-xl bg-purple-50/70 border border-purple-200">
-                      <span className="text-[10px] uppercase font-bold text-purple-800 font-sans block">
+                    <div className="p-3.5 rounded-xl bg-purple-50/70 border border-purple-200 font-sans">
+                      <span className="font-sans text-[11px] uppercase font-semibold text-purple-800 block">
                         3. Kas Profit Platform (15%)
                       </span>
-                      <div className="text-base font-bold text-purple-900 font-mono mt-0.5">
+                      <div className="text-base font-extrabold text-purple-900 font-sans mt-0.5 tabular-nums">
                         - Rp {batch.platformTakeRate.toLocaleString('id-ID')}
                       </div>
-                      <span className="text-[10px] text-purple-700 font-sans block mt-0.5">
+                      <span className="text-xs text-purple-700 font-sans block mt-0.5">
                         Take-rate jasa platform
                       </span>
                     </div>
 
                     {/* Net Farmer Pool */}
-                    <div className="p-3.5 rounded-xl bg-emerald-50/90 border border-emerald-300">
-                      <span className="text-[10px] uppercase font-bold text-emerald-800 font-sans block">
+                    <div className="p-3.5 rounded-xl bg-emerald-50/90 border border-emerald-300 font-sans">
+                      <span className="font-sans text-[11px] uppercase font-semibold text-emerald-800 block">
                         4. Hak Bersih Petani (Net Pool)
                       </span>
-                      <div className="text-base font-bold text-emerald-800 font-mono mt-0.5">
+                      <div className="text-base font-extrabold text-emerald-800 font-sans mt-0.5 tabular-nums">
                         Rp {batch.netFarmerPool.toLocaleString('id-ID')}
                       </div>
-                      <span className="text-[10px] text-emerald-700 font-sans block mt-0.5">
+                      <span className="text-xs text-emerald-700 font-sans block mt-0.5 tabular-nums">
                         Dibagikan ke {batch.farmersCount} rekening mitra
                       </span>
                     </div>
@@ -423,9 +474,9 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
                     {batch.status === 'pending_release' ? (
                       <button
                         onClick={() => handleReleaseEscrow(batch.id)}
-                        className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer font-sans whitespace-nowrap"
+                        className="px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer font-sans whitespace-nowrap"
                       >
-                        <ShieldCheck className="w-4 h-4 text-emerald-300" />
+                        <ShieldCheck className="w-4 h-4 text-white" />
                         <span>Rilis Dana dari Escrow ke Saldo Tersedia Petani</span>
                       </button>
                     ) : (
@@ -449,8 +500,8 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-bold text-stone-900 font-sans">
-                B. Tabel Persetujuan Penarikan Dana Petani (FarmerWithdrawalApprovalTable)
+              <h2 className="text-base font-bold text-slate-900 font-sans">
+                B. Persetujuan Penarikan Saldo Dividen Petani Mitra
               </h2>
               <p className="text-xs text-slate-500 font-sans">
                 Permintaan pencairan yang diajukan petani melalui modal dompet mereka. Verifikasi transfer dan unggah struk bank untuk konfirmasi.
@@ -475,20 +526,23 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {farmerWithdrawals.map((withdrawal) => (
                     <tr key={withdrawal.id} className="hover:bg-slate-50/60 transition font-sans">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 whitespace-nowrap">
-                        {withdrawal.id}
+                      <td 
+                        title={`ID Penarikan: ${withdrawal.id}`}
+                        className="py-3.5 px-4 font-mono font-bold text-slate-700 whitespace-nowrap tabular-nums"
+                      >
+                        {formatTransactionCode(withdrawal.id, 'WD')}
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-stone-900">{withdrawal.farmerName}</div>
                         <div className="text-[11px] text-slate-500 truncate max-w-xs">{withdrawal.clusterName}</div>
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-emerald-800 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-sans font-bold text-emerald-800 whitespace-nowrap tabular-nums">
                         Rp {withdrawal.amount.toLocaleString('id-ID')}
                       </td>
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <span className="font-semibold text-slate-800">{withdrawal.channel}</span>
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-700 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-sans text-slate-700 whitespace-nowrap tabular-nums">
                         {withdrawal.accountNumber}
                         <div className="text-[10px] text-slate-400 font-sans">a.n. {withdrawal.accountHolder}</div>
                       </td>
@@ -507,14 +561,14 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
                         {withdrawal.status === 'pending' ? (
                           <button
                             onClick={() => setSelectedWithdrawalForTransfer(withdrawal)}
-                            className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-xs transition flex items-center gap-1.5 ml-auto cursor-pointer font-sans"
+                            className="px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl shadow-xs transition flex items-center gap-1.5 ml-auto cursor-pointer font-sans"
                           >
                             <Upload className="w-3.5 h-3.5" />
                             <span>Unggah Bukti &amp; Kirim</span>
                           </button>
                         ) : (
                           <div className="flex items-center gap-2 justify-end text-slate-500">
-                            <span className="text-[11px] font-mono">{withdrawal.referenceNumber}</span>
+                            <span className="text-[11px] font-sans tabular-nums">{withdrawal.referenceNumber}</span>
                             <a 
                               href={withdrawal.proofUrl} 
                               target="_blank" 
@@ -542,10 +596,10 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-stone-900 font-sans">
-                C. Verifikasi Top-Up Deposit Korporat (CorporateDepositApprovalTable)
+                C. Verifikasi Top-Up Saldo Pra-Pendanaan Korporat
               </h2>
               <p className="text-xs text-slate-500 font-sans">
-                Validasi transfer masuk dari perusahaan untuk mengisi saldo PreFundedDepositCard mereka dan terbitkan faktur resmi (Invoice PDF).
+                Validasi transfer masuk dari perusahaan untuk mengisi saldo escrow resmi dan terbitkan faktur pajak resmi POJK.
               </p>
             </div>
           </div>
@@ -567,14 +621,14 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {corporateDeposits.map((deposit) => (
                     <tr key={deposit.id} className="hover:bg-slate-50/60 transition font-sans">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-sans font-bold text-slate-700 whitespace-nowrap tabular-nums">
                         {deposit.id}
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-stone-900">{deposit.companyName}</div>
-                        <div className="text-[11px] text-slate-500 font-mono">{deposit.companyCode}</div>
+                        <div className="text-[11px] text-slate-500 font-sans tabular-nums">{deposit.companyCode}</div>
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-blue-700 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-sans font-bold text-blue-700 whitespace-nowrap tabular-nums">
                         Rp {deposit.amount.toLocaleString('id-ID')}
                       </td>
                       <td className="py-3.5 px-4 whitespace-nowrap text-slate-700 font-medium">
@@ -598,15 +652,15 @@ export default function FinancialEscrowAndPayoutView({ onToast }) {
                         {deposit.status === 'pending' ? (
                           <button
                             onClick={() => handleApproveDeposit(deposit.id)}
-                            className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#14382C] hover:bg-[#1E4D3D] rounded-xl shadow-xs transition flex items-center gap-1.5 ml-auto cursor-pointer font-sans"
+                            className="px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 rounded-xl shadow-xs transition flex items-center gap-1.5 ml-auto cursor-pointer font-sans"
                           >
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                            <ShieldCheck className="w-3.5 h-3.5 text-amber-200" />
                             <span>Setujui Saldo &amp; Terbitkan Faktur Pajak (PDF)</span>
                           </button>
                         ) : (
                           <div className="flex items-center gap-2 justify-end text-emerald-700 font-medium">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            <span className="text-[11px] font-mono">{deposit.invoiceNumber}</span>
+                            <span className="text-[11px] font-sans tabular-nums">{deposit.invoiceNumber}</span>
                           </div>
                         )}
                       </td>

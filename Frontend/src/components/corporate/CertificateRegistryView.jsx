@@ -11,8 +11,7 @@ import {
   FileText,
   Copy,
   Calendar,
-  Layers,
-  Sparkles
+  Layers
 } from 'lucide-react';
 import { formatRupiah } from '../../data';
 
@@ -75,7 +74,15 @@ export default function CertificateRegistryView({
     }
   ];
 
-  const allCerts = [...certificates, ...defaultCertificates];
+  // Deduplicate certificates by uuid to avoid React duplicate key warnings
+  const rawCerts = (certificates && certificates.length > 0) ? certificates : defaultCertificates;
+  const certsMap = new Map();
+  [...rawCerts, ...defaultCertificates].forEach(c => {
+    if (c && c.uuid && !certsMap.has(c.uuid)) {
+      certsMap.set(c.uuid, c);
+    }
+  });
+  const allCerts = Array.from(certsMap.values());
 
   const filteredCerts = allCerts.filter(c => {
     if (filterYear !== 'all' && c.vintage !== filterYear) return false;
@@ -86,17 +93,17 @@ export default function CertificateRegistryView({
   const totalRetired = allCerts.reduce((acc, c) => acc + (c.quantity || 0), 0);
 
   return (
-    <div className="space-y-6 animate-fade-in pb-16">
+    <div className="space-y-6 animate-fade-in pb-16 font-sans">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <span className="text-xs font-mono font-bold text-emerald-800 uppercase tracking-wider bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+          <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-sky-800 bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200">
             Kredit Karbon Permanen (Retired Registry)
           </span>
-          <h1 className="text-xl sm:text-2xl font-black text-[#14382C] mt-1.5 tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-black text-[#0F1E2E] mt-1.5 tracking-tight font-sans">
             Sertifikat &amp; Repositori Audit ESG (SRN-PPI)
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5 font-sans">
             Daftar resmi sertifikat pengurangan emisi berstatus RETIRED yang terkunci untuk pemenuhan kepatuhan POJK 51 dan standar ISO 14064.
           </p>
         </div>
@@ -105,56 +112,56 @@ export default function CertificateRegistryView({
           onClick={() => {
             if (onToast) onToast('Bundel audit tahunan (.ZIP / .CSV) siap diunduh.');
           }}
-          className="px-4 py-2.5 rounded-2xl bg-[#14382C] hover:bg-[#1a4436] text-white font-bold text-xs transition flex items-center gap-2 shadow-2xs self-start sm:self-auto"
+          className="px-4 py-2.5 rounded-2xl bg-[#0F1E2E] hover:bg-[#1E293B] text-white font-bold text-xs transition flex items-center gap-2 shadow-xs self-start sm:self-auto cursor-pointer font-sans"
         >
-          <Download className="w-4 h-4 text-emerald-400" />
+          <Download className="w-4 h-4 text-sky-400" />
           <span>Export Seluruh Bundel Audit (.ZIP)</span>
         </button>
       </div>
 
       {/* Summary KPI Banner */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-sans">
         <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs">
-          <span className="text-[10px] uppercase font-mono font-bold text-slate-400 block">
+          <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
             Total Emisi Terkunci (Retired)
           </span>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-3xl font-black text-[#14382C] font-mono">
+          <div className="flex items-baseline gap-2 mt-1 font-sans">
+            <span className="text-3xl font-extrabold text-[#0F1E2E] font-sans tracking-tight tabular-nums">
               {totalRetired.toLocaleString('id-ID')}
             </span>
-            <span className="text-xs font-mono font-bold text-emerald-700">tCO2e</span>
+            <span className="text-xs font-sans font-bold text-emerald-700">tCO2e</span>
           </div>
-          <span className="text-[11px] text-slate-500 mt-1 block">Tercatat sah di buku besar KLHK</span>
+          <span className="text-[11px] text-slate-500 mt-1 block font-sans">Tercatat sah di buku besar KLHK</span>
         </div>
 
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xl shadow-slate-100 border-slate-200">
-          <span className="text-[10px] uppercase font-mono font-bold text-slate-400 block">
+        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs">
+          <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
             Total Dokumen Sertifikat
           </span>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-3xl font-black text-[#14382C] font-mono">
+          <div className="flex items-baseline gap-2 mt-1 font-sans">
+            <span className="text-3xl font-extrabold text-[#0F1E2E] font-sans tracking-tight tabular-nums">
               {allCerts.length}
             </span>
-            <span className="text-xs font-mono font-bold text-slate-500">Berkas BAP</span>
+            <span className="text-xs font-sans font-bold text-slate-500">Berkas BAP</span>
           </div>
-          <span className="text-[11px] text-slate-500 mt-1 block">Dilengkapi stempel digital publik</span>
+          <span className="text-[11px] text-slate-500 mt-1 block font-sans">Dilengkapi stempel digital publik</span>
         </div>
 
-        <div className="bg-emerald-950 text-white p-5 rounded-3xl border border-emerald-900 shadow-2xs">
-          <span className="text-[10px] uppercase font-mono font-bold text-emerald-300 block">
+        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-2xs">
+          <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
             Kepatuhan Pelaporan Audit
           </span>
           <div className="mt-1">
-            <span className="text-lg font-black text-white block">
-              POJK No. 51 / 2017 &amp; GRI
+            <span className="text-xl font-black text-[#0F1E2E] block font-sans tracking-tight">
+              POJK 51 &amp; GRI
             </span>
           </div>
-          <span className="text-[11px] text-emerald-200 mt-1 block">Tervalidasi pihak ketiga Tier-3</span>
+          <span className="text-[11px] text-sky-700 font-semibold mt-1 block font-sans">Tervalidasi pihak ketiga Tier-3</span>
         </div>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3 font-sans">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -162,16 +169,16 @@ export default function CertificateRegistryView({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Cari UUID sertifikat atau klaster..."
-            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14382C]"
+            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F1E2E]"
           />
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex items-center gap-2 self-end sm:self-auto font-sans">
           <span className="text-xs text-slate-500 font-bold">Filter Tahun:</span>
           <select
             value={filterYear}
             onChange={(e) => setFilterYear(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#14382C]"
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-sans text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0F1E2E]"
           >
             <option value="all">Semua Tahun</option>
             <option value="2026">Tahun Buku 2026</option>
@@ -180,34 +187,34 @@ export default function CertificateRegistryView({
         </div>
       </div>
 
-      {/* A. RetirementCertificateList (Tabel Sertifikat Permanen) */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden">
+      {/* Tabel Sertifikat Permanen */}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xs overflow-hidden font-sans">
         <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
-          <h2 className="text-sm font-extrabold text-[#14382C]">
-            Tabel &amp; Kartu Sertifikat Pensiun (RetirementCertificateList)
+          <h2 className="text-sm font-extrabold text-[#0F1E2E] font-sans">
+            Daftar Sertifikat Kredit Karbon Terverifikasi
           </h2>
-          <span className="text-xs font-mono text-slate-400">
+          <span className="text-xs font-sans text-slate-400 tabular-nums">
             {filteredCerts.length} Sertifikat Ditemukan
           </span>
         </div>
 
-        <div className="divide-y divide-slate-100 overflow-x-auto">
+        <div className="divide-y divide-slate-100 overflow-x-auto font-sans">
           {filteredCerts.map((cert) => (
             <div
               key={cert.uuid}
               className="p-4 sm:p-5 hover:bg-slate-50/70 transition flex flex-col md:flex-row md:items-center justify-between gap-4"
             >
               <div className="flex items-start gap-3.5 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center justify-center shrink-0">
-                  <Award className="w-5 h-5 text-emerald-700" />
+                <div className="w-10 h-10 rounded-2xl bg-sky-50 text-sky-800 border border-sky-200 flex items-center justify-center shrink-0">
+                  <Award className="w-5 h-5 text-sky-700" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-black text-[#14382C] bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200">
+                    <span className="font-sans text-xs font-bold text-[#0F1E2E] bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200 tabular-nums">
                       {cert.uuid}
                     </span>
                     {/* Badge Status Siklus Hidup */}
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-sans font-semibold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-sans font-semibold bg-sky-100 text-sky-900 border border-sky-300">
                       RETIRED • Terkunci Tahun Buku {cert.vintage}
                     </span>
                     {/* Sumber Eksekusi Badge */}
@@ -226,18 +233,18 @@ export default function CertificateRegistryView({
                   <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500 font-sans mt-0.5">
                     <span>Terbit: {cert.date}</span>
                     <span>•</span>
-                    <span>No. Registri: <span className="font-mono text-stone-700">{cert.srnRef || 'ID-SRN-KLHK-9921'}</span></span>
+                    <span>No. Registri: <span className="font-sans font-semibold text-stone-700 tabular-nums">{cert.srnRef || 'ID-SRN-KLHK-9921'}</span></span>
                   </div>
                 </div>
               </div>
 
               {/* Volume & Action Buttons */}
-              <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 pl-13 md:pl-0">
+              <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 pl-13 md:pl-0 font-sans">
                 <div className="text-left md:text-right">
-                  <span className="font-mono text-sm sm:text-base font-black text-emerald-700 block">
+                  <span className="font-sans text-sm sm:text-base font-extrabold text-sky-700 block tabular-nums">
                     {cert.quantity} tCO2e
                   </span>
-                  <span className="text-[10px] text-slate-400 font-mono">
+                  <span className="text-xs text-slate-500 font-sans tabular-nums">
                     Nilai: {formatRupiah(cert.totalCost)}
                   </span>
                 </div>
@@ -245,9 +252,9 @@ export default function CertificateRegistryView({
                 <button
                   type="button"
                   onClick={() => onViewCertificate(cert)}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-[#14382C] text-white font-bold text-xs transition shadow-2xs flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl bg-[#0F1E2E] hover:bg-[#1E293B] text-white font-bold text-xs transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
                 >
-                  <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                  <QrCode className="w-3.5 h-3.5 text-sky-400" />
                   <span>Lihat BAP Resmi</span>
                 </button>
               </div>

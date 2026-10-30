@@ -4,8 +4,7 @@ import {
   ShieldCheck, 
   CheckCircle2, 
   Wallet, 
-  Landmark, 
-  Sparkles, 
+  Building2, 
   AlertCircle, 
   ArrowRight,
   Info
@@ -68,21 +67,21 @@ export default function CarbonCheckoutModal({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs animate-fade-in"
+      className="fixed inset-0 z-[9999] isolate flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div 
-        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden relative max-h-[92vh] flex flex-col"
+        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden relative max-h-[92vh] flex flex-col font-sans"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-[#14382C] px-5 py-4 text-white flex items-center justify-between shrink-0">
+        <div className="bg-[#0F1E2E] px-5 py-4 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[10px] font-mono font-bold text-emerald-300 uppercase tracking-wider">Checkout Penebusan Emisi</span>
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-emerald-300">Checkout Penebusan Emisi</span>
               <h3 className="font-extrabold text-white text-base leading-tight">
                 Pembelian Karbon (Fractional Buying)
               </h3>
@@ -90,23 +89,23 @@ export default function CarbonCheckoutModal({
           </div>
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
+            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content Form */}
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-4 text-xs">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-4 text-xs font-sans">
           {/* Target Cluster Pill */}
           <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
             <div>
-              <span className="text-[10px] text-slate-400 uppercase font-mono font-bold block">Klaster Terpilih</span>
-              <strong className="text-[#14382C] text-xs font-bold block">
+              <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">Klaster Terpilih</span>
+              <strong className="text-[#0F1E2E] text-xs font-bold block font-sans">
                 {cluster?.name || 'Klaster Agroforestri Dusun Garung - Wonosobo'}
               </strong>
             </div>
-            <span className="px-2 py-0.5 rounded font-mono text-[11px] font-bold bg-emerald-100 text-emerald-800">
+            <span className="px-2.5 py-0.5 rounded-full font-sans text-xs font-semibold bg-sky-100 text-sky-800 tabular-nums">
               Rp 160.000 / tCO2e
             </span>
           </div>
@@ -114,10 +113,10 @@ export default function CarbonCheckoutModal({
           {/* Input Kuantitas Fleksibel (tCO2e) */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider font-sans">
                 Volume Penebusan (Fractional Buying)
               </label>
-              <span className="font-mono text-[11px] text-slate-500">Maks. Tersedia: 380 tCO2e</span>
+              <span className="font-sans text-xs text-slate-500 tabular-nums">Maks. Tersedia: 380 tCO2e</span>
             </div>
             <div className="relative">
               <input
@@ -130,9 +129,9 @@ export default function CarbonCheckoutModal({
                   setError('');
                 }}
                 required
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-base font-mono font-black text-[#14382C] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14382C]"
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-base font-sans font-extrabold text-[#0F1E2E] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F1E2E] tabular-nums"
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-slate-400">
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 font-sans text-xs font-semibold text-slate-400">
                 Ton CO2e
               </span>
             </div>
@@ -144,7 +143,7 @@ export default function CarbonCheckoutModal({
                   key={val}
                   type="button"
                   onClick={() => setQuantity(val)}
-                  className="px-2.5 py-1 text-[11px] font-mono font-bold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition"
+                  className="px-2.5 py-1 text-xs font-sans font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition cursor-pointer tabular-nums"
                 >
                   {val} Ton
                 </button>
@@ -175,7 +174,7 @@ export default function CarbonCheckoutModal({
               <select
                 value={targetEmissionYear}
                 onChange={(e) => setTargetEmissionYear(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs font-bold text-[#14382C] focus:outline-none focus:ring-2 focus:ring-[#14382C]"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-sans text-xs font-semibold text-[#0F1E2E] focus:outline-none focus:ring-2 focus:ring-[#0F1E2E]"
               >
                 <option value="2026">Laporan Emisi Tahun Buku 2026</option>
                 <option value="2027">Laporan Emisi Tahun Buku 2027</option>
@@ -191,78 +190,78 @@ export default function CarbonCheckoutModal({
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 required
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#14382C] focus:outline-none focus:ring-2 focus:ring-[#14382C]"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-[#0F1E2E] focus:outline-none focus:ring-2 focus:ring-[#0F1E2E]"
               />
             </div>
           </div>
 
           {/* Pilihan Metode Pembayaran */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2 font-sans">
               Metode Pembayaran B2B
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setPaymentMethod('wallet')}
-                className={`p-3 rounded-2xl text-left border transition flex items-center justify-between ${
+                className={`p-3 rounded-2xl text-left border transition flex items-center justify-between cursor-pointer ${
                   paymentMethod === 'wallet'
-                    ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/30'
+                    ? 'border-sky-600 bg-sky-50/70 ring-2 ring-sky-600/30'
                     : 'border-slate-200 bg-slate-50/50 hover:border-slate-300'
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
-                    <Wallet className="w-4 h-4 text-emerald-400" />
+                    <Wallet className="w-4 h-4 text-sky-400" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold text-[#14382C] block">Pre-funded Deposit</span>
-                    <span className="text-[10px] font-mono text-emerald-700">Sisa: {formatRupiah(depositBalance)}</span>
+                    <span className="text-xs font-bold text-[#0F1E2E] block font-sans">Pre-funded Deposit</span>
+                    <span className="text-xs font-sans text-sky-700 tabular-nums">Sisa: {formatRupiah(depositBalance)}</span>
                   </div>
                 </div>
-                {paymentMethod === 'wallet' && <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />}
+                {paymentMethod === 'wallet' && <CheckCircle2 className="w-4 h-4 text-sky-700 shrink-0" />}
               </button>
 
               <button
                 type="button"
                 onClick={() => setPaymentMethod('va')}
-                className={`p-3 rounded-2xl text-left border transition flex items-center justify-between ${
+                className={`p-3 rounded-2xl text-left border transition flex items-center justify-between cursor-pointer ${
                   paymentMethod === 'va'
-                    ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/30'
+                    ? 'border-sky-600 bg-sky-50/70 ring-2 ring-sky-600/30'
                     : 'border-slate-200 bg-slate-50/50 hover:border-slate-300'
                 }`}
               >
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
-                    <Landmark className="w-4 h-4" />
+                    <Building2 className="w-4 h-4" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold text-slate-800 block">Virtual Account B2B</span>
-                    <span className="text-[10px] text-slate-500">Bank Mandiri / BRI</span>
+                    <span className="text-xs font-bold text-slate-800 block font-sans">Virtual Account B2B</span>
+                    <span className="text-[10px] text-slate-500 font-sans">Bank Mandiri / BRI</span>
                   </div>
                 </div>
-                {paymentMethod === 'va' && <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />}
+                {paymentMethod === 'va' && <CheckCircle2 className="w-4 h-4 text-sky-700 shrink-0" />}
               </button>
             </div>
           </div>
 
           {/* Investment Calculation Breakdown */}
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 font-sans">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500">Kalkulasi Volume:</span>
-              <span className="font-mono font-bold text-slate-800">{numQty} Ton × Rp 160.000</span>
+              <span className="text-slate-500 font-sans">Kalkulasi Volume:</span>
+              <span className="font-sans font-bold text-slate-800 tabular-nums">{numQty} Ton × Rp 160.000</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-emerald-800 font-semibold">Hak Petani Langsung (88%):</span>
-              <span className="font-mono font-bold text-emerald-800">{formatRupiah(farmerShare)}</span>
+              <span className="text-sky-800 font-semibold font-sans">Hak Petani Langsung (88%):</span>
+              <span className="font-sans font-bold text-sky-800 tabular-nums">{formatRupiah(farmerShare)}</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500">Alokasi MRV &amp; Subsidi Audit (12%):</span>
-              <span className="font-mono text-slate-600">{formatRupiah(mrvReserve)}</span>
+              <span className="text-slate-500 font-sans">Alokasi MRV &amp; Subsidi Audit (12%):</span>
+              <span className="font-sans font-medium text-slate-600 tabular-nums">{formatRupiah(mrvReserve)}</span>
             </div>
             <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-              <strong className="text-xs text-slate-800 uppercase tracking-wider">Total Pembayaran:</strong>
-              <strong className="text-base font-black text-[#14382C] font-mono">
+              <strong className="text-xs text-slate-800 uppercase tracking-wider font-sans">Total Pembayaran:</strong>
+              <strong className="text-base font-extrabold text-[#0F1E2E] font-sans tabular-nums">
                 {formatRupiah(totalCost)}
               </strong>
             </div>
@@ -280,14 +279,14 @@ export default function CarbonCheckoutModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+              className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={isSubmitting || numQty <= 0}
-              className="flex-2 py-3 bg-[#14382C] hover:bg-[#1a4436] text-white font-bold text-xs rounded-xl transition shadow-md flex items-center justify-center gap-2"
+              className="flex-2 py-3 bg-[#0F1E2E] hover:bg-[#1E293B] text-white font-bold text-xs rounded-xl transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
               {isSubmitting ? 'Memproses Penebusan...' : `Pensiunkan ${numQty} tCO2e & Terbitkan Sertifikat`}
             </button>

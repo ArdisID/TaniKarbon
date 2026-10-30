@@ -172,7 +172,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-200">
               Registri Otoritas Publik &amp; Integrasi B2B
             </span>
             <span className="text-xs text-slate-500 font-sans">
@@ -183,7 +183,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
             Registri Sertifikat &amp; Monitor API
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl font-sans">
-            Buku besar nasional seluruh sertifikat kredit karbon berstatus RETIRED (Hangus) serta monitor real-time lalu lintas API / webhook otomatisasi offset ERP korporat (UINIC 8.0).
+            Buku besar nasional seluruh sertifikat kredit karbon berstatus RETIRED (Hangus) serta monitor real-time lalu lintas API dan webhook otomatisasi offset ERP korporat.
           </p>
         </div>
 
@@ -193,14 +193,14 @@ export default function RegistryAndApiMonitorView({ onToast }) {
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <div>
               <span className="text-[10px] text-slate-500 font-sans block leading-none">Gateway API</span>
-              <span className="text-xs font-bold text-stone-900 font-mono">200 OK (24ms)</span>
+              <span className="text-xs font-bold text-stone-900 font-sans tabular-nums">200 OK (24ms)</span>
             </div>
           </div>
 
           <button
             onClick={handleSimulateWebhookPing}
             disabled={isSimulatingPing}
-            className="px-4 py-2.5 text-xs font-bold text-white bg-[#14382C] hover:bg-[#1E4D3D] rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer font-sans shrink-0 disabled:opacity-50"
+            className="px-4 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer font-sans shrink-0 disabled:opacity-50"
           >
             {isSimulatingPing ? (
               <>
@@ -209,7 +209,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
               </>
             ) : (
               <>
-                <Zap className="w-4 h-4 text-emerald-400" />
+                <Zap className="w-4 h-4 text-amber-200" />
                 <span>Simulasi Test Webhook / Ping ERP</span>
               </>
             )}
@@ -223,11 +223,11 @@ export default function RegistryAndApiMonitorView({ onToast }) {
           onClick={() => setActiveTab('registry')}
           className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
             activeTab === 'registry'
-              ? 'bg-[#14382C] text-white shadow-xs'
+              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          <FileCheck2 className="w-4 h-4 text-emerald-400" />
+          <FileCheck2 className={`w-4 h-4 ${activeTab === 'registry' ? 'text-amber-200' : 'text-slate-500'}`} />
           <span>Buku Besar Sertifikat Pensiun ({certificates.length} Terbit)</span>
         </button>
 
@@ -235,11 +235,11 @@ export default function RegistryAndApiMonitorView({ onToast }) {
           onClick={() => setActiveTab('api')}
           className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
             activeTab === 'api'
-              ? 'bg-[#14382C] text-white shadow-xs'
+              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          <Activity className="w-4 h-4 text-emerald-400" />
+          <Activity className={`w-4 h-4 ${activeTab === 'api' ? 'text-amber-200' : 'text-slate-500'}`} />
           <span>Monitor Lalu Lintas API &amp; Webhook Global ({apiLogs.length} Log)</span>
         </button>
       </div>
@@ -277,7 +277,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
                     <tr key={cert.uuid} className="hover:bg-slate-50/60 transition font-sans">
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-stone-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[11px]">
+                          <span className="font-sans font-bold text-stone-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-[11px] tabular-nums">
                             {cert.uuid}
                           </span>
                           <button
@@ -301,10 +301,10 @@ export default function RegistryAndApiMonitorView({ onToast }) {
 
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="font-medium text-slate-800">{cert.clusterOrigin}</div>
-                        <div className="text-[11px] text-slate-500 font-mono">Vintage {cert.vintage} • {cert.auditor}</div>
+                        <div className="text-[11px] text-slate-500 font-sans">Vintage {cert.vintage} • {cert.auditor}</div>
                       </td>
 
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-sans font-extrabold text-slate-900 whitespace-nowrap tabular-nums">
                         {cert.volume.toLocaleString('id-ID')} tCO2e
                       </td>
 
@@ -319,7 +319,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
                       </td>
 
                       <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-900 text-emerald-300 font-mono">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-900 text-emerald-300 font-sans tracking-wide">
                           RETIRED (HANGUS)
                         </span>
                       </td>
@@ -356,12 +356,12 @@ export default function RegistryAndApiMonitorView({ onToast }) {
             </div>
           </div>
 
-          <div className="bg-slate-950 text-slate-100 rounded-2xl border border-slate-800 p-4 shadow-xl space-y-3 font-mono">
+          <div className="bg-slate-950 text-slate-100 rounded-2xl border border-slate-800 p-4 shadow-xl space-y-3 font-sans">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2 text-xs">
                 <Terminal className="w-4 h-4 text-emerald-400" />
                 <span className="font-bold text-white font-sans">Live API Stream Console</span>
-                <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">
+                <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 font-sans font-semibold">
                   LISTENING ON PORT 443
                 </span>
               </div>
@@ -378,14 +378,14 @@ export default function RegistryAndApiMonitorView({ onToast }) {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-sans">
                         {log.statusCode} OK
                       </span>
-                      <span className="font-bold text-slate-200">{log.endpoint}</span>
+                      <span className="font-bold text-slate-200 font-sans">{log.endpoint}</span>
                     </div>
 
-                    <div className="flex items-center gap-3 text-[11px] text-slate-400">
-                      <span>Latency: <strong className="text-emerald-400 font-mono">{log.responseTime}</strong></span>
+                    <div className="flex items-center gap-3 text-[11px] text-slate-400 font-sans">
+                      <span>Latency: <strong className="text-emerald-400 font-sans font-bold tabular-nums">{log.responseTime}</strong></span>
                       <span>• {log.timestamp}</span>
                     </div>
                   </div>
@@ -394,7 +394,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
                     Sumber: <span className="text-slate-300 font-medium">{log.source}</span>
                   </div>
 
-                  <div className="p-2 rounded bg-black/40 text-[11px] text-slate-300 border border-slate-800/80">
+                  <div className="p-2 rounded bg-black/40 text-[11px] text-slate-300 border border-slate-800/80 font-sans">
                     <div><span className="text-slate-500">Payload:</span> {log.payload}</div>
                     <div><span className="text-emerald-500">Output:</span> {log.responseSummary}</div>
                   </div>
@@ -437,7 +437,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
                 <div className="w-40 h-40 bg-white rounded-xl shadow-xs p-2 flex flex-col items-center justify-center mx-auto">
                   <QrCode className="w-32 h-32 text-slate-900" />
                 </div>
-                <span className="text-[11px] font-mono text-slate-500 mt-2 block">
+                <span className="text-[11px] font-sans font-medium text-slate-500 mt-2 block">
                   Scan URL: /verify/certificates/{selectedCertificateModal.uuid}
                 </span>
               </div>
@@ -446,7 +446,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
               <div className="text-left p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-sans">UUID Sertifikat:</span>
-                  <span className="font-mono font-bold text-stone-900">{selectedCertificateModal.uuid}</span>
+                  <span className="font-sans font-bold text-stone-900 tabular-nums">{selectedCertificateModal.uuid}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-sans">Perusahaan Pemilik:</span>
@@ -454,7 +454,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-sans">Tonase Dihanguskan:</span>
-                  <span className="font-mono font-bold text-emerald-700">{selectedCertificateModal.volume} tCO2e</span>
+                  <span className="font-sans font-extrabold text-emerald-700 tabular-nums">{selectedCertificateModal.volume} tCO2e</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-sans">Klaster &amp; Vintage:</span>
@@ -462,7 +462,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-sans">No. Registri KLHK:</span>
-                  <span className="font-mono font-semibold text-slate-700">{selectedCertificateModal.srnPpiReg}</span>
+                  <span className="font-sans font-semibold text-slate-700 tabular-nums">{selectedCertificateModal.srnPpiReg}</span>
                 </div>
               </div>
 
@@ -475,7 +475,7 @@ export default function RegistryAndApiMonitorView({ onToast }) {
 
               <button
                 onClick={() => setSelectedCertificateModal(null)}
-                className="w-full py-2.5 text-xs font-bold text-white bg-[#14382C] hover:bg-[#1E4D3D] rounded-xl shadow-xs transition cursor-pointer font-sans"
+                className="w-full py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 rounded-xl shadow-xs transition cursor-pointer font-sans"
               >
                 Tutup Tampilan Validasi
               </button>

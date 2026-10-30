@@ -70,7 +70,7 @@ export default function ScheduleVisitModal({ ticket, onClose, onScheduleSuccess,
           <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5 text-xs font-sans">
             <div className="flex items-center justify-between">
               <span className="font-bold text-[#14382C] text-sm">{ticket.farmerName}</span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800">
+              <span className="px-2 py-0.5 rounded text-[10px] font-sans font-bold bg-emerald-100 text-emerald-800 tabular-nums">
                 {ticket.id}
               </span>
             </div>

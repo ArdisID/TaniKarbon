@@ -1,21 +1,16 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  ShieldCheck, 
-  Lock, 
-  Terminal, 
-  KeyRound, 
-  ArrowRight, 
-  ArrowLeft, 
-  Zap, 
-  Server, 
-  Activity, 
-  Eye, 
+import {
+  ShieldCheck,
+  ArrowRight,
+  ArrowLeft,
+  Eye,
   EyeOff,
-  Database,
-  AlertCircle
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
 import { loginUser } from '../../api/auth';
+import TaniKarbonLogo from '../common/TaniKarbonLogo';
 
 export default function AdminLoginView({ onLogin, onBack, onNavigate }) {
   const navigate = useNavigate();
@@ -73,169 +68,164 @@ export default function AdminLoginView({ onLogin, onBack, onNavigate }) {
   };
 
   return (
-    <div className="min-h-screen w-full relative flex flex-col justify-between p-4 sm:p-6 bg-slate-950 font-sans text-slate-100 antialiased selection:bg-purple-900 selection:text-white">
-      {/* Background Matrix/Subtle Grid Effect */}
-      <div 
-        className="absolute inset-0 opacity-10 pointer-events-none"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, #10B981 1px, transparent 0)',
-          backgroundSize: '32px 32px'
-        }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-[#0E281F]/40 to-slate-950 pointer-events-none" />
+    <div
+      className="min-h-screen w-full relative flex flex-col justify-between p-4 sm:p-6 bg-cover bg-center font-sans antialiased overflow-x-hidden"
+      style={{
+        backgroundImage: "url('/auth-bg-plantation.jpg')",
+        backgroundColor: '#14382C'
+      }}
+    >
+      {/* Soft atmospheric gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-amber-950/20 to-black/60 pointer-events-none" />
 
-      {/* Top Bar */}
-      <div className="relative z-20 max-w-5xl w-full mx-auto flex items-center justify-between">
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold border border-slate-800 transition active:scale-95 cursor-pointer font-sans"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Kembali ke Beranda</span>
-        </button>
-
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-mono text-xs font-semibold text-emerald-400">
-            PostGIS Gateway: SECURE
-          </span>
-        </div>
+      {/* Subtle Concentric Rings radiating from behind the card */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+        <div className="w-[500px] h-[500px] rounded-full border border-white/15 -translate-y-6" />
+        <div className="absolute w-[750px] h-[750px] rounded-full border border-white/10 -translate-y-6" />
+        <div className="absolute w-[1000px] h-[1000px] rounded-full border border-white/5 -translate-y-6" />
       </div>
 
-      {/* Center Command Center Card */}
-      <div className="relative z-20 my-auto py-8 flex items-center justify-center">
-        <div className="w-full max-w-[440px] bg-slate-900/90 backdrop-blur-2xl rounded-3xl p-7 sm:p-9 border border-slate-800 shadow-2xl transition animate-fade-in space-y-5">
-          
-          {/* Top Branding Authority Badge */}
-          <div className="text-center space-y-2">
-            <div className="w-14 h-14 rounded-2xl bg-[#14382C] border border-emerald-500/30 text-emerald-300 flex items-center justify-center mx-auto shadow-lg shadow-emerald-950/50">
-              <ShieldCheck className="w-8 h-8" />
-            </div>
+      {/* Top Bar: Brand Logo & Back Button */}
+      <div className="relative z-20 max-w-6xl w-full mx-auto flex items-center justify-between">
+        {/* Brand Logo */}
+        <div className="flex items-center px-3.5 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/20 shadow-xs">
+          <TaniKarbonLogo size={26} showText={true} textVariant="light" />
+        </div>
 
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-950/80 text-purple-300 border border-purple-800 uppercase tracking-wider font-sans">
-              <span>ROOT SYSTEM AUTHORITY</span>
-              <span>•</span>
-              <span className="font-mono">SRN-PPI REGISTRY</span>
-            </div>
+        {/* Back to Home Button */}
+        <button
+          type="button"
+          onClick={onBack}
+          className="group inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/80 hover:bg-white text-stone-800 text-xs font-semibold backdrop-blur-md border border-white/80 shadow-xs transition-all active:scale-95 cursor-pointer font-sans"
+        >
+          <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+          <span>Kembali</span>
+        </button>
+      </div>
 
-            <h1 className="text-2xl font-bold text-white tracking-tight font-sans">
-              Admin Platform Gateway
+      {/* Center Floating White Card (Same as Farmer Login) */}
+      <div className="relative z-20 my-auto py-4 flex items-center justify-center">
+        <div className="w-full max-w-[400px] bg-white/95 backdrop-blur-2xl rounded-[32px] p-7 sm:p-8 border border-white shadow-[0_24px_70px_-15px_rgba(0,0,0,0.35)] text-center transition-all animate-fade-in space-y-4">
+
+          {/* Top Squircle Icon (Subtle Amber Differentiator) */}
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200/80 shadow-[0_4px_16px_rgba(245,158,11,0.12)] flex items-center justify-center mx-auto text-amber-600">
+            <ShieldCheck className="w-6 h-6 text-amber-600" />
+          </div>
+
+          {/* Heading & Subtitle */}
+          <div>
+            <h1 className="text-xl font-bold text-stone-900 tracking-tight font-sans">
+              Masuk Portal Admin
             </h1>
-            <p className="text-xs text-slate-400 font-sans max-w-xs mx-auto">
-              Otoritas pengesahan audit bursa karbon, brankas keuangan escrow, dan kontrol rumus alometrik.
+            <p className="text-[11px] text-stone-500 mt-1 leading-relaxed max-w-[280px] mx-auto font-sans">
+              Otoritas klaster karbon, brankas escrow, dan audit pendaftaran pohon.
             </p>
           </div>
 
           {/* Error Banner */}
           {errorMessage && (
-            <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-800 text-rose-300 text-xs flex items-start gap-2.5 text-left font-sans animate-fade-in">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 text-left animate-fade-in font-sans">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
               <span className="leading-tight font-medium">{errorMessage}</span>
             </div>
           )}
 
-          {/* Form Login */}
-          <form onSubmit={handleSubmit} className="space-y-3.5 text-left">
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-3 text-left">
             <div>
-              <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1 font-sans">
-                Admin Identifier / Root Email
+              <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1 font-sans">
+                Admin Identifier / Email
               </label>
-              <div className="relative">
-                <Terminal className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  required
-                  value={adminId}
-                  onChange={(e) => setAdminId(e.target.value)}
-                  placeholder="ADM-ROOT-01 / admin.root@tanikarbon.id"
-                  className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs sm:text-sm font-mono text-emerald-300 outline-none transition"
-                />
-              </div>
+              <input
+                type="text"
+                required
+                value={adminId}
+                onChange={(e) => setAdminId(e.target.value)}
+                placeholder="ADM-ROOT-01 / admin@tanikarbon.com"
+                className="w-full px-4 py-2.5 bg-[#F3F4F6] focus:bg-white border border-transparent focus:border-stone-300 rounded-xl text-xs text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
+              />
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1 font-sans">
-                Master Security Key / Password
+              <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1 font-sans">
+                Password Superadmin
               </label>
               <div className="relative">
-                <KeyRound className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Master Key Password"
-                  className="w-full pl-10 pr-10 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs sm:text-sm font-mono text-emerald-300 outline-none transition"
+                  placeholder="Password Admin"
+                  className="w-full px-4 pr-10 py-2.5 bg-[#F3F4F6] focus:bg-white border border-transparent focus:border-stone-300 rounded-xl text-xs text-stone-800 placeholder:text-stone-400 outline-none transition font-sans"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 transition p-1"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Simulated HSM Indicator */}
-            <div className="flex items-center justify-between text-[11px] text-slate-400 font-sans p-2 rounded-lg bg-black/40 border border-slate-800">
-              <span className="flex items-center gap-1.5">
-                <Server className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Enkripsi 256-bit HSM</span>
-              </span>
-              <span className="text-emerald-400 font-mono text-[10px]">AUTH_TIER_0</span>
-            </div>
-
+            {/* Submit Button (Subtle Warm Amber/Orange Accent) */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 py-3 px-4 bg-[#14382C] hover:bg-[#1a4436] text-white font-bold text-xs sm:text-sm rounded-xl shadow-lg shadow-emerald-950/40 border border-emerald-500/30 transition flex items-center justify-center gap-2 cursor-pointer font-sans disabled:opacity-50"
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white font-bold text-xs tracking-tight shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-1"
             >
               {loading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <ShieldCheck className="w-4 h-4 text-emerald-300" />
-                  <span>Autentikasi &amp; Akses Command Center</span>
+                  <ShieldCheck className="w-3.5 h-3.5 text-white" />
+                  <span>Masuk Command Center</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-white" />
                 </>
               )}
             </button>
           </form>
 
-          {/* 1-Click Demo Login Button (Fitur Demo Lomba) */}
-          <div className="pt-2 border-t border-slate-800/80">
+          {/* 1-Click Demo Login Button */}
+          <div className="pt-2 border-t border-stone-100">
             <button
               type="button"
               onClick={handleQuickDemo}
-              className="w-full py-2.5 px-3 rounded-xl bg-purple-950/50 hover:bg-purple-900/50 border border-purple-800/80 text-purple-200 text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer font-sans"
+              className="w-full py-2 px-3 rounded-xl bg-amber-50/70 hover:bg-amber-100/80 border border-amber-200/80 text-amber-900 text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer font-sans"
             >
-              <Zap className="w-3.5 h-3.5 text-purple-400 fill-purple-400" />
-              <span>⚡ 1-Click Demo: Rangga Aditya, M.Sc. (ADM-ROOT-01)</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
+              <span>Demo 1-Klik Superadmin (ADM-ROOT-01)</span>
             </button>
           </div>
 
-          {/* Public Portal Return Link */}
-          <div className="text-center pt-1 text-xs text-slate-500 font-sans">
-            Bukan Administrator Sistem?{' '}
+          {/* Switch to Public Login */}
+          <div className="pt-1 text-center">
             <button
               type="button"
               onClick={() => onNavigate && onNavigate('auth')}
-              className="font-semibold text-emerald-400 hover:underline cursor-pointer"
+              className="text-xs font-medium text-stone-500 hover:text-stone-800 transition font-sans"
             >
-              Masuk ke Portal Publik
+              Bukan Admin? <span className="text-amber-700 font-bold hover:underline">Masuk Portal Petani &amp; Korporat</span>
             </button>
           </div>
 
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="relative z-20 text-center">
-        <p className="text-[11px] text-slate-500 font-sans">
-          TaniKarbon Core Engine &copy; 2026 • PostGIS Multi-Cluster Settlement Authority
-        </p>
-      </div>
-
+      {/* Footer Security Badges */}
+      <footer className="relative z-20 text-center py-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 text-[11px] text-white/70 font-medium font-sans">
+          <span className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-amber-300" />
+            TaniKarbon Core Engine 2026
+          </span>
+          <span>·</span>
+          <span>PostGIS Spatial Settlement</span>
+          <span>·</span>
+          <span>SRN-PPI &amp; ISO 14064 Compliant</span>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -33,4 +33,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
+.venv/
+*/venv/
 .pytest_cache/
+pyrefly.toml
+backend/pyrefly.toml

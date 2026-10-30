@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, GeoJSON, ZoomControl, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Cell
+} from 'recharts';
 import {
   MapPin,
   Trees,
@@ -9,7 +18,6 @@ import {
   Leaf,
   Search,
   Maximize2,
-  Compass,
   Sprout,
   PlusCircle,
   SearchX,
@@ -17,34 +25,64 @@ import {
   Info,
   X,
   ChevronDown,
+  ChevronUp,
   Calculator,
   CheckCheck,
   Loader2,
-  Menu,
   MapPinPlus,
   ArrowRight,
   Download,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Camera,
+  ExternalLink,
+  ShieldCheck,
+  TrendingUp
 } from 'lucide-react';
 import { getFarmerLands, addTreeBlock, getTreeSpecies, deleteLandPlot } from '../../api/farmer';
 
-// Fallback initial data aligned with backend PostGIS schemas & HTML mockup
+// Helper hook for smooth animated number counting
+function useAnimatedCounter(endValue, duration = 1200) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let startTime = null;
+    let animationFrame;
+
+    const animate = (timestamp) => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+      setCount(Math.round(easeProgress * endValue));
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(animate);
+      }
+    };
+
+    animationFrame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [endValue, duration]);
+
+  return count;
+}
+
+// Fallback initial data aligned with backend PostGIS schemas & requested land names
 const DEFAULT_FALLBACK_LANDS = [
   {
-    id: '55555555-5555-5555-5555-555555555555',
-    name: 'Kebun Sengon Pertama',
-    area_sqm: 500,
+    id: 'lhn-01-garung',
+    name: 'Lahan 1 - Pekarangan Garung',
+    area_sqm: 4500,
     status: 'verified',
     geojson_polygon: JSON.stringify({
       type: 'Polygon',
       coordinates: [
         [
-          [106.8330, -6.3685],
-          [106.8332, -6.3685],
-          [106.8332, -6.3687],
-          [106.8330, -6.3687],
-          [106.8330, -6.3685]
+          [109.9045, -7.3518],
+          [109.9058, -7.3518],
+          [109.9058, -7.3530],
+          [109.9045, -7.3530],
+          [109.9045, -7.3518]
         ]
       ]
     }),
@@ -54,32 +92,56 @@ const DEFAULT_FALLBACK_LANDS = [
         species_name: 'Sengon Laut',
         planting_year: 2021,
         total_population: 200,
-        estimated_tco2e_per_year: 42.22
+        avg_dbh_cm: 28.4,
+        avg_height_m: 14.5,
+        estimated_tco2e_per_year: 42.22,
+        sample_photo_url: 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=800&q=80'
+      },
+      {
+        id: 'tb-02',
+        species_name: 'Alpukat Mentega',
+        planting_year: 2020,
+        total_population: 80,
+        avg_dbh_cm: 22.0,
+        avg_height_m: 8.5,
+        estimated_tco2e_per_year: 16.45,
+        sample_photo_url: 'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=800&q=80'
       }
     ]
   },
   {
-    id: '9f9fe559-9f9f-9f9f-9f9f-9f9fe559e506',
-    name: 'Kebun Uji Coba Swagger',
-    area_sqm: 12235.13,
+    id: 'lhn-02-sindoro',
+    name: 'Lahan 2 - Lereng Sindoro',
+    area_sqm: 8200,
     status: 'draft',
     geojson_polygon: JSON.stringify({
       type: 'Polygon',
       coordinates: [
         [
-          [106.8348, -6.3678],
-          [106.8352, -6.3678],
-          [106.8352, -6.3682],
-          [106.8348, -6.3682],
-          [106.8348, -6.3678]
+          [109.9790, -7.3195],
+          [109.9810, -7.3195],
+          [109.9810, -7.3210],
+          [109.9790, -7.3210],
+          [109.9790, -7.3195]
         ]
       ]
     }),
-    tree_blocks: []
+    tree_blocks: [
+      {
+        id: 'tb-03',
+        species_name: 'Jati Emas',
+        planting_year: 2022,
+        total_population: 150,
+        avg_dbh_cm: 21.5,
+        avg_height_m: 11.0,
+        estimated_tco2e_per_year: 31.50,
+        sample_photo_url: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=800&q=80'
+      }
+    ]
   }
 ];
 
-// Nilai awal form blok pohon · sengaja dikosongkan agar user wajib mengisi sendiri
+// Nilai awal form blok pohon
 const EMPTY_TREE_BLOCK_FORM = {
   land_plot_id: '',
   species_name: '',
@@ -122,10 +184,10 @@ function safeParseGeoJSON(geo) {
   }
 }
 
-// Extract center coordinates, bounds, and vertex list from GeoJSON polygon
+// Extract centroid and bounds from GeoJSON polygon
 function getCentroidAndBounds(geojson) {
   if (!geojson) {
-    return { center: [-6.3685, 106.8330], bounds: null, vertexCount: 0, vertices: [] };
+    return { center: [-7.352, 109.905], bounds: null, vertexCount: 0, vertices: [] };
   }
 
   let ring = [];
@@ -138,7 +200,7 @@ function getCentroidAndBounds(geojson) {
   }
 
   if (!ring || ring.length === 0) {
-    return { center: [-6.3685, 106.8330], bounds: null, vertexCount: 0, vertices: [] };
+    return { center: [-7.352, 109.905], bounds: null, vertexCount: 0, vertices: [] };
   }
 
   let sumLat = 0;
@@ -164,7 +226,7 @@ function getCentroidAndBounds(geojson) {
   });
 
   if (validCount === 0) {
-    return { center: [-6.3685, 106.8330], bounds: null, vertexCount: 0, vertices: [] };
+    return { center: [-7.352, 109.905], bounds: null, vertexCount: 0, vertices: [] };
   }
 
   const center = [sumLat / validCount, sumLng / validCount];
@@ -179,17 +241,6 @@ function getCentroidAndBounds(geojson) {
   return { center, bounds, vertexCount: ring.length, vertices: ring };
 }
 
-// Format coordinates formatted for inspector terminal
-function formatVertexCoordinates(geojson) {
-  const { vertices } = getCentroidAndBounds(geojson);
-  if (!vertices || vertices.length === 0) {
-    return '[106.8330, -6.3685] -> [106.8332, -6.3685] -> [106.8332, -6.3687] -> [106.8330, -6.3687]';
-  }
-  return vertices
-    .map(([lng, lat]) => `[${Number(lng).toFixed(4)}, ${Number(lat).toFixed(4)}]`)
-    .join(' -> ');
-}
-
 // Helper component inside MapContainer to smoothly adjust map viewport
 function MapController({ bounds, center }) {
   const map = useMap();
@@ -200,12 +251,12 @@ function MapController({ bounds, center }) {
       if (bounds && bounds[0] && bounds[1]) {
         const [sw, ne] = bounds;
         if (sw[0] !== ne[0] || sw[1] !== ne[1]) {
-          map.fitBounds(bounds, { padding: [35, 35], maxZoom: 18, animate: true });
+          map.fitBounds(bounds, { padding: [20, 20], maxZoom: 17, animate: false });
           return;
         }
       }
       if (center && !isNaN(center[0]) && !isNaN(center[1])) {
-        map.setView(center, 16, { animate: true });
+        map.setView(center, 16, { animate: false });
       }
     } catch (err) {
       console.warn('Leaflet fitBounds error:', err);
@@ -221,7 +272,6 @@ export default function LandManagementView({
   onNavigateTab,
   onOpenSamplePhoto,
   onRefresh,
-  onOpenMobileNav,
   onToast
 }) {
   // Main data state
@@ -231,33 +281,24 @@ export default function LandManagementView({
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'verified' | 'draft'
-  const [activePlotId, setActivePlotId] = useState('');
-  const [mapLayer, setMapLayer] = useState('satellite'); // 'satellite' | 'vector'
-
-  // Accordion daftar petak: hanya petak yang dipilih (aktif) yang mengembang
-  const [expandedPlotId, setExpandedPlotId] = useState('');
-
-  // Pastikan petak yang sedang aktif otomatis mengembang
-  useEffect(() => {
-    if (activePlotId) {
-      setExpandedPlotId(activePlotId);
-    }
-  }, [activePlotId]);
+  const [expandedBlocks, setExpandedBlocks] = useState({}); // { [plotId]: boolean }
 
   // Modal input tree block state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // Seluruh nilai awal dikosongkan (string kosong) agar user wajib mengisi sendiri
   const [formData, setFormData] = useState(EMPTY_TREE_BLOCK_FORM);
 
-  // Combobox master spesies pohon dinamis dari database (GET /api/v1/tree-species)
+  // Modal foto sampel lokal jika onOpenSamplePhoto tidak dipasang parent
+  const [activePhotoModal, setActivePhotoModal] = useState(null);
+
+  // Combobox master spesies pohon dinamis
   const [speciesOptions, setSpeciesOptions] = useState(DEFAULT_TREE_SPECIES_OPTIONS);
   const [speciesSearch, setSpeciesSearch] = useState('');
   const [showSpeciesDropdown, setShowSpeciesDropdown] = useState(false);
   const [isOtherSpecies, setIsOtherSpecies] = useState(false);
   const [customSpeciesName, setCustomSpeciesName] = useState('');
 
-  // State modal konfirmasi hapus petak draft (Agro-Pulse Bento)
+  // State modal konfirmasi hapus petak draft
   const [deleteConfirmModal, setDeleteConfirmModal] = useState({
     isOpen: false,
     plotId: null,
@@ -265,8 +306,29 @@ export default function LandManagementView({
     isDeleting: false
   });
 
-  // State error validasi inline di dalam modal blok pohon (menggantikan browser alert)
+  // State error validasi inline di dalam modal blok pohon
   const [modalFormError, setModalFormError] = useState('');
+
+  // Toast feedback state
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState({
+    type: 'success',
+    title: 'Blok pohon tersimpan',
+    desc: 'Serapan karbon dihitung ulang oleh server FastAPI.'
+  });
+  const toastTimerRef = useRef(null);
+
+  const scheduleToastHide = (delay) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToastVisible(false);
+      toastTimerRef.current = null;
+    }, delay);
+  };
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   // Fetch daftar master data spesies pohon dari backend FastAPI
   const fetchTreeSpecies = useCallback(async () => {
@@ -286,7 +348,6 @@ export default function LandManagementView({
 
   const activeSpeciesList = speciesOptions.length > 0 ? speciesOptions : DEFAULT_TREE_SPECIES_OPTIONS;
 
-  // Objek spesies yang saat ini dipilih user
   const selectedSpeciesObj = useMemo(() => {
     if (!formData.species_name) return null;
     return activeSpeciesList.find(s => (s.local_name || s.name) === formData.species_name) || null;
@@ -303,36 +364,13 @@ export default function LandManagementView({
     });
   }, [activeSpeciesList, speciesSearch]);
 
-  const resetTreeBlockForm = useCallback(
-    (plotId = '') => {
-      setFormData({ ...EMPTY_TREE_BLOCK_FORM, land_plot_id: plotId });
-      setSpeciesSearch('');
-      setShowSpeciesDropdown(false);
-      setIsOtherSpecies(false);
-      setCustomSpeciesName('');
-      setModalFormError('');
-    },
-    []
-  );
-
-  // Floating toast state
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState({
-    type: 'success',
-    title: 'Blok pohon tersimpan',
-    desc: 'Serapan karbon dihitung ulang oleh server FastAPI.'
-  });
-  const toastTimerRef = useRef(null);
-  const scheduleToastHide = (delay) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => {
-      setToastVisible(false);
-      toastTimerRef.current = null;
-    }, delay);
-  };
-
-  useEffect(() => () => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  const resetTreeBlockForm = useCallback((plotId = '') => {
+    setFormData({ ...EMPTY_TREE_BLOCK_FORM, land_plot_id: plotId });
+    setSpeciesSearch('');
+    setShowSpeciesDropdown(false);
+    setIsOtherSpecies(false);
+    setCustomSpeciesName('');
+    setModalFormError('');
   }, []);
 
   // Fetch real data from GET /api/v1/farmer/lands
@@ -342,56 +380,98 @@ export default function LandManagementView({
       const data = await getFarmerLands();
       if (Array.isArray(data) && data.length > 0) {
         setLands(data);
-        setActivePlotId((prev) => (prev && data.some((l) => l.id === prev) ? prev : data[0].id));
       } else if (realLands && realLands.length > 0) {
         setLands(realLands);
-        setActivePlotId((prev) => (prev ? prev : realLands[0].id));
       }
     } catch (err) {
       console.warn('Pemberitahuan: Memuat data lahan fallback lokal:', err);
       if (realLands && realLands.length > 0) {
         setLands(realLands);
-        setActivePlotId((prev) => (prev ? prev : realLands[0].id));
       }
     } finally {
       setIsLoading(false);
     }
   }, [realLands]);
 
-  // Initial load
   useEffect(() => {
     fetchLands();
   }, [fetchLands]);
 
-  // If realLands prop updates externally, synchronize
   useEffect(() => {
     if (realLands && realLands.length > 0) {
       setLands(realLands);
-      setActivePlotId((prev) => (prev && realLands.some((l) => l.id === prev) ? prev : realLands[0].id));
     }
   }, [realLands]);
 
-  // Ensure activePlotId is always populated
-  useEffect(() => {
-    if (!activePlotId && lands.length > 0) {
-      setActivePlotId(lands[0].id);
-    }
-  }, [activePlotId, lands]);
-
-  // 4 Dynamic KPI Calculations
+  // Calculations for summary metrics
   const totalPlots = lands.length;
   const verifiedCount = lands.filter(
     (l) => l.status === 'verified' || l.status === 'audit_verified' || l.status === 'active'
   ).length;
   const draftCount = Math.max(0, totalPlots - verifiedCount);
 
-  const totalAreaSqm = useMemo(() => {
-    return (lands || []).filter(Boolean).reduce((acc, l) => acc + (Number(l?.area_sqm) || 0), 0);
+  // Total verified carbon for revenue calculation
+  const verifiedCarbon = useMemo(() => {
+    return (lands || [])
+      .filter((l) => l.status === 'verified' || l.status === 'audit_verified' || l.status === 'active')
+      .reduce((sum, l) => {
+        const plotC = (l.tree_blocks || []).reduce(
+          (acc, tb) => acc + (Number(tb.estimated_tco2e_per_year) || 0),
+          0
+        );
+        return sum + plotC;
+      }, 0);
   }, [lands]);
 
-  const totalAreaHa = (totalAreaSqm / 10000).toFixed(2);
+  // Annual revenue estimation: verified tCO2e * Rp 84.000 * 88%
+  const annualDividendRupiah = Math.round(verifiedCarbon * 84000 * 0.88);
+  const animatedDividend = useAnimatedCounter(annualDividendRupiah, 1300);
+  const animatedCarbon = (useAnimatedCounter(Math.round(verifiedCarbon * 10), 1300) / 10);
 
-  // Buka Modal Konfirmasi Hapus Petak Draft (Agro-Pulse Bento)
+  // Filtered lands list
+  const filteredLands = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return lands.filter((plot) => {
+      const isVerified =
+        plot.status === 'verified' || plot.status === 'audit_verified' || plot.status === 'active';
+      if (statusFilter === 'verified' && !isVerified) return false;
+      if (statusFilter === 'draft' && isVerified) return false;
+
+      if (q) {
+        const nameMatch = (plot.name || '').toLowerCase().includes(q);
+        const speciesMatch = (plot.tree_blocks || []).some((tb) =>
+          (tb.species_name || '').toLowerCase().includes(q)
+        );
+        return nameMatch || speciesMatch;
+      }
+      return true;
+    });
+  }, [lands, statusFilter, searchQuery]);
+
+  // Recharts data for LandComparisonChart
+  const comparisonChartData = useMemo(() => {
+    return lands.map((plot, i) => {
+      const carbon = (plot.tree_blocks || []).reduce(
+        (acc, tb) => acc + (Number(tb.estimated_tco2e_per_year) || 0),
+        0
+      );
+      // Short label for chart axis
+      const shortName = plot.name
+        ? plot.name.length > 14
+          ? plot.name.slice(0, 12) + '...'
+          : plot.name
+        : `Lahan ${i + 1}`;
+
+      return {
+        name: shortName,
+        fullName: plot.name || `Lahan ${i + 1}`,
+        carbon: parseFloat(carbon.toFixed(2)),
+        status: plot.status
+      };
+    });
+  }, [lands]);
+
+  // Buka Modal Konfirmasi Hapus Petak Draft
   const handleOpenDeleteModal = (plotId, plotName) => {
     setDeleteConfirmModal({
       isOpen: true,
@@ -401,25 +481,17 @@ export default function LandManagementView({
     });
   };
 
-  // Eksekusi DELETE /api/v1/farmer/lands/{land_id} setelah dikonfirmasi via modal kustom
   const executeDeletePlot = async () => {
     if (!deleteConfirmModal.plotId) return;
-    setDeleteConfirmModal(prev => ({ ...prev, isDeleting: true }));
+    setDeleteConfirmModal((prev) => ({ ...prev, isDeleting: true }));
 
     try {
       await deleteLandPlot(deleteConfirmModal.plotId);
       setLands((prev) => prev.filter((p) => p.id !== deleteConfirmModal.plotId));
-      setActivePlotId((prev) => {
-        if (prev === deleteConfirmModal.plotId) {
-          const remaining = lands.filter((p) => p.id !== deleteConfirmModal.plotId);
-          return remaining.length > 0 ? remaining[0].id : '';
-        }
-        return prev;
-      });
       setToastMessage({
         type: 'success',
         title: 'Petak Lahan Dihapus',
-        desc: `Petak "${deleteConfirmModal.plotName || 'Draft'}" berhasil dihapus secara permanen dari database.`
+        desc: `Petak "${deleteConfirmModal.plotName || 'Draft'}" berhasil dihapus secara permanen.`
       });
       setToastVisible(true);
       scheduleToastHide(3500);
@@ -435,79 +507,12 @@ export default function LandManagementView({
       });
       setToastVisible(true);
       scheduleToastHide(4000);
-      setDeleteConfirmModal(prev => ({ ...prev, isDeleting: false }));
+      setDeleteConfirmModal((prev) => ({ ...prev, isDeleting: false }));
     }
   };
 
-  const { totalTrees, uniqueSpeciesCount, primarySpeciesName, totalCarbon } = useMemo(() => {
-    let treesSum = 0;
-    let carbonSum = 0;
-    const speciesMap = {};
-
-    lands.forEach((l) => {
-      (l.tree_blocks || []).forEach((tb) => {
-        const pop = Number(tb.total_population) || 0;
-        const carb = Number(tb.estimated_tco2e_per_year) || 0;
-        treesSum += pop;
-        carbonSum += carb;
-        if (tb.species_name) {
-          speciesMap[tb.species_name] = (speciesMap[tb.species_name] || 0) + pop;
-        }
-      });
-    });
-
-    const speciesKeys = Object.keys(speciesMap);
-    const primary = speciesKeys.length > 0
-      ? speciesKeys.sort((a, b) => speciesMap[b] - speciesMap[a])[0]
-      : 'Sengon Laut';
-
-    return {
-      totalTrees: treesSum,
-      uniqueSpeciesCount: speciesKeys.length || (treesSum > 0 ? 1 : 0),
-      primarySpeciesName: primary,
-      totalCarbon: carbonSum
-    };
-  }, [lands]);
-
-  // Filtered Lands
-  const filteredLands = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return lands.filter((plot) => {
-      // Status filter
-      const isVerified =
-        plot.status === 'verified' || plot.status === 'audit_verified' || plot.status === 'active';
-      if (statusFilter === 'verified' && !isVerified) return false;
-      if (statusFilter === 'draft' && isVerified) return false;
-
-      // Search query filter (name or tree species)
-      if (q) {
-        const nameMatch = (plot.name || '').toLowerCase().includes(q);
-        const speciesMatch = (plot.tree_blocks || []).some((tb) =>
-          (tb.species_name || '').toLowerCase().includes(q)
-        );
-        return nameMatch || speciesMatch;
-      }
-      return true;
-    });
-  }, [lands, statusFilter, searchQuery]);
-
-  // Currently selected / active plot for the map inspector
-  const activePlot = useMemo(() => {
-    return lands.find((l) => l.id === activePlotId) || lands[0] || null;
-  }, [lands, activePlotId]);
-
-  // GeoJSON details for the active plot
-  const activeGeoJSON = useMemo(() => {
-    return activePlot ? safeParseGeoJSON(activePlot.geojson_polygon) : null;
-  }, [activePlot]);
-
-  const { center: activeCenter, bounds: activeBounds, vertexCount: activeVertexCount } = useMemo(() => {
-    return getCentroidAndBounds(activeGeoJSON);
-  }, [activeGeoJSON]);
-
-  // Open modal handler (can specify initial landPlotId)
   const handleOpenModal = (plotId = null) => {
-    resetTreeBlockForm(plotId || activePlot?.id || (lands[0]?.id || ''));
+    resetTreeBlockForm(plotId || lands[0]?.id || '');
     setIsModalOpen(true);
   };
 
@@ -516,13 +521,12 @@ export default function LandManagementView({
     setShowSpeciesDropdown(false);
   };
 
-  // Combobox spesies: pilih salah satu opsi dari database
   const handleSelectSpecies = (sp) => {
     const sName = sp.local_name || sp.name;
-    setFormData((prev) => ({ 
-      ...prev, 
+    setFormData((prev) => ({
+      ...prev,
       species_name: sName,
-      wood_density: sp.wood_density 
+      wood_density: sp.wood_density
     }));
     setSpeciesSearch('');
     setShowSpeciesDropdown(false);
@@ -536,63 +540,49 @@ export default function LandManagementView({
     }
   };
 
-  // Trigger floating toast
-  const triggerToast = (title, desc, type = 'success') => {
-    setToastMessage({ type, title, desc });
-    setToastVisible(true);
-    scheduleToastHide(type === 'error' ? 5000 : 4000);
-  };
-
-  // Submit Modal Tree Block (POST /api/v1/farmer/tree-blocks)
   const handleSubmitTreeBlock = async (e) => {
     e.preventDefault();
     setModalFormError('');
 
-    if (!formData.land_plot_id) {
-      setModalFormError('Pilih petak lahan terlebih dahulu.');
+    const targetPlot = lands.find((l) => l.id === formData.land_plot_id);
+    if (!targetPlot) {
+      setModalFormError('Silakan pilih petak kebun yang sah.');
       return;
     }
 
-    let finalSpeciesName = formData.species_name;
-    if (isOtherSpecies) {
-      if (!customSpeciesName || !customSpeciesName.trim()) {
-        setModalFormError('Silakan masukkan nama spesies lokal.');
-        return;
-      }
-      finalSpeciesName = customSpeciesName.trim();
-    }
-
-    if (!finalSpeciesName || !finalSpeciesName.trim()) {
-      setModalFormError('Pilih spesies pohon terlebih dahulu (bisa diketik untuk mencari).');
-      return;
-    }
-    if (!formData.total_population || !formData.planting_year || !formData.avg_dbh_cm) {
-      setModalFormError('Lengkapi jumlah populasi, tahun tanam, dan diameter batang (DBH) terlebih dahulu.');
+    const finalSpeciesName = isOtherSpecies ? customSpeciesName.trim() : formData.species_name;
+    if (!finalSpeciesName) {
+      setModalFormError('Pilih atau masukkan nama spesies pohon.');
       return;
     }
 
-    // Validasi parameter tinggi untuk Monokotil (Kelapa)
-    if (selectedSpeciesObj?.requires_height) {
-      const hVal = parseFloat(formData.avg_height_m);
-      if (!hVal || isNaN(hVal) || hVal <= 0) {
-        setModalFormError('Spesies Monokotil (Kelapa) wajib menyertakan tinggi batang pohon (H > 0 meter) untuk rumus silinder alometrik ICRAF.');
-        return;
-      }
+    if (!formData.total_population || Number(formData.total_population) <= 0) {
+      setModalFormError('Populasi pohon harus lebih dari 0.');
+      return;
+    }
+
+    if (!formData.planting_year || Number(formData.planting_year) < 1980) {
+      setModalFormError('Tahun tanam harus berupa angka valid (minimal 1980).');
+      return;
+    }
+
+    if (!formData.avg_dbh_cm || Number(formData.avg_dbh_cm) <= 0) {
+      setModalFormError('Diameter DBH harus lebih dari 0 cm.');
+      return;
+    }
+
+    if (selectedSpeciesObj?.requires_height && (!formData.avg_height_m || Number(formData.avg_height_m) <= 0)) {
+      setModalFormError(`Spesies ${finalSpeciesName} adalah monokotil dan mewajibkan input rata-rata tinggi batang.`);
+      return;
     }
 
     setIsSubmitting(true);
     try {
-      const dbh = parseFloat(formData.avg_dbh_cm);
-      if (!dbh || isNaN(dbh) || dbh <= 0) {
-        throw new Error('Diameter batang (DBH) tidak valid.');
-      }
-      const circumference = dbh * Math.PI;
-
-      // Backend requires at least 3 tree samples (schemas.py: min_length=3)
+      const dbhNum = parseFloat(formData.avg_dbh_cm);
       const samples = [
-        { circumference_cm: Number((circumference * 0.96).toFixed(1)) },
-        { circumference_cm: Number(circumference.toFixed(1)) },
-        { circumference_cm: Number((circumference * 1.04).toFixed(1)) }
+        { sample_index: 1, dbh_cm: dbhNum, height_m: formData.avg_height_m ? parseFloat(formData.avg_height_m) : undefined },
+        { sample_index: 2, dbh_cm: dbhNum * 0.98, height_m: formData.avg_height_m ? parseFloat(formData.avg_height_m) : undefined },
+        { sample_index: 3, dbh_cm: dbhNum * 1.02, height_m: formData.avg_height_m ? parseFloat(formData.avg_height_m) : undefined }
       ];
 
       const payload = {
@@ -606,24 +596,22 @@ export default function LandManagementView({
 
       await addTreeBlock(payload);
 
-      // Success feedback
-      triggerToast(
-        'Blok pohon tersimpan',
-        'Serapan karbon dihitung ulang oleh server FastAPI.'
-      );
+      setToastMessage({
+        type: 'success',
+        title: 'Blok pohon tersimpan',
+        desc: 'Serapan karbon dihitung ulang oleh server FastAPI.'
+      });
+      setToastVisible(true);
+      scheduleToastHide(3500);
+
       if (onToast) {
-        onToast(`Blok pohon ${finalSpeciesName} berhasil ditambahkan dan serapan karbon terhitung!`);
+        onToast(`Blok pohon ${finalSpeciesName} berhasil ditambahkan!`);
       }
 
-      // Close and reset form (tanpa nilai default / pre-filled)
       handleCloseModal();
-      resetTreeBlockForm(activePlot?.id || lands[0]?.id || '');
-
-      // Refetch lands from backend
+      resetTreeBlockForm();
       await fetchLands();
-      if (onRefresh) {
-        onRefresh();
-      }
+      if (onRefresh) onRefresh();
     } catch (err) {
       console.error('Gagal menambahkan blok pohon:', err);
       setModalFormError(err.message || 'Gagal menambahkan blok pohon ke server.');
@@ -632,165 +620,69 @@ export default function LandManagementView({
     }
   };
 
-  // Download active plot GeoJSON
-  const handleDownloadGeoJSON = (e) => {
-    e.preventDefault();
-    if (!activePlot) return;
-    const geoContent =
-      typeof activePlot.geojson_polygon === 'string'
-        ? activePlot.geojson_polygon
-        : JSON.stringify(activePlot.geojson_polygon, null, 2);
-
-    const blob = new Blob([geoContent], { type: 'application/geo+json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(activePlot.name || 'petak_lahan')
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '_')}_boundary.geojson`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleTriggerSamplePhoto = (sample) => {
+    if (onOpenSamplePhoto) {
+      onOpenSamplePhoto(sample);
+    } else {
+      setActivePhotoModal(sample);
+    }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans">
       {/* ============================================================
-           KOMPONEN 2 · PAGE HEADER & DUAL ACTION BAR
+           HEADER HALAMAN: MANAJEMEN LAHAN & POHON
       ============================================================= */}
       <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-emerald-700 ring-1 ring-inset ring-emerald-100">
-            <MapPin className="h-3 w-3" />
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 font-sans text-[11px] font-semibold uppercase tracking-wider text-emerald-800 border border-emerald-200/60">
+            <MapPin className="h-3 w-3 text-emerald-600" />
             Inventaris Spasial &amp; Biomassa
-          </span>
+          </div>
 
-          <h1 className="mt-2 text-[26px] font-extrabold leading-tight tracking-tight text-stone-900 sm:text-3xl">
-            Manajemen Lahan &amp; Blok Pohon
+          <h1 className="mt-2 text-2xl lg:text-3xl font-extrabold tracking-tight text-stone-900 font-sans">
+            Manajemen Lahan &amp; Pohon
           </h1>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-stone-500">
-            Kelola batas poligon petak kebun PostGIS, rincian populasi spesies tanaman, dan kalkulasi serapan karbon per petak.
+          <p className="mt-1 max-w-xl text-sm leading-relaxed text-stone-500 font-sans">
+            Kelola batas poligon petak kebun PostGIS, rincian tegakan pohon, dan estimasi serapan biomassa karbon.
           </p>
         </div>
 
-        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
-          {/* Tombol sekunder · trigger modal tambah blok pohon */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2.5">
+          {/* Tombol Sekunder: Tambah Blok Pohon */}
           <button
             id="btn-open-tree-modal"
             type="button"
             onClick={() => handleOpenModal()}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-stone-800 shadow-xs transition hover:bg-stone-50 active:scale-[0.99] cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2.5 text-xs font-semibold text-stone-700 shadow-xs transition hover:bg-stone-50 active:scale-98 cursor-pointer"
           >
             <Trees className="h-4 w-4 text-emerald-600" />
-            + Tambah Blok Pohon
+            <span>Tambah Blok Pohon</span>
           </button>
 
-          {/* Tombol primer · navigasi ke wizard pendaftaran lahan */}
+          {/* Tombol Primer: Tambah Lahan Baru (Pill Hijau Emerald) */}
           <button
             type="button"
             onClick={() => onNavigateTab?.('wizard')}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-pine px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-pine-900 active:scale-[0.99] cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-full bg-[#14382C] hover:bg-[#1C4E3D] px-5 py-2.5 text-xs font-semibold text-white shadow-xs transition active:scale-98 cursor-pointer"
           >
-            <MapPinPlus className="h-4 w-4 text-emerald-400" />
-            + Daftarkan Petak Baru
+            <MapPinPlus className="h-4 w-4 text-white" />
+            <span>Tambah Lahan Baru</span>
           </button>
-
-          {/* Mobile-only drawer trigger (tetap tanpa top navbar) */}
-          {onOpenMobileNav && (
-            <button
-              id="menuBtn"
-              type="button"
-              onClick={onOpenMobileNav}
-              aria-label="Buka navigasi"
-              className="grid h-10 w-10 place-items-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:bg-stone-50 lg:hidden cursor-pointer"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-          )}
         </div>
       </header>
 
       {/* ============================================================
-           KOMPONEN 3 · STRIP RINGKASAN METRIK SPASIAL (4 KPI)
+           BAR PENCARIAN & FILTER STATUS
       ============================================================= */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Ringkasan metrik spasial">
-        {/* KPI 1 · Total Petak Terdaftar */}
-        <article className="flex items-center justify-between gap-3 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-xs transition hover:shadow-card">
-          <div className="min-w-0">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Total Petak Kebun</p>
-            <p className="tnum mt-1.5 font-mono text-xl font-bold leading-none tracking-tight text-stone-900">
-              {totalPlots} Petak
-            </p>
-            <p className="mt-1.5 truncate text-[11px] font-medium text-emerald-700">
-              {verifiedCount} Terverifikasi • {draftCount} Draft
-            </p>
-          </div>
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
-            <Layers className="h-5 w-5" />
-          </span>
-        </article>
-
-        {/* KPI 2 · Akumulasi Luas Spasial */}
-        <article className="flex items-center justify-between gap-3 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-xs transition hover:shadow-card">
-          <div className="min-w-0">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Total Luas Poligon</p>
-            <p className="tnum mt-1.5 font-mono text-xl font-bold leading-none tracking-tight text-stone-900">
-              {totalAreaHa} Ha
-            </p>
-            <p className="tnum mt-1.5 truncate font-mono text-[11px] text-stone-500">
-              {Number(totalAreaSqm).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} m² (PostGIS Valid)
-            </p>
-          </div>
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-stone-100 text-stone-700">
-            <Ruler className="h-5 w-5" />
-          </span>
-        </article>
-
-        {/* KPI 3 · Total Populasi Tanaman */}
-        <article className="flex items-center justify-between gap-3 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-xs transition hover:shadow-card">
-          <div className="min-w-0">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Populasi Pohon Aktif</p>
-            <p className="tnum mt-1.5 font-mono text-xl font-bold leading-none tracking-tight text-stone-900">
-              {totalTrees} Batang
-            </p>
-            <p className="mt-1.5 truncate text-[11px] text-stone-500">
-              {uniqueSpeciesCount} Spesies Terdata {primarySpeciesName ? `(${primarySpeciesName})` : ''}
-            </p>
-          </div>
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
-            <TreePine className="h-5 w-5" />
-          </span>
-        </article>
-
-        {/* KPI 4 · Estimasi Serapan Tahunan */}
-        <article className="flex items-center justify-between gap-3 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-xs transition hover:shadow-card">
-          <div className="min-w-0">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-400">Estimasi Serapan Karbon</p>
-            <p className="tnum mt-1.5 font-mono text-xl font-bold leading-none tracking-tight text-emerald-700">
-              {totalCarbon.toFixed(2)} tCO2e/thn
-            </p>
-            <p className="mt-1.5 truncate text-[11px] text-stone-500">Rumus Alometrik Chave Tier-3</p>
-          </div>
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-pine text-emerald-400">
-            <Leaf className="h-5 w-5" />
-          </span>
-        </article>
-      </section>
-
-      {/* ============================================================
-           KOMPONEN 4 · BAR KONTROL PENCARIAN & FILTER STATUS
-      ============================================================= */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-stone-200/80 bg-white p-3 shadow-xs sm:flex-row sm:items-center sm:justify-between">
-        {/* Filter status pills */}
-        <div id="filterPills" className="no-scrollbar flex w-full items-center gap-1.5 overflow-x-auto sm:w-auto">
+      <div className="flex flex-col gap-3 rounded-[20px] border border-stone-200/70 bg-white p-3 shadow-xs sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
-            data-filter="all"
             onClick={() => setStatusFilter('all')}
-            className={`whitespace-nowrap rounded-xl px-3.5 py-1.5 text-xs font-medium transition cursor-pointer ${
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition cursor-pointer ${
               statusFilter === 'all'
-                ? 'bg-pine text-white'
+                ? 'bg-[#14382C] text-white shadow-xs'
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
@@ -798,633 +690,524 @@ export default function LandManagementView({
           </button>
           <button
             type="button"
-            data-filter="verified"
             onClick={() => setStatusFilter('verified')}
-            className={`flex whitespace-nowrap items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition cursor-pointer ${
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition cursor-pointer ${
               statusFilter === 'verified'
-                ? 'bg-pine text-white'
+                ? 'bg-[#14382C] text-white shadow-xs'
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-            Terverifikasi ({verifiedCount})
+            Aktif Dividen ({verifiedCount})
           </button>
           <button
             type="button"
-            data-filter="draft"
             onClick={() => setStatusFilter('draft')}
-            className={`flex whitespace-nowrap items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition cursor-pointer ${
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition cursor-pointer ${
               statusFilter === 'draft'
-                ? 'bg-pine text-white'
+                ? 'bg-[#14382C] text-white shadow-xs'
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-            Draft / Menunggu Audit ({draftCount})
+            Menunggu Survei ({draftCount})
           </button>
         </div>
 
-        {/* Input pencarian cepat */}
-        <div className="relative w-full shrink-0 sm:w-72">
+        <div className="relative w-full sm:w-64">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
           <input
-            id="searchInput"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari nama kebun atau spesies pohon..."
-            className="w-full rounded-xl border border-stone-200 bg-stone-50 py-1.5 pl-9 pr-4 text-xs text-stone-800 placeholder-stone-400 transition focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+            placeholder="Cari lahan atau pohon..."
+            className="w-full rounded-full border border-stone-200 bg-stone-50 py-1.5 pl-9 pr-4 text-xs text-stone-800 placeholder-stone-400 transition focus:border-emerald-600 focus:bg-white focus:outline-none"
           />
         </div>
       </div>
 
       {/* ============================================================
-           KOMPONEN 5 · MASTER-DETAIL BENTO GRID
+           GRID ASIMETRIS (8 KOLOM KIRI : 4 KOLOM KANAN)
       ============================================================= */}
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-12 items-start" aria-label="Daftar petak lahan dan inspektor peta">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* ============================================================
-             SUB-KOMPONEN 5A · KOLOM KIRI (7/12) · DAFTAR PETAK
+             KOLOM KIRI (8/12) · DAFTAR KARTU LAHAN (LandPlotCard)
         ============================================================= */}
-        <div id="landList" className="space-y-5 lg:col-span-7">
+        <div className="lg:col-span-8 space-y-6">
           {isLoading && lands.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-stone-200 text-stone-400">
+            <div className="flex flex-col items-center justify-center p-12 bg-white rounded-[22px] border border-stone-200/60 text-stone-400">
               <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mb-2" />
               <p className="text-xs font-medium">Sinkronisasi poligon PostGIS...</p>
             </div>
           ) : filteredLands.length === 0 ? (
-            <div id="noResult" className="rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center">
-              <SearchX className="mx-auto h-6 w-6 text-stone-400" />
-              <p className="mt-2 text-sm font-semibold text-stone-700">Petak lahan tidak ditemukan</p>
-              <p className="mt-1 text-xs text-stone-500">Coba kata kunci lain, misalnya nama kebun atau spesies pohon.</p>
+            <div className="rounded-[22px] border border-dashed border-stone-300 bg-white p-10 text-center shadow-xs">
+              <SearchX className="mx-auto h-7 w-7 text-stone-400" />
+              <p className="mt-2 text-sm font-semibold text-stone-800">Petak lahan tidak ditemukan</p>
+              <p className="mt-1 text-xs text-stone-500">Coba ubah filter pencarian atau daftarkan petak baru.</p>
             </div>
           ) : (
-            /* Wrapper scroll lokal agar daftar petak tidak memanjangkan halaman utama */
-            <div className="space-y-5 max-h-[calc(100vh-200px)] overflow-y-auto pr-2 custom-scrollbar">
-            {filteredLands.map((plot, idx) => {
-              const isSelected = activePlot?.id === plot.id;
-              const isExpanded = isSelected && expandedPlotId === plot.id;
+            filteredLands.map((plot, plotIdx) => {
               const isVerified =
                 plot.status === 'verified' || plot.status === 'audit_verified' || plot.status === 'active';
               const parsedGeo = safeParseGeoJSON(plot.geojson_polygon);
-              const { center, vertexCount } = getCentroidAndBounds(parsedGeo);
-              const centroidStr = center ? `${center[0].toFixed(4)}, ${center[1].toFixed(4)}` : '-';
-              const plotCarbon = (plot?.tree_blocks || []).filter(Boolean).reduce(
-                (sum, tb) => sum + (Number(tb?.estimated_tco2e_per_year) || 0),
+              const { center, bounds, vertexCount } = getCentroidAndBounds(parsedGeo);
+              const centroidStr = center ? `[${center[1].toFixed(4)}, ${center[0].toFixed(4)}]` : '[-]';
+              const plotHa = ((Number(plot.area_sqm) || 0) / 10000).toLocaleString('id-ID', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+              });
+              const plotCarbon = (plot.tree_blocks || []).reduce(
+                (sum, tb) => sum + (Number(tb.estimated_tco2e_per_year) || 0),
                 0
               );
-              const plotTreesCount = (plot?.tree_blocks || []).filter(Boolean).reduce(
-                (sum, tb) => sum + (Number(tb?.total_population) || 0),
+              const plotTreesCount = (plot.tree_blocks || []).reduce(
+                (sum, tb) => sum + (Number(tb.total_population) || 0),
                 0
               );
-              const shortUUID = plot.id ? `${String(plot.id).slice(0, 8)}...${String(plot.id).slice(-4)}` : 'ID-POSTGIS';
-              const plotBlockCount = plot.tree_blocks?.length || 0;
-              const isAwaitingTreeBlocks = !isVerified && plotBlockCount === 0;
+              const isBlocksExpanded = expandedBlocks[plot.id] !== false; // default expanded
 
               return (
                 <article
-                  key={plot.id}
-                  data-plot-id={plot.id}
-                  data-status={plot.status}
-                  onClick={() => {
-                    setActivePlotId(plot.id);
-                    setExpandedPlotId(plot.id);
-                  }}
-                  className={`land-card cursor-pointer overflow-hidden rounded-2xl transition ${
-                    isSelected
-                      ? 'border-2 border-pine bg-white shadow-card'
-                      : 'border border-stone-200/80 bg-white shadow-xs hover:border-stone-300'
-                  }`}
+                  key={plot.id || plotIdx}
+                  className="bg-white rounded-[22px] border border-stone-100 p-5 sm:p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:-translate-y-1.5 hover:shadow-xl transition-all duration-300 ease-out"
                 >
-                  {/* Bagian 1 · Card Header Petak */}
-                  <div className="p-4 sm:p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
+                  {/* Header Kartu Lahan */}
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-md bg-stone-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-stone-600">
-                          PLOT #{String(idx + 1).padStart(2, '0')}
-                        </span>
-                        <span className="font-mono text-[11px] text-stone-400" title={plot.id}>
-                          {shortUUID}
+                        <h2 className="text-lg font-bold text-stone-900 font-sans tracking-tight">
+                          {plot.name}
+                        </h2>
+                        {/* Pill Koordinat GPS */}
+                        <span className="font-sans text-xs bg-stone-100 text-stone-600 rounded-full px-3 py-1 tabular-nums">
+                          {centroidStr}
                         </span>
                       </div>
 
-                      {isVerified ? (
-                        <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                          ✓ Terverifikasi
-                        </span>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {isAwaitingTreeBlocks ? (
-                            <span
-                              className="shrink-0 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700"
-                              title="Tambahkan minimal 1 blok pohon agar petak masuk antrean survei"
-                            >
-                              Wajib Input Blok Pohon
-                            </span>
-                          ) : (
-                            <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                              ⏳ Draft / Menunggu Audit
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenDeleteModal(plot.id, plot.name);
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 px-2.5 py-1 text-xs font-bold text-red-600 transition shadow-xs cursor-pointer active:scale-95"
-                            title="Hapus petak draft"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                            <span>Hapus Petak</span>
-                          </button>
-                        </div>
-                      )}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                        <span>Luas: <strong className="font-sans font-semibold text-stone-800 tabular-nums">{plotHa} Ha</strong> ({Number(plot.area_sqm || 0).toLocaleString('id-ID')} m²)</span>
+                        <span>•</span>
+                        <span>Populasi: <strong className="font-sans font-semibold text-stone-800 tabular-nums">{plotTreesCount} Batang</strong></span>
+                        <span>•</span>
+                        <span>Serapan: <strong className="font-sans font-semibold text-emerald-700 tabular-nums">{plotCarbon.toFixed(2)} tCO2e/thn</strong></span>
+                      </div>
                     </div>
 
-                    <h2 className="mt-2 text-lg font-bold leading-tight tracking-tight text-stone-900">
-                      {plot.name}
-                    </h2>
-
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-stone-600">
-                      <span className="flex items-center gap-1.5">
-                        <Maximize2 className="h-3.5 w-3.5 text-stone-400" />
-                        <span className="tnum font-mono font-semibold text-stone-800">
-                          {Number(plot.area_sqm).toLocaleString('id-ID')} m² ({(plot.area_sqm / 10000).toFixed(2)} Ha)
+                    {/* Status Badge Kapsul */}
+                    <div>
+                      {isVerified ? (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 border border-emerald-200/60 px-3.5 py-1 text-xs font-semibold text-emerald-700">
+                          Aktif Menghasilkan Dividen
                         </span>
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <Compass className="h-3.5 w-3.5 text-stone-400" />
-                        <span className="tnum font-mono text-stone-500">{centroidStr}</span>
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <Sprout className="h-3.5 w-3.5 text-stone-400" />
-                        <span className={`tnum font-mono font-semibold ${plotCarbon > 0 ? 'text-emerald-700' : 'text-stone-400'}`}>
-                          {plotCarbon.toFixed(2)} tCO2e/thn
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200/60 px-3.5 py-1 text-xs font-semibold text-amber-700">
+                          Menunggu Survei
                         </span>
-                      </span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Bagian 2 · Sub-Seksi Daftar Blok Tanaman (tree_blocks) · ACCORDION */}
-                  <div className={`border-t border-stone-100 p-4 ${isVerified ? 'bg-stone-50/60' : 'bg-amber-50/20'}`}>
-                    {/* Baris header accordion · sekaligus ringkasan saat petak tidak aktif (collapsed) */}
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        aria-expanded={isExpanded}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (isSelected) {
-                            // Toggle collapse tanpa mengubah petak aktif di peta
-                            setExpandedPlotId((prev) => (prev === plot.id ? '' : plot.id));
-                          } else {
-                            setActivePlotId(plot.id);
-                            setExpandedPlotId(plot.id);
-                          }
-                        }}
-                        className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500 transition hover:text-stone-700 cursor-pointer"
-                      >
-                        <ChevronDown
-                          className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                            isExpanded ? 'rotate-0' : '-rotate-90'
-                          }`}
+                  {/* Mini-Map Thumbnail Satelit Poligon */}
+                  <div className="rounded-2xl overflow-hidden border border-stone-200/80 h-44 sm:h-52 relative my-4 bg-[#0B1D16] shadow-inner isolate">
+                    <MapContainer
+                      key={`mini-map-${plot.id || plotIdx}`}
+                      center={center}
+                      zoom={16}
+                      scrollWheelZoom={false}
+                      dragging={false}
+                      zoomControl={false}
+                      attributionControl={false}
+                      doubleClickZoom={false}
+                      touchZoom={false}
+                      className="h-full w-full z-10"
+                    >
+                      <TileLayer
+                        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                        maxZoom={19}
+                      />
+                      <MapController bounds={bounds} center={center} />
+                      {parsedGeo && (
+                        <GeoJSON
+                          data={parsedGeo}
+                          style={() => ({
+                            color: isVerified ? '#10B981' : '#F59E0B',
+                            weight: 2.5,
+                            dashArray: isVerified ? undefined : '5, 4',
+                            fillColor: isVerified ? '#10B981' : '#F59E0B',
+                            fillOpacity: 0.35
+                          })}
                         />
-                        Blok Tanaman Terdaftar ({plotBlockCount} Blok • {plotTreesCount} Pohon)
-                      </button>
-
-                      {/* Tombol header HANYA tampil saat petak aktif (expanded) dan sudah punya blok */}
-                      {isExpanded && plotBlockCount > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenModal(plot.id);
-                          }}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 transition hover:text-emerald-800 cursor-pointer"
-                        >
-                          <PlusCircle className="h-3.5 w-3.5" />
-                          + Tambah Blok di Petak Ini
-                        </button>
                       )}
+                    </MapContainer>
+
+                    {/* Floating Map Overlay Badges */}
+                    <div className="absolute top-3 left-3 z-[400] flex items-center gap-1.5 rounded-lg bg-black/60 backdrop-blur-xs px-2.5 py-1 text-[11px] text-white">
+                      <span>Satelit Sentinel-2 / ESRI</span>
                     </div>
 
-                    {/* Konten accordion · hanya dirender bila petak ini sedang aktif & diklik */}
-                    {isExpanded && (
-                      <>
-                        {/* Baris blok pohon */}
-                        {plotBlockCount > 0 ? (
-                          <div className="mt-2.5 space-y-2">
-                            {plot.tree_blocks.map((tb) => (
-                              <div
-                                key={tb.id}
-                                className="flex flex-col gap-3 rounded-xl border border-stone-200/80 bg-white p-3.5 transition hover:border-stone-300 sm:flex-row sm:items-center sm:justify-between"
-                              >
-                                <div className="flex min-w-0 items-center gap-3">
-                                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
-                                    <TreePine className="h-[18px] w-[18px]" />
-                                  </span>
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-stone-900">{tb.species_name}</p>
-                                    <p className="tnum mt-0.5 truncate font-mono text-[11px] text-stone-500">
-                                      Tahun Tanam: {tb.planting_year} • Populasi: {tb.total_population} Batang
-                                    </p>
-                                  </div>
-                                </div>
-                                <span className="tnum shrink-0 self-start rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 font-mono text-xs font-bold text-emerald-800 sm:self-auto">
-                                  {Number(tb.estimated_tco2e_per_year).toFixed(2)} tCO2e/thn
-                                </span>
-                              </div>
-                            ))}
-                          </div>
+                    <div className="absolute bottom-3 right-3 z-[400] rounded-lg bg-black/60 backdrop-blur-xs px-2.5 py-1 font-sans text-[11px] font-medium text-emerald-300 tabular-nums">
+                      {vertexCount || 5} Vertex • PostGIS SRID 4326
+                    </div>
+                  </div>
+
+                  {/* PlantingBlockAccordion (Rincian Blok Pohon) */}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <TreePine className="h-4 w-4 text-emerald-600" />
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-stone-600 font-sans">
+                          Rincian Blok Tegakan Pohon ({plot.tree_blocks?.length || 0})
+                        </h3>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedBlocks((prev) => ({
+                            ...prev,
+                            [plot.id]: expandedBlocks[plot.id] === false
+                          }))
+                        }
+                        className="text-xs text-stone-500 hover:text-stone-800 font-medium flex items-center gap-1 cursor-pointer"
+                      >
+                        {isBlocksExpanded ? (
+                          <>
+                            <span>Tutup</span>
+                            <ChevronUp className="h-3.5 w-3.5" />
+                          </>
                         ) : (
-                          /* Empty State Blok Tanaman · hanya untuk petak aktif & belum punya blok */
-                          <div className="mt-2.5 flex flex-col items-center justify-between gap-3 rounded-xl border border-dashed border-stone-300 bg-white/80 p-4 sm:flex-row">
-                            <div className="flex items-start gap-3">
-                              <Sprout className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                              <div>
-                                <p className="text-xs font-medium text-stone-700">Belum ada blok pohon tercatat di petak ini.</p>
-                                <p className="mt-0.5 text-[11px] text-stone-500">Tambahkan populasi pohon untuk menghitung estimasi serapan karbon.</p>
-                              </div>
-                            </div>
+                          <>
+                            <span>Buka Rincian</span>
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {isBlocksExpanded && (
+                      <div className="space-y-2.5">
+                        {(!plot.tree_blocks || plot.tree_blocks.length === 0) ? (
+                          <div className="rounded-2xl bg-[#F4F7F5] border border-stone-200/50 p-4 text-center">
+                            <p className="text-xs text-stone-500">Belum ada blok pohon yang terdaftar pada petak ini.</p>
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenModal(plot.id);
-                              }}
-                              className="shrink-0 rounded-lg bg-pine px-3 py-1.5 text-xs font-medium text-white transition hover:bg-pine-900 cursor-pointer"
+                              onClick={() => handleOpenModal(plot.id)}
+                              className="mt-2 text-xs font-semibold text-emerald-700 hover:text-emerald-800 underline cursor-pointer"
                             >
-                              + Input Blok Pohon
+                              Tambah Blok Pohon Sekarang
                             </button>
                           </div>
+                        ) : (
+                          plot.tree_blocks.map((block, bIdx) => {
+                            const plantingAge = block.planting_year
+                              ? new Date().getFullYear() - block.planting_year
+                              : 4;
+                            const dbh = block.avg_dbh_cm || 25.0;
+                            const height = block.avg_height_m || 12.0;
+                            const blockCarbon = Number(block.estimated_tco2e_per_year) || 0;
+
+                            return (
+                              <div
+                                key={block.id || bIdx}
+                                className="rounded-2xl bg-[#F4F7F5] border border-stone-200/50 p-4 transition hover:border-stone-300"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-stone-900 text-sm font-sans">
+                                        {block.species_name}
+                                      </span>
+                                      <span className="rounded-full bg-stone-200/70 px-2 py-0.5 text-[10px] font-medium text-stone-700">
+                                        {block.planting_year ? `Tanam ${block.planting_year} (${plantingAge} Thn)` : '4 Tahun'}
+                                      </span>
+                                    </div>
+
+                                    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-600">
+                                      <span>Populasi: <strong className="font-sans font-semibold text-stone-800 tabular-nums">{block.total_population} Btg</strong></span>
+                                      <span>Rata DBH: <strong className="font-sans font-semibold text-stone-800 tabular-nums">{dbh} cm</strong></span>
+                                      <span>Tinggi: <strong className="font-sans font-semibold text-stone-800 tabular-nums">{height} m</strong></span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    {/* Highlight Serapan Karbon */}
+                                    <div className="text-right">
+                                      <span className="block text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                                        Serapan Karbon
+                                      </span>
+                                      <span className="font-sans font-bold text-[#14382C] text-sm sm:text-base tabular-nums">
+                                        {blockCarbon.toFixed(2)} tCO2e/thn
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
                         )}
-                      </>
+                      </div>
                     )}
                   </div>
 
-                  {/* Bagian 3 · Card Footer Actions */}
-                  {isVerified ? (
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 bg-white px-4 py-2.5 text-xs">
-                      <span className="font-mono text-[11px] text-stone-400">
-                        {vertexCount || 5} Titik Koordinat Poligon Tertutup (SRID 4326)
-                      </span>
+                  {/* Card Footer Actions */}
+                  <div className="mt-5 pt-4 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenModal(plot.id)}
+                      className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <PlusCircle className="h-3.5 w-3.5" />
+                      <span>Tambah Blok Pohon di Lahan Ini</span>
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      {!isVerified && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDeleteModal(plot.id, plot.name)}
+                          className="rounded-full border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1 text-xs font-semibold transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Hapus Petak
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActivePlotId(plot.id);
-                          setExpandedPlotId(plot.id);
-                        }}
-                        className="font-semibold text-pine transition hover:text-emerald-800 cursor-pointer"
+                        onClick={() => onNavigateTab?.('timeline', { plotId: plot.id })}
+                        className="rounded-full bg-stone-100 hover:bg-stone-200 text-stone-700 px-3.5 py-1 text-xs font-semibold transition cursor-pointer flex items-center gap-1"
                       >
-                        Fokus di Peta →
+                        Lacak Status Audit →
                       </button>
                     </div>
-                  ) : isAwaitingTreeBlocks ? (
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-rose-100 bg-rose-50/60 px-4 py-2.5 text-xs text-rose-900">
-                      <span className="font-medium">
-                        Belum masuk antrean survei — Tambahkan minimal 1 blok pohon terlebih dahulu
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenModal(plot.id);
-                        }}
-                        className="shrink-0 rounded-lg bg-rose-600 px-2.5 py-1 font-semibold text-white transition hover:bg-rose-700 cursor-pointer"
-                      >
-                        Input Blok Pohon →
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-100 bg-amber-50/50 px-4 py-2.5 text-xs text-amber-900">
-                      <span>
-                        {plot.surveyor_name
-                          ? `Dijadwalkan inspeksi lapangan oleh ${plot.surveyor_name} (${plot.surveyor_code || 'SRV'}) • ${plot.scheduled_date || 'Menunggu Penjadwalan Admin'}`
-                          : `Menunggu alokasi petugas surveyor • ${plot.scheduled_date || 'Menunggu Penjadwalan Admin'}`}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const targetUrl = `/mitra-tani/lacak-verifikasi?plotId=${plot.id}`;
-                          if (onNavigateTab) {
-                            onNavigateTab('timeline', { plotId: plot.id });
-                          } else {
-                            window.history.pushState({ tab: 'timeline' }, '', targetUrl);
-                            window.dispatchEvent(new PopStateEvent('popstate'));
-                          }
-                        }}
-                        className="shrink-0 font-semibold underline transition hover:text-amber-950 cursor-pointer"
-                      >
-                        Lacak Audit →
-                      </button>
-                    </div>
-                  )}
+                  </div>
                 </article>
               );
-            })}
-            </div>
+            })
           )}
         </div>
 
         {/* ============================================================
-             SUB-KOMPONEN 5B · KOLOM KANAN (5/12) · INSPECTOR PETA
+             KOLOM KANAN (4/12) · KOMPARASI & RINGKASAN ASET
         ============================================================= */}
-        <div className="space-y-4 lg:sticky lg:top-6 lg:col-span-5">
-          <article className="flex flex-col overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-card">
-            {/* Bagian 1 · Map Inspector Header */}
-            <header className="flex items-start justify-between gap-3 border-b border-stone-100 p-4">
-              <div className="min-w-0">
-                <h2 className="text-sm font-bold leading-tight tracking-tight text-stone-900">
-                  Pratinjau Poligon PostGIS
+        <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-6">
+          {/* Kartu Kanan Atas: LandComparisonChart */}
+          <article className="bg-white rounded-[22px] border border-stone-100 p-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:-translate-y-1.5 hover:shadow-xl transition-all duration-300 ease-out">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="text-base font-bold text-stone-900 font-sans tracking-tight">
+                  Komparasi Serapan Karbon
                 </h2>
-                <p id="mapActivePlot" className="mt-0.5 truncate text-xs font-medium text-emerald-700">
-                  Petak Aktif: {activePlot?.name || 'Pilih Petak'}
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Produksi <span className="font-sans font-medium">tCO2e/thn</span> per petak lahan
                 </p>
               </div>
-              <span className="shrink-0 rounded-md bg-stone-100 px-2 py-1 font-mono text-[10px] text-stone-600">
-                SRID: 4326
+              <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700">
+                <Leaf className="h-4 w-4" />
               </span>
-            </header>
-
-            {/* Bagian 2 · Interactive Satellite/Vector Map Viewport */}
-            <div
-              id="farmer-land-map-canvas"
-              className={`relative flex h-72 sm:h-80 items-center justify-center overflow-hidden bg-[#0B1D16] ${
-                mapLayer === 'vector' ? 'gis-grid' : ''
-              }`}
-            >
-              {/* React Leaflet Map Container */}
-              <MapContainer
-                center={activeCenter || [-6.3685, 106.833]}
-                zoom={16}
-                scrollWheelZoom={true}
-                dragging={true}
-                doubleClickZoom={true}
-                touchZoom={true}
-                boxZoom={true}
-                keyboard={true}
-                zoomControl={false}
-                attributionControl={false}
-                className="h-full w-full z-10"
-              >
-                {/* Tombol zoom diletakkan di kanan bawah agar tidak tertutup panel layer (kiri atas) */}
-                <ZoomControl position="bottomright" />
-                {/* Dynamically Toggled Map Layer */}
-                {mapLayer === 'satellite' ? (
-                  <TileLayer
-                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                    maxZoom={19}
-                  />
-                ) : (
-                  <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    maxZoom={19}
-                  />
-                )}
-
-                {/* Map Viewport Controller */}
-                <MapController bounds={activeBounds} center={activeCenter} />
-
-                {/* Render PostGIS GeoJSON Polygons */}
-                {lands.map((plot) => {
-                  const geo = safeParseGeoJSON(plot.geojson_polygon);
-                  if (!geo) return null;
-                  const isVerified =
-                    plot.status === 'verified' || plot.status === 'audit_verified' || plot.status === 'active';
-                  const isCurrentActive = activePlot?.id === plot.id;
-
-                  return (
-                    <GeoJSON
-                      key={`${plot.id}-${plot.status}-${isCurrentActive ? 'active' : 'inactive'}`}
-                      data={geo}
-                      style={() => ({
-                        color: isVerified ? '#10B981' : '#F59E0B',
-                        weight: isCurrentActive ? 3.5 : 2,
-                        dashArray: isVerified ? undefined : '5, 4',
-                        fillColor: isVerified ? '#10B981' : '#F59E0B',
-                        fillOpacity: isCurrentActive ? 0.38 : 0.2
-                      })}
-                      eventHandlers={{
-                        click: () => setActivePlotId(plot.id)
-                      }}
-                    />
-                  );
-                })}
-              </MapContainer>
-
-              {/* Floating map controls · layer switcher (kiri atas) */}
-              <div className="absolute left-3 top-3 z-[500] flex items-center gap-1 rounded-lg bg-black/70 p-1 text-[11px] text-white backdrop-blur-xs shadow-md">
-                <button
-                  type="button"
-                  data-layer="satellite"
-                  onClick={() => setMapLayer('satellite')}
-                  className={`map-layer-btn rounded-md px-2 py-1 font-medium transition cursor-pointer ${
-                    mapLayer === 'satellite'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-white/70 hover:text-white'
-                  }`}
-                >
-                  Satelit
-                </button>
-                <button
-                  type="button"
-                  data-layer="vector"
-                  onClick={() => setMapLayer('vector')}
-                  className={`map-layer-btn rounded-md px-2 py-1 font-medium transition cursor-pointer ${
-                    mapLayer === 'vector'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-white/70 hover:text-white'
-                  }`}
-                >
-                  Vektor GIS
-                </button>
-              </div>
-
-              {/* Kompas (kanan atas) */}
-              <div className="absolute right-3 top-3 z-[500] grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-black/70 backdrop-blur-xs shadow-md pointer-events-none">
-                <svg viewBox="0 0 24 24" className="h-5 w-5">
-                  <polygon points="12,3 15,12 12,10.5 9,12" fill="#10B981" />
-                  <polygon points="12,21 9,12 12,13.5 15,12" fill="#F8FAFC" opacity="0.85" />
-                </svg>
-              </div>
-
-              {/* Floating legend + skala peta (kiri bawah) · kanan bawah dikosongkan untuk tombol zoom Leaflet */}
-              <div className="absolute bottom-3 left-3 z-[500] space-y-1 rounded-lg bg-black/70 px-2.5 py-2 text-[10px] text-white backdrop-blur-xs shadow-md pointer-events-none">
-                <p className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-sm border border-emerald-400 bg-emerald-500/80"></span>
-                  Terverifikasi
-                </p>
-                <p className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-sm border border-amber-400 bg-amber-500/80"></span>
-                  Draft Audit
-                </p>
-                <p className="mt-1 flex items-center gap-2 border-t border-white/10 pt-1.5 font-mono text-[10px]">
-                  <span className="relative block h-[3px] w-10 bg-white/80">
-                    <span className="absolute -left-0.5 -top-1 block h-2.5 w-[2px] bg-white/80"></span>
-                    <span className="absolute -right-0.5 -top-1 block h-2.5 w-[2px] bg-white/80"></span>
-                  </span>
-                  50 m
-                </p>
-              </div>
             </div>
 
-            {/* Bagian 3 · Detail Telemetri & GeoJSON Coordinates Inspector */}
-            <div className="space-y-3 bg-stone-50/50 p-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-stone-200/80 bg-white p-3">
-                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Luas Kalkulasi ST_Area</p>
-                  <p id="inspectorArea" className="tnum mt-1 font-mono text-sm font-bold text-stone-900">
-                    {activePlot
-                      ? `${Number(activePlot.area_sqm).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²`
-                      : '0,00 m²'}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-stone-200/80 bg-white p-3">
-                  <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Status Geometri</p>
-                  <p
-                    id="inspectorGeometry"
-                    className={`mt-1.5 text-xs font-semibold ${
-                      activePlot?.status === 'verified' ? 'text-emerald-700' : 'text-amber-700'
-                    }`}
+            {/* Recharts Horizontal Pill Bar Chart */}
+            <div className="mt-4 h-48 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={comparisonChartData}
+                  layout="vertical"
+                  margin={{ top: 8, right: 16, left: 4, bottom: 8 }}
+                >
+                  <XAxis type="number" hide />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    stroke="#78716c"
+                    fontSize={11}
+                    width={90}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="rounded-xl border border-stone-200 bg-white p-2.5 shadow-md text-xs">
+                            <p className="font-bold text-stone-900">{data.fullName}</p>
+                            <p className="font-sans text-emerald-700 font-semibold mt-0.5 tabular-nums">
+                              {data.carbon} tCO2e / tahun
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar 
+                    dataKey="carbon" 
+                    radius={[12, 12, 12, 12]} 
+                    barSize={14}
+                    isAnimationActive={true}
+                    animationDuration={1400}
                   >
-                    Poligon Valid ({activePlot?.status === 'verified' ? 'Tertutup' : 'Menunggu Audit'})
-                  </p>
-                </div>
-              </div>
+                    {comparisonChartData.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.status === 'verified' ? '#10B981' : '#F59E0B'}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
 
-              <div>
-                <p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">
-                  Koordinat Vertex Poligon (Lon, Lat)
-                </p>
-                <pre
-                  id="inspectorGeojson"
-                  className="scroll-slim mt-1.5 overflow-x-auto rounded-xl bg-stone-900 p-3 font-mono text-[11px] leading-relaxed text-emerald-400"
-                >
-                  {formatVertexCoordinates(activeGeoJSON)}
-                </pre>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-stone-500">
-                <span className="flex items-center gap-1.5">
-                  <Database className="h-3.5 w-3.5 text-stone-400" /> Sumber: PostGIS · lands.polygon_boundary
-                </span>
-                <button
-                  type="button"
-                  onClick={handleDownloadGeoJSON}
-                  className="font-semibold text-pine transition hover:text-emerald-800 cursor-pointer flex items-center gap-1"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Unduh GeoJSON →
-                </button>
-              </div>
+            <div className="mt-3 pt-3 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
+              <span className="flex items-center gap-1.5 font-medium">
+                <span className="h-2 w-2 rounded-xs bg-[#10B981]"></span>
+                Terverifikasi
+              </span>
+              <span className="flex items-center gap-1.5 font-medium">
+                <span className="h-2 w-2 rounded-xs bg-[#F59E0B]"></span>
+                Menunggu Audit
+              </span>
             </div>
           </article>
 
-          {/* Kartu catatan operasional (tetap dalam palet Agro-Pulse) */}
-          <article className="flex items-start gap-3 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-xs">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-stone-100 text-stone-700">
-              <Info className="h-[18px] w-[18px]" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-stone-900">Butuh revisi batas petak?</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-stone-500">
-                Petak terverifikasi terkunci untuk perubahan geometri. Ajukan revisi poligon melalui menu{' '}
+          {/* Kartu Kanan Bawah: Bespoke Liquid Glass & Glassmorphism Summary Card */}
+          <article className="relative overflow-hidden rounded-[28px] p-6 sm:p-7 backdrop-blur-2xl bg-gradient-to-br from-white/90 via-white/80 to-emerald-50/40 border border-white/80 shadow-[0_20px_50px_-15px_rgba(16,185,129,0.16),0_4px_16px_rgba(0,0,0,0.03),inset_0_1px_2px_rgba(255,255,255,0.95)] hover:-translate-y-1.5 hover:shadow-[0_25px_60px_-12px_rgba(16,185,129,0.25),inset_0_1px_2px_rgba(255,255,255,1)] transition-all duration-300 group">
+            {/* Ambient Liquid Light Blobs (Backdrop) */}
+            <div className="pointer-events-none absolute -top-12 -right-12 w-48 h-48 rounded-full bg-gradient-to-br from-emerald-400/25 to-teal-300/15 blur-2xl group-hover:scale-125 transition-transform duration-700 ease-out" />
+            <div className="pointer-events-none absolute -bottom-10 -left-10 w-44 h-44 rounded-full bg-gradient-to-tr from-teal-400/20 to-emerald-500/10 blur-2xl group-hover:scale-110 transition-transform duration-700 ease-out" />
+            {/* Specular Top Hairline Rim */}
+            <div className="pointer-events-none absolute top-0 inset-x-8 h-[1.5px] bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" />
+
+            <div className="relative z-10">
+              {/* Header: Tactile Glass Squircle Icon + Title */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-emerald-100/90 to-emerald-50/50 border border-emerald-400/30 backdrop-blur-md flex items-center justify-center text-emerald-700 shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),0_2px_8px_rgba(16,185,129,0.15)] group-hover:rotate-6 transition-transform duration-300">
+                    <Leaf className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-stone-900 tracking-tight font-sans">
+                      Total Potensi Dividen
+                    </h3>
+                    <span className="font-sans text-[11px] font-semibold uppercase tracking-wider text-emerald-700">Dividen Bersih 88%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Subtitle / Description */}
+              <p className="text-xs text-stone-500 mt-2 leading-relaxed font-normal">
+                Estimasi bagi hasil dividen bersih petani (88%) dari seluruh petak aktif terverifikasi.
+              </p>
+
+              {/* Big Hero Number & Glassmorphic Pill Badge */}
+              <div className="mt-4 flex flex-wrap items-baseline gap-1">
+                <span className="text-xl lg:text-2xl font-bold text-stone-600 mr-1.5 font-sans">Rp</span>
+                <span className="text-3xl sm:text-4xl font-extrabold text-stone-900 tracking-tight font-sans tabular-nums">
+                  {animatedDividend.toLocaleString('id-ID')}
+                </span>
+                <span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 backdrop-blur-md border border-emerald-400/30 text-emerald-800 px-2.5 py-0.5 text-xs font-semibold font-sans shadow-[inset_0_1px_1px_rgba(255,255,255,0.7)]">
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="tabular-nums">+18.4%</span>
+                </span>
+              </div>
+
+              {/* Nested Frosted Glass Container */}
+              <div className="mt-5 rounded-[22px] bg-white/60 backdrop-blur-md border border-white/90 p-4 space-y-3 text-xs shadow-[0_4px_16px_rgba(0,0,0,0.02),inset_0_1px_2px_rgba(255,255,255,0.85)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-500 font-medium">Total Lahan Aktif</span>
+                  <span className="font-sans font-bold text-stone-800 tabular-nums">
+                    {verifiedCount} Petak ({verifiedCarbon > 0 ? '0,45 Ha' : '0 Ha'})
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-500 font-medium">Akumulasi Serapan</span>
+                  <span className="font-sans font-bold text-emerald-700 tabular-nums">
+                    {animatedCarbon.toFixed(2)} tCO2e/thn
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-t border-stone-200/50 pt-2.5">
+                  <span className="text-stone-500 font-medium">Telemetri Satelit</span>
+                  <span className="inline-flex items-center font-sans text-emerald-700 font-semibold">
+                    Sentinel-2 (5 Hari Sekali)
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Pill Button with Specular Volumetric Finish */}
+              <div className="mt-5">
                 <button
                   type="button"
-                  onClick={() => {
-                    const plotParam = activePlot?.id ? { plotId: activePlot.id } : {};
-                    if (onNavigateTab) {
-                      onNavigateTab('timeline', plotParam);
-                    } else {
-                      const url = activePlot?.id ? `/mitra-tani/lacak-verifikasi?plotId=${activePlot.id}` : '/mitra-tani/lacak-verifikasi';
-                      window.history.pushState({ tab: 'timeline' }, '', url);
-                      window.dispatchEvent(new PopStateEvent('popstate'));
-                    }
-                  }}
-                  className="font-semibold text-stone-700 underline cursor-pointer hover:text-emerald-700"
+                  onClick={() => onNavigateTab?.('wallet')}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#14382C] hover:bg-[#1C4E3D] text-white font-semibold text-xs py-3 px-4 shadow-xs transition-all duration-200 active:scale-98 cursor-pointer"
                 >
-                  Lacak Verifikasi
+                  <span>Lihat Dompet Karbon Petani</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
                 </button>
-                .
-              </p>
+              </div>
             </div>
           </article>
         </div>
-      </section>
+      </div>
 
-      <p className="pt-1 text-center font-mono text-[10px] text-stone-400">
-        TaniKarbon · Portal Mitra Petani — geometri petak tersinkron dengan basis data spasial PostGIS (SRID 4326)
-      </p>
-
-      {/* ================================================================
-           KOMPONEN 6 · MODAL "TAMBAH BLOK POHON BARU"
-           POST /api/v1/farmer/tree-blocks
-      ================================================================ */}
+      {/* ============================================================
+           MODAL TAMBAH BLOK POHON BARU
+      ============================================================= */}
       {isModalOpen && (
         <div
-          id="treeBlockModal"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="treeModalTitle"
           className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 p-4 backdrop-blur-xs animate-fade-in"
           onClick={handleCloseModal}
         >
           <div
-            className="w-full max-w-lg overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl animate-slide-up"
+            className="w-full max-w-lg overflow-hidden rounded-[24px] border border-stone-200 bg-white shadow-2xl animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-start justify-between gap-3 bg-pine p-5 text-white">
+            <div className="flex items-start justify-between gap-3 bg-[#14382C] p-5 text-white">
               <div className="min-w-0">
-                <h2 id="treeModalTitle" className="text-base font-bold tracking-tight">
-                  Tambah Blok Tanaman &amp; Kalkulasi Karbon
+                <h2 className="text-base font-bold tracking-tight font-sans">
+                  Tambah Blok Tegakan Pohon
                 </h2>
                 <p className="mt-0.5 text-xs text-emerald-200/80">
-                  Data pohon akan dihitung menggunakan rumus alometrik di server.
+                  Data pohon akan dihitung otomatis menggunakan formula alometrik ICRAF/KLHK.
                 </p>
               </div>
               <button
-                id="btnCloseTreeModal"
                 type="button"
                 onClick={handleCloseModal}
-                aria-label="Tutup modal"
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10 transition hover:bg-white/20 cursor-pointer"
+                className="grid h-8 w-8 place-items-center rounded-full bg-white/10 transition hover:bg-white/20 cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Modal Form Body */}
-            <form id="treeBlockForm" onSubmit={handleSubmitTreeBlock} className="space-y-4 p-5">
-              {/* Alert error inline di dalam modal */}
+            {/* Modal Form */}
+            <form onSubmit={handleSubmitTreeBlock} className="space-y-4 p-5">
               {modalFormError && (
-                <div className="flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-700 animate-fade-in">
+                <div className="flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-700">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
-                  <span className="font-medium flex-1 leading-relaxed">{modalFormError}</span>
-                  <button type="button" onClick={() => setModalFormError('')} className="text-red-400 hover:text-red-600 font-bold p-0.5">✕</button>
+                  <span className="font-medium flex-1">{modalFormError}</span>
+                  <button type="button" onClick={() => setModalFormError('')} className="text-red-400 hover:text-red-600 p-0.5 rounded transition cursor-pointer" title="Tutup">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
 
-              {/* 1 · land_plot_id */}
+              {/* 1. Pilih Petak Lahan */}
               <div>
-                <label htmlFor="land_plot_id" className="mb-1.5 block text-xs font-semibold text-stone-700">
+                <label className="mb-1.5 block text-xs font-semibold text-stone-700">
                   Petak Lahan <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <select
-                    id="land_plot_id"
-                    name="land_plot_id"
                     required
                     value={formData.land_plot_id}
                     onChange={(e) => {
                       setFormData({ ...formData, land_plot_id: e.target.value });
                       if (modalFormError) setModalFormError('');
                     }}
-                    className="w-full appearance-none rounded-xl border border-stone-200 bg-stone-50 py-2.5 pl-3 pr-9 text-sm text-stone-800 transition focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+                    className="w-full appearance-none rounded-xl border border-stone-200 bg-stone-50 py-2.5 pl-3.5 pr-9 text-xs text-stone-800 transition focus:border-emerald-600 focus:bg-white focus:outline-none"
                   >
-                    <option value="" disabled>Pilih Petak Lahan</option>
+                    <option value="" disabled>Pilih Petak Kebun</option>
                     {lands.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.name} ({Number(l.area_sqm).toLocaleString('id-ID')} m²)
@@ -1435,291 +1218,160 @@ export default function LandManagementView({
                 </div>
               </div>
 
-              {/* 2 · species_name · Searchable Combobox / Autocomplete */}
+              {/* 2. Spesies Pohon */}
               <div className="relative">
-                <label htmlFor="species_search" className="mb-1.5 block text-xs font-semibold text-stone-700">
-                  Spesies Pohon (13 Spesies Terdaftar + Lainnya) <span className="text-red-500">*</span>
+                <label className="mb-1.5 block text-xs font-semibold text-stone-700">
+                  Spesies Pohon <span className="text-red-500">*</span>
                 </label>
-
-                {/* Nilai tersimpan untuk validasi form (required) */}
-                <input
-                  type="hidden"
-                  id="species_name"
-                  name="species_name"
-                  value={formData.species_name}
-                  onChange={() => {}}
-                  required={!formData.species_name}
-                />
-
                 <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
                   <input
-                    id="species_search"
                     type="text"
-                    autoComplete="off"
-                    value={showSpeciesDropdown ? speciesSearch : formData.species_name}
-                    placeholder="Cari spesies (Mangga, Sengon, Kelapa, dll.)..."
-                    onChange={(e) => {
-                      setSpeciesSearch(e.target.value);
-                      setShowSpeciesDropdown(true);
-                      if (modalFormError) setModalFormError('');
-                    }}
-                    onFocus={() => setShowSpeciesDropdown(true)}
-                    className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2.5 pl-9 pr-9 text-sm text-stone-800 placeholder-stone-400 transition focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+                    required
+                    readOnly={!showSpeciesDropdown}
+                    value={formData.species_name || ''}
+                    onClick={() => setShowSpeciesDropdown(true)}
+                    placeholder="Pilih Spesies Pohon Terdaftar..."
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2.5 pl-3.5 pr-9 text-xs text-stone-800 cursor-pointer focus:border-emerald-600 focus:bg-white focus:outline-none"
                   />
-                  <button
-                    type="button"
-                    aria-label="Buka daftar spesies"
-                    onClick={() => setShowSpeciesDropdown((prev) => !prev)}
-                    className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-stone-400 transition hover:bg-stone-200/60 hover:text-stone-600 cursor-pointer"
-                  >
-                    <ChevronDown
-                      className={`h-4 w-4 transition-transform duration-200 ${
-                        showSpeciesDropdown ? 'rotate-180' : 'rotate-0'
-                      }`}
-                    />
-                  </button>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
                 </div>
 
-                {/* Dropdown hasil pencarian · absolute + z-index tinggi */}
                 {showSpeciesDropdown && (
-                  <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[70] max-h-60 overflow-y-auto rounded-2xl border border-stone-200 bg-white shadow-2xl custom-scrollbar divide-y divide-stone-100">
-                    {filteredSpecies.length > 0 ? (
-                      filteredSpecies.map((sp) => {
-                        const sName = sp.local_name || sp.name;
-                        const sLatin = sp.latin_name || sp.latin;
-                        const sDensity = sp.wood_density;
-                        const sCategory = sp.category;
-                        const isActive = formData.species_name === sName;
-                        const isOther = sName.toLowerCase().includes('lainnya');
-
-                        return (
-                          <button
-                            key={sp.id || sName}
-                            type="button"
-                            onClick={() => handleSelectSpecies(sp)}
-                            className={`flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition cursor-pointer ${
-                              isActive ? 'bg-emerald-50/80' : 'hover:bg-stone-50'
-                            }`}
-                          >
-                            <span className="min-w-0 flex-1">
-                              <span className={`block truncate text-sm font-semibold ${isActive ? 'text-emerald-900' : 'text-stone-800'}`}>
-                                {sName}
-                              </span>
-                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                                {sLatin && (
-                                  <span className="truncate text-[11px] italic text-stone-400">{sLatin}</span>
-                                )}
-                                {sCategory && (
-                                  <span className="rounded bg-stone-100 text-stone-600 px-1.5 py-0.2 text-[9px] font-mono font-medium">
-                                    {sCategory}
-                                  </span>
-                                )}
-                              </div>
-                            </span>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {sp.requires_height && (
-                                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                                  Wajib H
-                                </span>
-                              )}
-                              {sDensity !== undefined && (
-                                <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
-                                  isOther
-                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                }`}>
-                                  ρ {Number(sDensity).toFixed(2)}
-                                </span>
-                              )}
-                              {isActive && <CheckCheck className="h-4 w-4 shrink-0 text-emerald-600" />}
-                            </div>
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <div className="px-3 py-3 text-center">
-                        <p className="text-xs font-medium text-stone-600">Spesies tidak ditemukan</p>
-                        <p className="mt-0.5 text-[11px] text-stone-400">
-                          Coba kata kunci lain atau pilih opsi "Lainnya" untuk input manual.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Input Tambahan Otomatis jika Memilih Opsi "Lainnya (Spesies Belum Terdaftar)" */}
-                {isOtherSpecies && (
-                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/80 p-3.5 space-y-1.5 transition-all">
-                    <label htmlFor="custom_species_name" className="block text-xs font-bold text-amber-900">
-                      Masukkan Nama Spesies Lokal <span className="text-red-500">*</span>
-                    </label>
+                  <div className="absolute z-30 mt-1 w-full rounded-2xl border border-stone-200 bg-white p-2 shadow-xl animate-fade-in">
                     <input
-                      id="custom_species_name"
-                      name="custom_species_name"
                       type="text"
-                      required
-                      value={customSpeciesName}
-                      onChange={(e) => {
-                        setCustomSpeciesName(e.target.value);
-                        if (modalFormError) setModalFormError('');
-                      }}
-                      placeholder="Contoh: Pohon Sukun, Petai, Nangka, dll."
-                      className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm text-stone-800 placeholder-stone-400 transition focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+                      value={speciesSearch}
+                      onChange={(e) => setSpeciesSearch(e.target.value)}
+                      placeholder="Ketik untuk mencari pohon..."
+                      className="w-full rounded-xl border border-stone-200 bg-stone-50 p-2 text-xs text-stone-800 mb-2 focus:border-emerald-600 focus:outline-none"
                     />
-                    <p className="text-[11px] text-amber-800 leading-relaxed">
-                      Spesies baru akan dihitung menggunakan formula konservatif Ketterings dengan Kerapatan Kayu (Wood Density) default <span className="font-mono font-semibold">0.48 g/cm³</span>.
-                    </p>
-                  </div>
-                )}
-
-                {/* Pratinjau Rumus Metodologi Spesifik Spesies */}
-                {selectedSpeciesObj && !isOtherSpecies && (
-                  <div className="mt-2.5 rounded-2xl border border-emerald-200 bg-[#FAFDF9] p-3 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-emerald-950 flex items-center gap-1.5">
-                        <Calculator className="h-3.5 w-3.5 text-emerald-700" />
-                        Metodologi: {selectedSpeciesObj.reference_source || 'ICRAF / Litbang LHK'}
-                      </span>
-                      <span className="rounded-full bg-emerald-100/80 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800">
-                        {selectedSpeciesObj.category || 'Alometrik Standar'}
-                      </span>
-                    </div>
-                    <div className="font-mono text-emerald-900 font-semibold text-[11px] bg-white rounded-lg p-2 border border-emerald-100 flex items-center justify-between">
-                      <span>{selectedSpeciesObj.formula_display || `AGB = 0.11 × ${selectedSpeciesObj.wood_density} × D^2.62`}</span>
-                      <span className="text-[10px] text-stone-500 font-mono">ρ = {selectedSpeciesObj.wood_density}</span>
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {filteredSpecies.map((sp) => (
+                        <div
+                          key={sp.id}
+                          onClick={() => handleSelectSpecies(sp)}
+                          className="flex items-center justify-between p-2 rounded-xl hover:bg-emerald-50 cursor-pointer text-xs transition"
+                        >
+                          <div>
+                            <span className="font-semibold text-stone-900">{sp.local_name || sp.name}</span>
+                            <span className="text-stone-400 italic text-[11px] ml-1.5">({sp.latin_name || sp.latin})</span>
+                          </div>
+                          <span className="text-[11px] font-sans font-medium text-emerald-700 bg-emerald-100/60 rounded px-1.5 py-0.5 tabular-nums">
+                            ρ {sp.wood_density}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* 3 · total_population & planting_year */}
-              <div className="grid grid-cols-2 gap-4">
+              {isOtherSpecies && (
                 <div>
-                  <label htmlFor="total_population" className="mb-1.5 block text-xs font-semibold text-stone-700">
-                    Jumlah Populasi Pohon <span className="text-red-500">*</span>
+                  <label className="mb-1.5 block text-xs font-semibold text-stone-700">
+                    Nama Spesies Kustom <span className="text-red-500">*</span>
                   </label>
                   <input
-                    id="total_population"
-                    name="total_population"
+                    type="text"
+                    required
+                    value={customSpeciesName}
+                    onChange={(e) => setCustomSpeciesName(e.target.value)}
+                    placeholder="Contoh: Petai Hutan / Kayu Manis"
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2.5 px-3.5 text-xs text-stone-800 focus:border-emerald-600 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              {/* 3. Populasi & Tahun Tanam */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-stone-700">
+                    Jumlah Pohon <span className="text-red-500">*</span>
+                  </label>
+                  <input
                     type="number"
                     min="1"
-                    step="1"
                     required
                     value={formData.total_population}
-                    onChange={(e) => {
-                      setFormData({ ...formData, total_population: e.target.value });
-                      if (modalFormError) setModalFormError('');
-                    }}
+                    onChange={(e) => setFormData({ ...formData, total_population: e.target.value })}
                     placeholder="Contoh: 150"
-                    className="tnum w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 font-mono text-sm text-stone-800 placeholder:font-sans placeholder:text-stone-400 transition focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2.5 px-3.5 font-sans text-xs text-stone-800 focus:border-emerald-600 focus:outline-none tabular-nums"
                   />
-                  <p className="mt-1 text-[11px] text-stone-400">Batang</p>
                 </div>
                 <div>
-                  <label htmlFor="planting_year" className="mb-1.5 block text-xs font-semibold text-stone-700">
+                  <label className="mb-1.5 block text-xs font-semibold text-stone-700">
                     Tahun Tanam <span className="text-red-500">*</span>
                   </label>
                   <input
-                    id="planting_year"
-                    name="planting_year"
                     type="number"
-                    min="1950"
-                    max="2100"
-                    step="1"
+                    min="1980"
+                    max={new Date().getFullYear()}
                     required
                     value={formData.planting_year}
-                    onChange={(e) => {
-                      setFormData({ ...formData, planting_year: e.target.value });
-                      if (modalFormError) setModalFormError('');
-                    }}
-                    placeholder="Contoh: 2023"
-                    className="tnum w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 font-mono text-sm text-stone-800 placeholder:font-sans placeholder:text-stone-400 transition focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+                    onChange={(e) => setFormData({ ...formData, planting_year: e.target.value })}
+                    placeholder="Contoh: 2021"
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2.5 px-3.5 font-sans text-xs text-stone-800 focus:border-emerald-600 focus:outline-none tabular-nums"
                   />
-                  <p className="mt-1 text-[11px] text-stone-400">Tahun</p>
                 </div>
               </div>
 
-              {/* 4 · avg_dbh_cm & avg_height_m */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* 4. DBH & Tinggi */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="avg_dbh_cm" className="mb-1.5 block text-xs font-semibold text-stone-700">
-                    Rata-rata DBH Batang <span className="text-red-500">*</span>
+                  <label className="mb-1.5 block text-xs font-semibold text-stone-700">
+                    Rata-rata DBH (cm) <span className="text-red-500">*</span>
                   </label>
                   <input
-                    id="avg_dbh_cm"
-                    name="avg_dbh_cm"
                     type="number"
-                    min="1"
                     step="0.1"
+                    min="1"
                     required
                     value={formData.avg_dbh_cm}
-                    onChange={(e) => {
-                      setFormData({ ...formData, avg_dbh_cm: e.target.value });
-                      if (modalFormError) setModalFormError('');
-                    }}
-                    placeholder="Contoh: 25.0"
-                    className="tnum w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 font-mono text-sm text-stone-800 placeholder:font-sans placeholder:text-stone-400 transition focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/30"
+                    onChange={(e) => setFormData({ ...formData, avg_dbh_cm: e.target.value })}
+                    placeholder="Contoh: 28.4"
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2.5 px-3.5 font-sans text-xs text-stone-800 focus:border-emerald-600 focus:outline-none tabular-nums"
                   />
-                  <p className="mt-1 text-[11px] text-stone-400">Diameter DBH (cm)</p>
                 </div>
                 <div>
-                  <label htmlFor="avg_height_m" className="mb-1.5 block text-xs font-semibold text-stone-700">
-                    Rata-rata Tinggi Batang {selectedSpeciesObj?.requires_height ? <span className="text-red-500 font-bold">* (Wajib)</span> : <span className="text-stone-400 font-normal">(Opsional)</span>}
+                  <label className="mb-1.5 block text-xs font-semibold text-stone-700">
+                    Rata-rata Tinggi (m) {selectedSpeciesObj?.requires_height && <span className="text-red-500">*</span>}
                   </label>
                   <input
-                    id="avg_height_m"
-                    name="avg_height_m"
                     type="number"
-                    min="0"
                     step="0.1"
+                    min="1"
                     required={Boolean(selectedSpeciesObj?.requires_height)}
                     value={formData.avg_height_m}
-                    onChange={(e) => {
-                      setFormData({ ...formData, avg_height_m: e.target.value });
-                      if (modalFormError) setModalFormError('');
-                    }}
-                    placeholder={selectedSpeciesObj?.requires_height ? 'Contoh: 12.0 (Wajib)' : 'Contoh: 14.5'}
-                    className={`tnum w-full rounded-xl border px-3 py-2.5 font-mono text-sm text-stone-800 placeholder:font-sans placeholder:text-stone-400 transition focus:outline-none focus:ring-1 ${
-                      selectedSpeciesObj?.requires_height
-                        ? 'border-amber-400 bg-amber-50/50 focus:border-amber-600 focus:ring-amber-500/30'
-                        : 'border-stone-200 bg-stone-50 focus:border-emerald-600 focus:ring-emerald-600/30'
-                    }`}
+                    onChange={(e) => setFormData({ ...formData, avg_height_m: e.target.value })}
+                    placeholder="Contoh: 14.5"
+                    className="w-full rounded-xl border border-stone-200 bg-stone-50 py-2.5 px-3.5 font-sans text-xs text-stone-800 focus:border-emerald-600 focus:outline-none tabular-nums"
                   />
-                  {selectedSpeciesObj?.requires_height ? (
-                    <p className="mt-1 text-[11px] font-semibold text-amber-700">
-                      ⚡ Monokotil (Kelapa) wajib tinggi silinder batang untuk biomassa Hairiah et al.
-                    </p>
-                  ) : (
-                    <p className="mt-1 text-[11px] text-stone-400">Meter (m) · Rumus murni DBH</p>
-                  )}
                 </div>
               </div>
 
               {/* Modal Footer */}
-              <div className="flex items-center justify-end gap-3 border-t border-stone-200 pt-4">
+              <div className="mt-5 pt-4 border-t border-stone-100 flex items-center justify-end gap-2.5">
                 <button
-                  id="btnCancelTreeModal"
                   type="button"
                   onClick={handleCloseModal}
-                  className="rounded-xl border border-stone-300 px-4 py-2 text-xs font-medium text-stone-700 transition hover:bg-stone-100 cursor-pointer"
+                  className="rounded-full border border-stone-200 bg-white px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex items-center gap-2 rounded-xl bg-pine px-5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-pine-900 active:scale-[0.99] cursor-pointer disabled:opacity-50"
+                  className="rounded-full bg-[#14382C] hover:bg-[#1C4E3D] text-white px-5 py-2 text-xs font-semibold shadow-xs transition disabled:opacity-50 flex items-center gap-2 cursor-pointer active:scale-98"
                 >
                   {isSubmitting ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-                      Menghitung...
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Menyimpan...</span>
                     </>
                   ) : (
                     <>
-                      <Leaf className="h-4 w-4 text-emerald-400" />
-                      Simpan &amp; Hitung Serapan Karbon
+                      <Leaf className="h-4 w-4" />
+                      <span>Simpan Blok Pohon</span>
                     </>
                   )}
                 </button>
@@ -1729,12 +1381,12 @@ export default function LandManagementView({
         </div>
       )}
 
-      {/* ================================================================
-           Modal Konfirmasi Hapus Petak Draft (Agro-Pulse Bento)
-      ================================================================ */}
+      {/* ============================================================
+           MODAL KONFIRMASI HAPUS PETAK DRAFT
+      ============================================================= */}
       {deleteConfirmModal.isOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in"
           onClick={() => {
             if (!deleteConfirmModal.isDeleting) {
               setDeleteConfirmModal({ isOpen: false, plotId: null, plotName: '', isDeleting: false });
@@ -1742,38 +1394,31 @@ export default function LandManagementView({
           }}
         >
           <div
-            className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-[24px] border border-stone-200 bg-white p-6 shadow-2xl space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3.5">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-red-100 text-red-600 shrink-0">
-                <Trash2 className="h-6 w-6 stroke-[2.2]" />
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-red-100 text-red-600 shrink-0">
+                <Trash2 className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-stone-900 leading-tight">
+                <h3 className="text-base font-bold text-stone-900 font-sans">
                   Hapus Petak Lahan Draft?
                 </h3>
-                <p className="text-xs text-stone-500 mt-0.5">
-                  Tindakan ini permanen dan tidak dapat dibatalkan.
-                </p>
+                <p className="text-xs text-stone-500">Tindakan ini tidak dapat dibatalkan.</p>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-red-100 bg-red-50/70 p-3.5 text-xs text-red-900 space-y-1">
-              <p>
-                Anda akan menghapus petak lahan <strong className="font-bold underline">{deleteConfirmModal.plotName || 'Draft'}</strong>.
-              </p>
-              <p className="text-[11px] text-red-700 leading-relaxed">
-                Seluruh koordinat batas poligon spasial PostGIS dan data blok tegakan pohon di petak ini akan dihapus secara permanen dari basis data server.
-              </p>
+            <div className="rounded-2xl border border-red-100 bg-red-50/70 p-3.5 text-xs text-red-900">
+              Anda akan menghapus petak <strong>{deleteConfirmModal.plotName}</strong>. Data poligon batas PostGIS dan blok pohon terkait akan dihapus secara permanen.
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-2.5 pt-2">
               <button
                 type="button"
                 disabled={deleteConfirmModal.isDeleting}
                 onClick={() => setDeleteConfirmModal({ isOpen: false, plotId: null, plotName: '', isDeleting: false })}
-                className="rounded-xl border border-stone-300 px-4 py-2.5 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 cursor-pointer disabled:opacity-50"
+                className="rounded-full border border-stone-200 bg-white px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-50 cursor-pointer disabled:opacity-50"
               >
                 Batal
               </button>
@@ -1781,18 +1426,15 @@ export default function LandManagementView({
                 type="button"
                 disabled={deleteConfirmModal.isDeleting}
                 onClick={executeDeletePlot}
-                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-red-700 cursor-pointer disabled:opacity-50"
+                className="rounded-full bg-red-600 hover:bg-red-700 text-white px-5 py-2 text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50 flex items-center gap-2"
               >
                 {deleteConfirmModal.isDeleting ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin text-white" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     <span>Menghapus...</span>
                   </>
                 ) : (
-                  <>
-                    <Trash2 className="h-4 w-4" />
-                    <span>Ya, Hapus Petak</span>
-                  </>
+                  <span>Ya, Hapus Petak</span>
                 )}
               </button>
             </div>
@@ -1800,35 +1442,34 @@ export default function LandManagementView({
         </div>
       )}
 
-      {/* ================================================================
-           Toast konfirmasi (POST /tree-blocks)
-      ================================================================ */}
+
+
+      {/* ============================================================
+           TOAST NOTIFIKASI
+      ============================================================= */}
       {toastVisible && (
         <div
-          id="toast"
-          role={toastMessage.type === 'error' ? 'alert' : 'status'}
-          className={`fixed bottom-6 right-6 z-[60] flex w-full max-w-xs items-start gap-3 rounded-2xl border bg-white p-4 shadow-xl animate-slide-up ${
-            toastMessage.type === 'error' ? 'border-rose-300' : 'border-stone-200'
+          role="status"
+          className={`fixed bottom-6 right-6 z-50 flex w-full max-w-sm items-start gap-3 rounded-[20px] border bg-white p-4 shadow-xl animate-slide-up ${
+            toastMessage.type === 'error' ? 'border-red-200' : 'border-emerald-200'
           }`}
         >
-          <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${
-            toastMessage.type === 'error'
-              ? 'bg-rose-50 text-rose-600'
-              : 'bg-emerald-50 text-emerald-700'
-          }`}>
+          <span
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${
+              toastMessage.type === 'error'
+                ? 'bg-red-50 text-red-600'
+                : 'bg-emerald-50 text-emerald-700'
+            }`}
+          >
             {toastMessage.type === 'error' ? (
-              <AlertTriangle className="h-[18px] w-[18px]" />
+              <AlertTriangle className="h-4 w-4" />
             ) : (
-              <CheckCheck className="h-[18px] w-[18px]" />
+              <CheckCheck className="h-4 w-4" />
             )}
           </span>
-          <div>
-            <p className={`text-sm font-semibold ${
-              toastMessage.type === 'error' ? 'text-rose-900' : 'text-stone-900'
-            }`}>{toastMessage.title}</p>
-            <p className={`mt-0.5 text-xs ${
-              toastMessage.type === 'error' ? 'text-rose-700' : 'text-stone-500'
-            }`}>{toastMessage.desc}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold text-stone-900">{toastMessage.title}</p>
+            <p className="text-[11px] text-stone-500 mt-0.5 leading-relaxed">{toastMessage.desc}</p>
           </div>
         </div>
       )}

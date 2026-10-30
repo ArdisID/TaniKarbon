@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   MapPin, 
@@ -13,13 +13,40 @@ import {
   Sparkles, 
   Check, 
   Compass, 
-  Award,
-  ArrowRight
+  Award, 
+  ArrowRight 
 } from 'lucide-react';
+import { getAdminUsers } from '../../api/admin';
+
+// Helper format display user code
+function formatUserCode(id, prefix = 'USR') {
+  const str = String(id || '');
+  if (str.startsWith('SRV-') || str.startsWith('FAR-') || str.startsWith('CORP-') || str.startsWith('ADM-')) {
+    return str;
+  }
+  return `${prefix}-${str.slice(0, 8).toUpperCase()}`;
+}
 
 export default function UserAndSurveyorManagementView({ onToast }) {
   const [activeTab, setActiveTab] = useState('surveyors'); // 'surveyors' | 'farmers' | 'corporates'
   const [searchQuery, setSearchQuery] = useState('');
+  const [dbUsers, setDbUsers] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadUsers() {
+      try {
+        const data = await getAdminUsers();
+        if (isMounted && Array.isArray(data) && data.length > 0) {
+          setDbUsers(data);
+        }
+      } catch (e) {
+        console.warn('Backend users list fallback to mock:', e);
+      }
+    }
+    loadUsers();
+    return () => { isMounted = false; };
+  }, []);
   
   // Surveyor Assignment Drawer state
   const [selectedSurveyorForAssign, setSelectedSurveyorForAssign] = useState(null);
@@ -182,7 +209,7 @@ export default function UserAndSurveyorManagementView({ onToast }) {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-200">
               Otoritas Manajemen Ekosistem
             </span>
             <span className="text-xs text-slate-500 font-sans">
@@ -199,9 +226,9 @@ export default function UserAndSurveyorManagementView({ onToast }) {
 
         {/* Quick Stat Pill */}
         <div className="flex items-center gap-3">
-          <div className="px-4 py-2 bg-white border border-slate-200 rounded-2xl shadow-2xs">
+          <div className="px-4 py-2 bg-white border border-slate-200 rounded-2xl shadow-2xs font-sans">
             <span className="text-[10px] text-slate-500 font-sans block">Surveyor Aktif Terpetakan</span>
-            <span className="text-sm font-bold text-stone-900 font-mono">
+            <span className="text-sm font-bold text-stone-900 font-sans tabular-nums">
               {surveyors.length} Petugas Lapangan
             </span>
           </div>
@@ -214,11 +241,11 @@ export default function UserAndSurveyorManagementView({ onToast }) {
           onClick={() => setActiveTab('surveyors')}
           className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
             activeTab === 'surveyors'
-              ? 'bg-[#14382C] text-white shadow-xs'
+              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          <Compass className="w-4 h-4 text-emerald-400" />
+          <Compass className={`w-4 h-4 ${activeTab === 'surveyors' ? 'text-amber-200' : 'text-slate-500'}`} />
           <span>Penugasan Wilayah &amp; Kepatuhan Surveyor ({surveyors.length})</span>
         </button>
 
@@ -226,11 +253,11 @@ export default function UserAndSurveyorManagementView({ onToast }) {
           onClick={() => setActiveTab('farmers')}
           className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
             activeTab === 'farmers'
-              ? 'bg-[#14382C] text-white shadow-xs'
+              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          <Users className="w-4 h-4 text-emerald-400" />
+          <Users className={`w-4 h-4 ${activeTab === 'farmers' ? 'text-amber-200' : 'text-slate-500'}`} />
           <span>Direktori Ringkas Mitra Petani ({farmers.length})</span>
         </button>
 
@@ -238,11 +265,11 @@ export default function UserAndSurveyorManagementView({ onToast }) {
           onClick={() => setActiveTab('corporates')}
           className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 ${
             activeTab === 'corporates'
-              ? 'bg-[#14382C] text-white shadow-xs'
+              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          <Building2 className="w-4 h-4 text-emerald-400" />
+          <Building2 className={`w-4 h-4 ${activeTab === 'corporates' ? 'text-amber-200' : 'text-slate-500'}`} />
           <span>Verifikasi KYB Perusahaan Pembeli ({corporates.length})</span>
         </button>
       </div>
@@ -253,7 +280,7 @@ export default function UserAndSurveyorManagementView({ onToast }) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-stone-900 font-sans">
-                Tabel Penugasan Petugas Lapangan (SurveyorAssignmentDrawer &amp; Kepatuhan)
+                Tabel Penugasan Petugas Lapangan &amp; Kepatuhan Geospasial
               </h2>
               <p className="text-xs text-slate-500 font-sans">
                 Saat petani menekan tombol "Ajukan Verifikasi Lapangan", sistem otomatis mengarahkan tiket ke surveyor penanggung jawab wilayah.
@@ -278,8 +305,11 @@ export default function UserAndSurveyorManagementView({ onToast }) {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {surveyors.map((srv) => (
                     <tr key={srv.id} className="hover:bg-slate-50/60 transition font-sans">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 whitespace-nowrap">
-                        {srv.id}
+                      <td 
+                        title={`ID Pengguna: ${srv.id}`}
+                        className="py-3.5 px-4 font-mono font-bold text-slate-700 whitespace-nowrap tabular-nums"
+                      >
+                        {formatUserCode(srv.id, 'SRV')}
                       </td>
 
                       <td className="py-3.5 px-4">
@@ -297,13 +327,13 @@ export default function UserAndSurveyorManagementView({ onToast }) {
                         </div>
                       </td>
 
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-sans font-bold text-slate-900 whitespace-nowrap tabular-nums">
                         {srv.tasksCompleted} Lahan
                       </td>
 
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <span className={`font-mono font-bold ${
+                          <span className={`font-sans font-bold tabular-nums ${
                             srv.gpsGeofenceCompliance >= 95 ? 'text-emerald-700' : 'text-amber-700'
                           }`}>
                             {srv.gpsGeofenceCompliance}% Valid
@@ -372,23 +402,26 @@ export default function UserAndSurveyorManagementView({ onToast }) {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {farmers.map((farmer) => (
                     <tr key={farmer.id} className="hover:bg-slate-50/60 transition font-sans">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 whitespace-nowrap">
-                        {farmer.id}
+                      <td 
+                        title={`ID Petani: ${farmer.id}`}
+                        className="py-3.5 px-4 font-mono font-bold text-slate-700 whitespace-nowrap tabular-nums"
+                      >
+                        {formatUserCode(farmer.id, 'FAR')}
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-stone-900">{farmer.name}</div>
-                        <div className="text-[11px] text-slate-400 font-mono">{farmer.phone}</div>
+                        <div className="text-[11px] text-slate-400 font-sans tabular-nums">{farmer.phone}</div>
                       </td>
                       <td className="py-3.5 px-4 text-slate-700">
                         {farmer.cluster}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-700 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-sans text-slate-700 whitespace-nowrap tabular-nums">
                         {farmer.landArea}
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-semibold text-slate-900 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-sans font-semibold text-slate-900 whitespace-nowrap tabular-nums">
                         {farmer.treesCount} Pohon
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-emerald-800 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-sans font-bold text-emerald-800 whitespace-nowrap tabular-nums">
                         {farmer.quotaClaimed}
                       </td>
                       <td className="py-3.5 px-4 whitespace-nowrap">
@@ -434,13 +467,13 @@ export default function UserAndSurveyorManagementView({ onToast }) {
                 <tbody className="divide-y divide-slate-100 text-xs">
                   {corporates.map((corp) => (
                     <tr key={corp.code} className="hover:bg-slate-50/60 transition font-sans">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-bold text-slate-700 whitespace-nowrap tabular-nums">
                         {corp.code}
                       </td>
                       <td className="py-3.5 px-4 font-bold text-stone-900">
                         {corp.name}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
+                      <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap tabular-nums font-medium">
                         {corp.taxId}
                       </td>
                       <td className="py-3.5 px-4 whitespace-nowrap">
@@ -448,10 +481,10 @@ export default function UserAndSurveyorManagementView({ onToast }) {
                           {corp.kybStatus}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-blue-700 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-bold text-blue-700 whitespace-nowrap tabular-nums">
                         {corp.depositBalance}
                       </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap tabular-nums">
                         {corp.totalRetiredCarbon}
                       </td>
                       <td className="py-3.5 px-4 whitespace-nowrap">
@@ -472,23 +505,23 @@ export default function UserAndSurveyorManagementView({ onToast }) {
       {selectedSurveyorForAssign && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-fade-in overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden my-8">
-            <div className="p-5 bg-[#14382C] text-white flex items-center justify-between">
+            <div className="p-5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-emerald-400">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white">
                   <Compass className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white font-sans">
                     Penugasan Wilayah Surveyor
                   </h3>
-                  <p className="text-xs text-emerald-200 font-sans">
+                  <p className="text-xs text-amber-100 font-sans">
                     {selectedSurveyorForAssign.name} ({selectedSurveyorForAssign.id})
                   </p>
                 </div>
               </div>
               <button 
                 onClick={() => setSelectedSurveyorForAssign(null)}
-                className="p-1.5 rounded-lg text-emerald-200 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                className="p-1.5 rounded-lg text-amber-100 hover:text-white hover:bg-white/10 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -515,7 +548,7 @@ export default function UserAndSurveyorManagementView({ onToast }) {
               </div>
 
               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 font-sans">
-                Kepatuhan Geofencing Surveyor ini saat ini: <strong className="font-mono">{selectedSurveyorForAssign.gpsGeofenceCompliance}%</strong>.
+                Kepatuhan Geofencing Surveyor ini saat ini: <strong className="font-bold tabular-nums">{selectedSurveyorForAssign.gpsGeofenceCompliance}%</strong>.
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
@@ -529,7 +562,7 @@ export default function UserAndSurveyorManagementView({ onToast }) {
                 <button
                   type="button"
                   onClick={handleSaveAssignment}
-                  className="px-5 py-2 text-xs font-bold text-white bg-[#14382C] hover:bg-[#1E4D3D] rounded-xl shadow-xs transition cursor-pointer font-sans"
+                  className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 rounded-xl shadow-xs transition cursor-pointer font-sans"
                 >
                   Simpan Penugasan
                 </button>

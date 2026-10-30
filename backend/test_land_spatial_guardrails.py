@@ -46,29 +46,30 @@ async def test_spatial_overlay_masks_other_farmers_and_exposes_own_land():
 
     try:
         async with engine.begin() as conn:
-            other_plot_id = (
-                await conn.execute(
-                    text("""
-                        INSERT INTO land_plots (
-                            id, farmer_id, name, polygon_boundary, centroid, total_area_sqm, status
-                        )
-                        VALUES (
-                            :id,
-                            '44444444-1111-4444-8444-444444444444',
-                            'Lahan Rahasia Petani Lain',
-                            ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326),
-                            ST_Centroid(ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326)),
-                            ST_Area(ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326)::geography),
-                            'draft'
-                        )
-                        RETURNING id
-                    """),
-                    {
-                        "id": other_plot_id,
-                        "geojson": json.dumps(make_polygon(-6.81, 107.31)),
-                    }
-                )
-            ).fetchone().id
+            insert_res = await conn.execute(
+                text("""
+                    INSERT INTO land_plots (
+                        id, farmer_id, name, polygon_boundary, centroid, total_area_sqm, status
+                    )
+                    VALUES (
+                        :id,
+                        '44444444-1111-4444-8444-444444444444',
+                        'Lahan Rahasia Petani Lain',
+                        ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326),
+                        ST_Centroid(ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326)),
+                        ST_Area(ST_SetSRID(ST_GeomFromGeoJSON(:geojson), 4326)::geography),
+                        'draft'
+                    )
+                    RETURNING id
+                """),
+                {
+                    "id": other_plot_id,
+                    "geojson": json.dumps(make_polygon(-6.81, 107.31)),
+                }
+            )
+            inserted_row = insert_res.fetchone()
+            if inserted_row:
+                other_plot_id = inserted_row.id
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

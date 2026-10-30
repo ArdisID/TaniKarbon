@@ -293,7 +293,9 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/farmer" element={<Navigate to="/mitra-tani" replace />} />
         <Route path="/farmer/*" element={<Navigate to="/mitra-tani" replace />} />
+        <Route path="/petani" element={<Navigate to="/mitra-tani" replace />} />
         <Route path="/petani/*" element={<Navigate to="/mitra-tani" replace />} />
 
         {/* Protected Routes: Portal Korporat / ESG */}
@@ -312,29 +314,12 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/corporate" element={<Navigate to="/korporat" replace />} />
         <Route path="/corporate/*" element={<Navigate to="/korporat" replace />} />
+        <Route path="/b2b" element={<Navigate to="/korporat" replace />} />
         <Route path="/b2b/*" element={<Navigate to="/korporat" replace />} />
 
         {/* Protected Routes: Portal Surveyor Lapangan */}
-        <Route
-          path="/surveyor"
-          element={
-            <ProtectedRoute allowedRoles={['surveyor']} currentUser={currentUser}>
-              <SurveyorWorkspace
-                currentUser={currentUser}
-                onLogout={handleLogout}
-                onNavigateRole={(target) => handleNavigate(target)}
-                onBack={() => handleNavigate('landing')}
-              />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Navigate to="tugas" replace />} />
-          <Route path="tugas" element={null} />
-          <Route path="inspeksi" element={null} />
-          <Route path="riwayat" element={null} />
-          <Route path="*" element={<Navigate to="tugas" replace />} />
-        </Route>
         <Route
           path="/surveyor/*"
           element={
@@ -348,7 +333,10 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/surveyor" element={<Navigate to="/surveyor/tugas" replace />} />
+        <Route path="/petugas" element={<Navigate to="/surveyor/tugas" replace />} />
         <Route path="/petugas/*" element={<Navigate to="/surveyor/tugas" replace />} />
+        <Route path="/verifier" element={<Navigate to="/surveyor/tugas" replace />} />
         <Route path="/verifier/*" element={<Navigate to="/surveyor/tugas" replace />} />
 
         {/* Protected Routes: Portal Admin Platform */}
@@ -364,7 +352,9 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/authority" element={<Navigate to="/admin" replace />} />
         <Route path="/authority/*" element={<Navigate to="/admin" replace />} />
+        <Route path="/manager" element={<Navigate to="/admin" replace />} />
         <Route path="/manager/*" element={<Navigate to="/admin" replace />} />
 
         {/* Fallback */}

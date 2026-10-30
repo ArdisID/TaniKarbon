@@ -47,6 +47,7 @@ class Cluster(Base):
     name = Column(String(200), nullable=False)
     vintage_year = Column(Integer, nullable=False)
     available_quota_tco2e = Column(Numeric(15, 4), default=0.0000)
+    target_quota_tco2e = Column(Numeric(15, 4), default=1000.0)
     price_per_tco2e = Column(Numeric(15, 2), nullable=False)
     status = Column(Enum('gathering', 'auditing', 'available_for_sale', 'sold_out', name='cluster_status'), default="gathering")
 
@@ -77,6 +78,7 @@ class TreeBlock(Base):
     planting_year = Column(Integer, nullable=False)
     total_population = Column(Integer, nullable=False)
     estimated_tco2e_per_year = Column(Numeric(15, 4), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class WalletTransaction(Base):
     __tablename__ = "wallet_transactions"

@@ -52,16 +52,16 @@ export default function UploadTransferProofModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-fade-in overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden my-8">
+      <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden my-8 animate-modal-pop">
         
         {/* Header */}
-        <div className="p-5 bg-[#14382C] text-white flex items-center justify-between">
+        <div className="p-5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-emerald-400">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white">
               <Upload className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider font-sans">
+              <span className="text-[10px] font-bold text-amber-100 uppercase tracking-wider font-sans">
                 Verifikasi Payout Petani
               </span>
               <h3 className="text-base font-bold text-white font-sans">
@@ -71,7 +71,7 @@ export default function UploadTransferProofModal({
           </div>
           <button 
             onClick={onClose}
-            className="p-1.5 rounded-lg text-emerald-200 hover:text-white hover:bg-white/10 transition cursor-pointer"
+            className="p-1.5 rounded-lg text-amber-100 hover:text-white hover:bg-white/10 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -93,12 +93,12 @@ export default function UploadTransferProofModal({
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-500 font-sans">Rekening / E-Wallet:</span>
               <span className="text-xs font-semibold text-slate-800 font-sans">
-                {withdrawal.channel} • <span className="font-mono">{withdrawal.accountNumber}</span>
+                {withdrawal.channel} • <span className="font-sans font-semibold tabular-nums">{withdrawal.accountNumber}</span>
               </span>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-slate-200/80">
               <span className="text-xs font-bold text-slate-700 font-sans">Nominal Dicairkan:</span>
-              <span className="text-base font-bold text-emerald-700 font-mono">
+              <span className="text-base font-extrabold text-emerald-700 font-sans tabular-nums">
                 Rp {withdrawal.amount.toLocaleString('id-ID')}
               </span>
             </div>
@@ -114,7 +114,7 @@ export default function UploadTransferProofModal({
               value={referenceNumber}
               onChange={(e) => setReferenceNumber(e.target.value)}
               required
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-[#14382C] font-mono font-medium"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-[#14382C] font-sans font-medium tabular-nums"
             />
           </div>
 
@@ -136,10 +136,11 @@ export default function UploadTransferProofModal({
                   Struk_Transfer_BRI_{withdrawal.id}.jpg
                 </p>
                 <p className="text-[11px] text-slate-500 font-sans">
-                  Ukuran: <span className="font-mono">420 KB</span> • Terlampir otomatis
+                  Ukuran: <span className="font-sans font-medium tabular-nums">420 KB</span> • Terlampir otomatis
                 </p>
-                <span className="inline-block mt-0.5 text-[10px] text-emerald-700 font-semibold font-sans">
-                  ✓ Validasi Signature Bank Berhasil
+                <span className="inline-flex items-center gap-1 mt-0.5 text-[10px] text-emerald-700 font-semibold font-sans">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>Validasi Signature Bank Berhasil</span>
                 </span>
               </div>
             </div>
@@ -158,7 +159,7 @@ export default function UploadTransferProofModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer font-sans disabled:opacity-50"
+              className="px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer font-sans disabled:opacity-50"
             >
               {isSubmitting ? (
                 <>
@@ -167,7 +168,7 @@ export default function UploadTransferProofModal({
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                  <CheckCircle2 className="w-4 h-4 text-amber-200" />
                   <span>Konfirmasi Dana Terkirim</span>
                 </>
               )}
